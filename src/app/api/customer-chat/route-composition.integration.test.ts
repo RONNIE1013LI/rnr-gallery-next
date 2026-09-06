@@ -53,24 +53,33 @@ describe.runIf(Boolean(url))("actual Redis public route composition", () => {
   });
   afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
-  it("bootstraps/sends/polls, deduplicates and exposes manual staff replies with master OFF and database traps", async () => {
+  it.each(["master OFF", "shared control OFF"])("bootstraps/sends/polls, deduplicates and exposes manual staff replies with %s and database traps", async (gate) => {
+    vi.stubEnv("RNR_AI_MASTER_ENABLED", gate === "master OFF" ? "false" : "true");
+    const redis = new Redis({ url: url!, token: "synthetic-local-redis-test", responseEncoding: false });
+    await redis.set(`${process.env.RNR_AI_REDIS_NAMESPACE}:control`, {
+      revision: 1, mode: gate === "master OFF" ? "ON" : "OFF", timezone: "Pacific/Auckland", periods: [], override: null,
+    });
+    const nativeFetch = globalThis.fetch;
+    const provider = vi.fn();
+    vi.stubGlobal("fetch", (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (input === "https://api.openai.com/v1/responses") { provider(); throw Error("paid provider must not run while OFF"); }
+      if (!String(input).startsWith(url!)) throw Error("unexpected external transport");
+      return nativeFetch(input, init);
+    });
     const chat = await start();
     expect((await send(request("messages", message(chat.key), chat.cookie, chat.permit))).status).toBe(202);
     expect((await send(request("messages", message(chat.key), chat.cookie, chat.permit))).status).toBe(202);
     expect(scheduled.tasks).toHaveLength(1);
     await scheduled.tasks[0]();
     const first = await (await updates(request("updates", undefined, chat.cookie))).json();
-    expect(first.events).toHaveLength(1);
+    expect(first.events.filter((event: { role: string }) => event.role === "customer")).toHaveLength(1);
+    expect(first.events.some((event: { role: string }) => event.role === "assistant")).toBe(false);
     expect(first.events[0].role).toBe("customer");
     const repository = RedisWebsiteRepository.fromEnvironment();
-    const ids = await repository.pendingTurnIds(5);
-    expect(ids).toHaveLength(1);
-    const lease = await repository.claimTurn(ids[0]);
-    expect(lease).not.toBeNull();
-    expect(lease!.event.productContext).toMatchObject({ productTitle: expect.any(String) });
-    expect(lease!.event.productContext).not.toHaveProperty("price");
-    await repository.settleTurn(lease!, null);
+    expect(provider).not.toHaveBeenCalled();
+    expect(await repository.pendingTurnIds(5)).toEqual([]);
     const item = (await repository.listQueue(5)).items[0];
+    expect(item.websiteReview?.selector).toBeTruthy();
     const answered = await repository.answerWebsiteReview({ reviewSelector: item.websiteReview!.selector!, actorUserId: "synthetic-staff", text: "We can help you choose a size.", now: new Date() });
     expect(answered.status).toBe("sent");
     const next = await (await updates(request(`updates?cursor=${encodeURIComponent(first.cursor)}`, undefined, chat.cookie))).json();
@@ -80,6 +89,10 @@ describe.runIf(Boolean(url))("actual Redis public route composition", () => {
   it("runs the actual shared brain and publishes its verified response without a database dependency", async () => {
     vi.stubEnv("RNR_AI_MASTER_ENABLED", "true");
     vi.stubEnv("OPENAI_API_KEY", "synthetic-provider-test-key");
+    const redis = new Redis({ url: url!, token: "synthetic-local-redis-test", responseEncoding: false });
+    await redis.set(`${process.env.RNR_AI_REDIS_NAMESPACE}:control`, {
+      revision: 1, mode: "ON", timezone: "Pacific/Auckland", periods: [], override: null,
+    });
     const nativeFetch = globalThis.fetch;
     const candidate = { mode: "ANSWER", reply: "Hello! How can we help?", market: "UNKNOWN", marketEvidenceTurn: null };
     const outputs = [{ ...candidate, requestedTools: [] }, {
