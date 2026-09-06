@@ -111,6 +111,14 @@ function required(value: string | undefined, name: string) {
   return normalized;
 }
 
+// Keep Page credentials inside this boundary; inbox consumers receive only a reader.
+export function createProductionMetaInboxContext(env: NodeJS.ProcessEnv = process.env) {
+  return new GraphMetaContextProvider({
+    accessToken: required(env.META_PAGE_ACCESS_TOKEN, "META_PAGE_ACCESS_TOKEN"),
+    timeoutSignal: () => AbortSignal.timeout(3_000),
+  });
+}
+
 export function createProductionMetaReplyRuntime(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ) {
