@@ -317,3 +317,13 @@ it('does not reinterpret a later quantity as money after a bound amount is maske
     const a = { ...audit, claims: [{ ...audit.claims[0], amountMentionIds: ['n1'] }] };
     expect(check(a, c).risk).toBe('GREEN');
 });
+
+it.each([
+    { reply: 'NZ$109.99 AUD', market: 'NZ', currency: 'NZD' },
+    { reply: 'A$109.99 NZD', market: 'AU', currency: 'AUD' },
+] as const)('rejects conflicting currencies on both sides of $reply with a numeric-only span', ({ reply, market, currency }) => {
+    const c = { ...candidate, reply, market };
+    const a = { ...audit, market, claims: [{ ...audit.claims[0], span: '109.99', currency, amountMentionIds: ['n1'] }] };
+    const s = { ...source, market };
+    expect(checkSafetyContract(c, a, [s], turns, true).failures).toContain('actual_text_currency_mismatch');
+});

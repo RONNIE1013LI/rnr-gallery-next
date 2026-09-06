@@ -112,13 +112,13 @@ function liveSourceSupports(claim: ClaimAudit['claims'][number], source: Evidenc
 const monetaryKinds = new Set(['price', 'shipping_cost', 'additional_fee', 'unit_rate']);
 const moneyPattern = /(?:NZ\$|A\$|\$|NZD|AUD)\s*([0-9]+(?:[.,][0-9]+)*)|([0-9]+(?:[.,][0-9]+)*)\s*(?:NZD|AUD)/gi;
 export function numericMentions(reply: string) {
-    const explicitMoney = [...reply.matchAll(moneyPattern)];
     return [...reply.matchAll(/[0-9]+(?:[.,][0-9]+)*/g)].map((match, index) => {
-        const money = explicitMoney.find(money => match.index >= money.index && match.index + match[0].length <= money.index + money[0].length)?.[0];
+        const prefix = reply.slice(0, match.index).match(/(NZ\$|A\$|\$|NZD|AUD)\s*$/i)?.[1];
+        const suffix = reply.slice(match.index + match[0].length).match(/^\s*(NZD|AUD)/i)?.[1];
         return {
             id: `n${index + 1}`, text: match[0], start: match.index, end: match.index + match[0].length,
             amountMinor: Math.round(Number(match[0].replaceAll(',', '')) * 100),
-            explicitCurrency: money && /NZD|NZ\$/i.test(money) ? 'NZD' : money && /AUD|A\$/i.test(money) ? 'AUD' : null,
+            explicitCurrencies: [prefix, suffix].flatMap(currency => currency && /NZD|NZ\$/i.test(currency) ? ['NZD'] : currency && /AUD|A\$/i.test(currency) ? ['AUD'] : []),
         };
     });
 }
@@ -230,7 +230,7 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
                 const selected = (claim.amountMentionIds ?? []).map(id => mentions.find(mention => mention.id === id));
                 if (!selected.length || selected.some(mention => !mention || !mentionInsideSpan(candidate.reply, claim.span, mention))) failures.push('invalid_money_mention');
                 moneyValues = selected.flatMap(mention => mention ? [mention.amountMinor] : []);
-                if (selected.some(mention => mention?.explicitCurrency && mention.explicitCurrency !== claim.currency)) failures.push('actual_text_currency_mismatch');
+                if (selected.some(mention => mention?.explicitCurrencies.some(currency => currency !== claim.currency))) failures.push('actual_text_currency_mismatch');
                 const binding = JSON.stringify([claim.kind, claim.product, claim.orderReference, claim.destination, claim.amountMinor, claim.currency, claim.size, claim.quantity, claim.numericPath, claim.calculation, [...claim.sources].sort()]);
                 for (const id of claim.amountMentionIds ?? []) {
                     if (mentionBindings.has(id) && mentionBindings.get(id) !== binding) failures.push('conflicting_money_mention');
