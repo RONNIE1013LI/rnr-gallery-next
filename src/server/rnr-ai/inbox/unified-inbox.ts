@@ -54,7 +54,7 @@ export function createUnifiedInbox(dependencies: {
   };
   const resolveWebsiteReviewDeepLink: CustomerServiceRepository["resolveWebsiteReviewDeepLink"] = async (input) => {
     const shared = dependencies.websiteEnabled ? await dependencies.website().resolveWebsiteReviewDeepLink(input) : null;
-    return shared ?? dependencies.legacy().resolveWebsiteReviewDeepLink(input);
+    return shared ? { ...shared, item: { ...shared.item, source: "redis_website" } } : dependencies.legacy().resolveWebsiteReviewDeepLink(input);
   };
   return { resolveWebsiteReviewDeepLink, listQueue, resolveReplyAssistantInbox, loadEarlierInboxTimeline, listReplyAssistantUpdates, answerWebsiteReview };
 }

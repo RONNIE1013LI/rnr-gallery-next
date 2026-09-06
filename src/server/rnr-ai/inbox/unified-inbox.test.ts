@@ -23,3 +23,13 @@ describe("unified inbox", () => {
     expect(legacy).not.toHaveBeenCalled();
   });
 });
+
+it("marks Redis website deep-link rows with their source without invoking historical storage", async () => {
+  const legacy = vi.fn();
+  const linked = { selector: "synthetic-selector", item: { ...row("shared", "review"), channel: "website" as const } };
+  const website = { resolveWebsiteReviewDeepLink: vi.fn(async () => linked) };
+  const facade = createUnifiedInbox({ legacy, website: () => website as unknown as ReturnType<Parameters<typeof createUnifiedInbox>[0]["website"]>, meta: vi.fn(), websiteEnabled: true, metaEnabled: false });
+  const result = await facade.resolveWebsiteReviewDeepLink({ tokenHash: "synthetic-token", now: new Date() });
+  expect(result?.item.source).toBe("redis_website");
+  expect(legacy).not.toHaveBeenCalled();
+});

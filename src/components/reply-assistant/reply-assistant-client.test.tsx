@@ -662,6 +662,17 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getAllByLabelText("Website reply")).toHaveLength(1);
   });
 
+  it("loads a metadata-only shared Meta conversation using its supported lazy-history cursor", async () => {
+    const pending: ReplyQueueItem = { ...item, source: "shared_meta", status: "history_pending", timeline: [], hasEarlierTimeline: true, latestAttemptId: null, draftText: null, gateResult: null };
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ events: [{ eventId: "meta:history", role: "customer", text: "Loaded Meta history", receivedAt: item.lastActivityAt }], cursor: null, hasEarlier: false })));
+    render(<ReplyAssistantClient initialItems={[pending]} />);
+    expect(fetch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Load earlier conversation history" }));
+    expect(await screen.findByText("Loaded Meta history")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(`/api/reply-assistant/inbox/${pending.inboxId}/timeline?cursor=meta%3A${pending.inboxId}`, expect.objectContaining({ cache: "no-store" }));
+    expect(screen.queryByRole("button", { name: "Load earlier conversation history" })).not.toBeInTheDocument();
+  });
+
   it("prepends authenticated earlier timeline pages without duplicating boundary events", async () => {
     const paged = {
       ...item,

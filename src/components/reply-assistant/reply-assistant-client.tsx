@@ -549,7 +549,7 @@ export function ReplyAssistantClient({
             ) : null}
             <div className={styles.messageBody}>
               <div className={styles.messageContext}>
-                {timeline.length > 0 ? (
+                {timeline.length > 0 || (item.source === "shared_meta" && (earlierTimeline?.hasEarlier ?? item.hasEarlierTimeline)) ? (
                   <section className={styles.timeline} aria-label="Conversation timeline">
                     <div className={styles.timelineHeader}>
                       <strong>Conversation timeline</strong>
