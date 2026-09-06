@@ -285,7 +285,8 @@ function completeResponseUsageCost(body: unknown): number | null {
   if (!body || typeof body !== "object") return null;
   const record = body as Record<string, unknown>;
   if (
-    record.model !== "gpt-5.6-luna" ||
+    typeof record.model !== "string" ||
+    !/^gpt-5\.6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(record.model) ||
     !record.usage ||
     typeof record.usage !== "object"
   )
@@ -297,7 +298,6 @@ function completeResponseUsageCost(body: unknown): number | null {
   const tokens = [
     usage.input_tokens,
     inputDetails.cached_tokens,
-    inputDetails.cache_write_tokens,
     usage.output_tokens,
   ];
   if (
@@ -307,8 +307,22 @@ function completeResponseUsageCost(body: unknown): number | null {
     )
   )
     return null;
-  const [inputTokens, cachedInputTokens, cacheWriteTokens, outputTokens] =
-    tokens as number[];
+  const [inputTokens, cachedInputTokens, outputTokens] = tokens as number[];
+  if (cachedInputTokens > inputTokens) return null;
+  const reportedWrites = inputDetails.cache_write_tokens;
+  if (
+    reportedWrites !== undefined &&
+    (typeof reportedWrites !== "number" ||
+      !Number.isSafeInteger(reportedWrites) ||
+      reportedWrites < 0)
+  )
+    return null;
+  // Ordinary Responses usage omits optional cache-write counts. Price all noncached
+  // input at the higher approved write rate in that case; do not invent zero writes.
+  const cacheWriteTokens =
+    reportedWrites === undefined
+      ? inputTokens - cachedInputTokens
+      : (reportedWrites as number);
   if (cachedInputTokens + cacheWriteTokens > inputTokens) return null;
   return estimateCostMicrousd({
     model: "gpt-5.6-luna",

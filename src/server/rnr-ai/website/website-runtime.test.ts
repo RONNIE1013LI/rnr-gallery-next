@@ -187,37 +187,57 @@ describe("website per-attempt usage reconciliation", () => {
       ),
     ).toBe(false);
   });
-  it("retains allowance when cache-write usage is missing", async () => {
-    const f = fixture(),
-      turn = await f.repository.ingestConversationEvent(f.event());
-    if (turn.status !== "turn_pending") throw Error();
-    const lease = (await f.repository.claimTurn(turn.turnId))!;
-    const transport = vi.fn(async () =>
-      Response.json({
-        model: "gpt-5.6-luna",
-        usage: {
-          input_tokens: 100,
-          input_tokens_details: { cached_tokens: 20 },
-          output_tokens: 10,
-        },
-      }),
-    );
-    const budgeted = createBudgetedWebsiteFetch({
-      repository: f.repository,
-      lease,
-      limits: { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
-      enabled: () => true,
-      fetchImpl: transport,
-    });
-    const init = {
-      body: JSON.stringify({ model: "gpt-5.6-luna", max_output_tokens: 1200 }),
-    };
-    await budgeted("https://api.openai.com/v1/responses", init);
-    await expect(
-      budgeted("https://api.openai.com/v1/responses", init),
-    ).rejects.toThrow();
-    expect(transport).toHaveBeenCalledTimes(1);
-  });
+  it.each(["gpt-5.6-luna", "gpt-5.6-luna-2026-08-01"])(
+    "reconciles ordinary fixture usage conservatively for %s",
+    async (model) => {
+      const f = fixture(),
+        turn = await f.repository.ingestConversationEvent(f.event());
+      if (turn.status !== "turn_pending") throw Error();
+      const lease = (await f.repository.claimTurn(turn.turnId))!;
+      const transport = vi.fn(async () =>
+        Response.json({
+          model,
+          usage: {
+            input_tokens: 100,
+            input_tokens_details: { cached_tokens: 10 },
+            output_tokens: 20,
+          },
+        }),
+      );
+      const budgeted = createBudgetedWebsiteFetch({
+        repository: f.repository,
+        lease,
+        limits: { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+        enabled: () => true,
+        fetchImpl: transport,
+      });
+      const init = {
+        body: JSON.stringify({
+          model: "gpt-5.6-luna",
+          max_output_tokens: 1200,
+        }),
+      };
+      await budgeted("https://api.openai.com/v1/responses", init);
+      await budgeted("https://api.openai.com/v1/responses", init);
+      expect(transport).toHaveBeenCalledTimes(2);
+      expect(
+        await f.repository.reserveProviderBudget(
+          lease,
+          { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+          2906,
+          "remaining",
+        ),
+      ).toBe(true);
+      expect(
+        await f.repository.reserveProviderBudget(
+          lease,
+          { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+          1,
+          "overflow",
+        ),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("website reconciliation outage", () => {
@@ -258,4 +278,56 @@ describe("website reconciliation outage", () => {
     ).rejects.toThrow();
     expect(transport).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("website incomplete usage keeps reservation", () => {
+  it.each([
+    {
+      model: "gpt-5.6-luna",
+      usage: { input_tokens: 100, input_tokens_details: { cached_tokens: 10 } },
+    },
+    {
+      model: "gpt-5.6-luna",
+      usage: {
+        input_tokens: 100,
+        input_tokens_details: { cached_tokens: 10, cache_write_tokens: -1 },
+        output_tokens: 20,
+      },
+    },
+    {
+      model: "different-model",
+      usage: {
+        input_tokens: 100,
+        input_tokens_details: { cached_tokens: 10 },
+        output_tokens: 20,
+      },
+    },
+  ])(
+    "keeps the allowance for missing/invalid usage or unknown model",
+    async (payload) => {
+      const f = fixture(),
+        turn = await f.repository.ingestConversationEvent(f.event());
+      if (turn.status !== "turn_pending") throw Error();
+      const lease = (await f.repository.claimTurn(turn.turnId))!;
+      const transport = vi.fn(async () => Response.json(payload));
+      const budgeted = createBudgetedWebsiteFetch({
+        repository: f.repository,
+        lease,
+        limits: { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+        enabled: () => true,
+        fetchImpl: transport,
+      });
+      const init = {
+        body: JSON.stringify({
+          model: "gpt-5.6-luna",
+          max_output_tokens: 1200,
+        }),
+      };
+      await budgeted("https://api.openai.com/v1/responses", init);
+      await expect(
+        budgeted("https://api.openai.com/v1/responses", init),
+      ).rejects.toThrow();
+      expect(transport).toHaveBeenCalledTimes(1);
+    },
+  );
 });
