@@ -32,7 +32,7 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect(first.input[0].role).toBe('developer');
         expect(first.reasoning.effort).toBe('medium');
         expect(first.model).toBe('gpt-5.6-luna');
-        const data = JSON.parse(first.input[1].content[0].text);
+        const data = JSON.parse(first.input[0].content[0].text.split('Business reference data:\n')[1]);
         expect(data.evidence.find((s: {
             id: string;
         }) => s.id === 'au-photo-canvas-prices').facts.pricesMinor.A2).toBe(10999);

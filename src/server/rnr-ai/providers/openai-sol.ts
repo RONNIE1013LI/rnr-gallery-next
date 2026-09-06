@@ -55,6 +55,7 @@ export type SolStructuredResult = z.infer<typeof solStructuredResultSchema>;
 export type SolProviderRequest = Readonly<{
   instructions: string;
   conversationText: string;
+  reusableReference?: string;
   images: readonly VerifiedImageInput[];
   deadlineAt?: number;
   retryMinimumMs?: number;
@@ -86,24 +87,22 @@ function outputText(body: Record<string, unknown>) {
   }).join("\n");
 }
 
-function nonNegativeInteger(value: unknown) {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+function tokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
-
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
 function parseUsage(body: Record<string, unknown>) {
-  const raw = body.usage;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
-  }
-  const usage = raw as Record<string, unknown>;
-  const detail = usage.input_tokens_details;
-  const cached = detail && typeof detail === "object" && !Array.isArray(detail)
-    ? (detail as Record<string, unknown>).cached_tokens
-    : 0;
+  const usage = record(body.usage);
+  const input = record(usage.input_tokens_details);
+  const output = record(usage.output_tokens_details);
   return {
-    inputTokens: nonNegativeInteger(usage.input_tokens),
-    cachedInputTokens: nonNegativeInteger(cached),
-    outputTokens: nonNegativeInteger(usage.output_tokens),
+    inputTokens: tokenCount(usage.input_tokens),
+    cachedInputTokens: tokenCount(input.cached_tokens),
+    cacheWriteTokens: tokenCount(input.cache_write_tokens),
+    outputTokens: tokenCount(usage.output_tokens),
+    reasoningTokens: tokenCount(output.reasoning_tokens),
   };
 }
 
@@ -207,7 +206,12 @@ export class OpenAiSolProvider {
       store: false,
       reasoning: { effort: "medium" },
       max_output_tokens: outputTokens,
-      input: [{ role: "developer", content: request.instructions.trim() }, { role: "user", content }],
+      ...(request.reusableReference ? { prompt_cache_options: { mode: "explicit" } } : {}),
+      input: [{ role: "developer", content: request.reusableReference ? [{
+        type: "input_text",
+        text: request.instructions.trim() + "\nBusiness reference data:\n" + request.reusableReference,
+        prompt_cache_breakpoint: { mode: "explicit" },
+      }] : request.instructions.trim() }, { role: "user", content }],
       text: {
         verbosity: "low",
         format: {
@@ -251,6 +255,7 @@ export class OpenAiSolProvider {
         const decoded: unknown = JSON.parse(raw);
         if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) throw new SolProviderError("invalid_output", "structured_output_invalid");
         const responseBody = decoded as Record<string, unknown>;
+        diagnostic.usage = parseUsage(responseBody);
         const text = outputText(responseBody);
         diagnostic.responseText = text.length > 0;
         if (responseBody.status === "incomplete") {
@@ -266,7 +271,7 @@ export class OpenAiSolProvider {
         const decision = schema.parse(parsed);
         diagnostic.structuredValid = true;
         emit("finish");
-        return Object.freeze({ decision, model: typeof responseBody.model === "string" ? responseBody.model : this.model, usage: Object.freeze(parseUsage(responseBody)) });
+        return Object.freeze({ decision, model: typeof responseBody.model === "string" ? responseBody.model : this.model, usage: Object.freeze({ inputTokens: diagnostic.usage.inputTokens ?? 0, cachedInputTokens: diagnostic.usage.cachedInputTokens ?? 0, outputTokens: diagnostic.usage.outputTokens ?? 0 }) });
       } catch (error) {
         lastError = error instanceof SyntaxError ? new SolProviderError("invalid_output", "response_parse_failure")
           : error instanceof z.ZodError ? new SolProviderError("invalid_output", "structured_output_invalid") : transportError(error);

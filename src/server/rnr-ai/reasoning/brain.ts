@@ -66,6 +66,8 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
             return stop('material_context_exceeds_reasoning_budget');
         stage = 'evidence';
         const evidence = reasoningEvidence(request);
+        // Static business facts only: customer context and live tool results stay outside the cache breakpoint.
+        const reusableReference = JSON.stringify({ evidence, voice: request.businessBrain.voice });
         const deadlineAt = Math.min(Date.now() + BRAIN_BUDGET_MS, execution.deadlineAt ?? Date.now() + DEFAULT_EXECUTION_BUDGET_MS);
         const stageDeadline = (currentStage: DiagnosticStage) => {
             const stageBudget = currentStage === 'verification' || currentStage === 'repair_verification'
@@ -75,7 +77,7 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
         };
         const modelCall = async <T>(instructions: string, data: unknown, schema: z.ZodType<T>, max: number) => {
             const result = await provider.structured({
-                instructions, conversationText: JSON.stringify(data), images: request.attachments,
+                instructions, reusableReference, conversationText: JSON.stringify(data), images: request.attachments,
                 deadlineAt: stageDeadline(stage),
                 retryMinimumMs: stage === 'verification' || stage === 'repair_verification' ? STAGE_RETRY_MINIMUM_MS.verification : STAGE_RETRY_MINIMUM_MS.generation,
                 onDiagnostic: entry => trace(entry.reason, null, entry),
@@ -87,7 +89,7 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
             usage.outputTokens += result.usage.outputTokens;
             return result.decision;
         };
-        const data = () => ({ ...context, evidence, voice: request.businessBrain.voice });
+        const data = () => ({ ...context, toolEvidence: evidence.filter(s => s.kind === 'tool') });
         stage = 'generation';
         let plan = await modelCall(generator + '\n' + toolInstructions, data(), planSchema, 1200);
         candidateCreated = true;

@@ -8,7 +8,7 @@ const expectedCodes = [
   'invalid_active_context_source', 'unresolved_issue_requires_clarification_or_review',
   'order_answer_without_verified_state', 'not_claim_free_clarification',
   'claim_span_not_in_candidate', 'unsupported_source', 'missing_or_wrong_market',
-  'unapproved_policy_source', 'authenticated_live_evidence_required',
+  'unapproved_policy_source', 'invalid_pricing_rule', 'authenticated_live_evidence_required',
   'incomplete_money_binding', 'tool_product_binding_mismatch', 'tool_size_binding_mismatch',
   'tool_returned_size_mismatch', 'tool_currency_mismatch', 'product_source_binding_mismatch',
   'actual_text_amount_mismatch', 'actual_text_currency_mismatch',
@@ -33,9 +33,9 @@ describe('contract diagnostics privacy boundary', () => {
     try { expect(() => logReasoningDiagnostic(safe)).not.toThrow(); } finally { spy.mockRestore(); }
   });
 
-  it('uses the exact 27 deterministic failure codes from the contract', () => {
+  it('uses the exact 28 deterministic failure codes from the contract', () => {
     expect(contractFailureCodes).toEqual(expectedCodes);
-    expect(contractFailureCodes).toHaveLength(27);
+    expect(contractFailureCodes).toHaveLength(28);
   });
 
   it.each(expectedCodes)('logs %s only as an allowlisted enum', (failure) => {

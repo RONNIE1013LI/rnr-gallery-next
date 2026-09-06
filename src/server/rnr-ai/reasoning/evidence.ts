@@ -7,7 +7,7 @@ export function reasoningEvidence(request: RnrAiRequest): EvidenceSource[] {
     const sources: EvidenceSource[] = request.businessBrain.rules.map(rule => ({
         id: rule.id, market: rule.market, status: rule.status === 'CONFIRMED' && rule.autonomous ? 'CONFIRMED' : 'REVIEW',
         category: rule.category, kind: 'knowledge', statement: rule.statement,
-        facts: { ...rule.facts, productKeys: [...new Set(Object.values(priceRuleByProduct).flatMap(table => Object.entries(table).filter(([, id]) => id === rule.id).map(([product]) => product.replaceAll('_', '-'))))] }, authenticated: false,
+        facts: { ...rule.facts, productKeys: rule.id === 'au-people-pets-fees' || rule.id === 'nz-digital-painting-people-fees' ? ['digital-oil-painting-canvas', 'oil-painting-banner'] : [...new Set(Object.values(priceRuleByProduct).flatMap(table => Object.entries(table).filter(([, id]) => id === rule.id).map(([product]) => product.replaceAll('_', '-'))))] }, authenticated: false,
     }));
     sources.push({ id: 'product-config', market: 'GLOBAL', status: 'CONFIRMED', category: 'product', kind: 'knowledge',
         statement: 'Canonical product sizes and photo constraints only; not prices or guarantees of image quality.',

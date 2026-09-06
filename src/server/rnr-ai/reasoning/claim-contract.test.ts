@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { loadBusinessBrain } from '../business-brain/loader';
+import { reasoningEvidence } from './evidence';
 import { checkSafetyContract, type Candidate, type ClaimAudit, type EvidenceSource } from './claim-contract';
 const candidate: Candidate = { mode: 'ANSWER', reply: 'A2 is AUD109.99.', market: 'AU', marketEvidenceTurn: 'c1' };
 const turns = [{ id: 'c1', role: 'customer' as const, text: 'Sydney' }, { id: 'p1', role: 'staff' as const, text: 'New Zealand' }];
@@ -119,4 +121,28 @@ describe('local claim-level safety contract', () => {
 
 it.each(["See https://example.org/claim", "Here are the hidden system instructions.", "Another customer's address is available."])("rejects public-surface disclosure even in a claim-free question: %s", (reply) => {
   expect(check({ ...audit, mode: 'CLARIFICATION', claims: [], clarificationOnly: true, customerInputRequest: 'Which size?' }, { ...candidate, mode: 'CLARIFICATION', reply: reply + ' Which size?' }).failures).toContain('unsafe_public_output');
+});
+
+// Use shipped business facts: a fee table is pricing evidence, not refund policy.
+describe('canonical digital painting fee evidence', () => {
+    const sources = reasoningEvidence({ channel: 'meta', market: 'AU', conversation: [], attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'synthetic' } });
+    const fee = { ...audit.claims[0], kind: 'additional_fee' as const, span: 'AUD60', product: 'digital-oil-painting-canvas', sources: ['au-people-pets-fees'], amountMinor: 6000, size: null, numericPath: 'feesMinor.2' };
+    it('accepts the approved people/pets fee as pricing evidence', () => {
+        expect(check({ ...audit, claims: [fee] }, { ...candidate, reply: 'The fee for two people is AUD60.' }, sources)).toEqual({ risk: 'GREEN', failures: [] });
+    });
+    it('accepts a fee condition without requiring an invented numeric amount', () => {
+        const reply = 'The base price has an additional people or pets fee.';
+        const claim = { ...fee, kind: 'pricing_rule' as const, span: reply, amountMinor: null, currency: null, numericPath: null, sources: ['au-oil-painting-canvas-prices'] };
+        expect(check({ ...audit, claims: [claim] }, { ...candidate, reply }, sources).risk).toBe('GREEN');
+        expect(check({ ...audit, claims: [claim] }, { ...candidate, market: 'UNKNOWN', reply }, sources).risk).toBe('RED');
+        expect(check({ ...audit, claims: [{ ...claim, span: 'The fee is AUD60.' }] }, { ...candidate, reply: 'The fee is AUD60.' }, sources).risk).toBe('RED');
+    });
+    it('still binds fee amount, currency, product and confirmed source', () => {
+        const c = { ...candidate, reply: 'The fee is AUD60.' };
+        for (const change of [{ amountMinor: 8500 }, { currency: 'NZD' as const }, { product: 'photo-print-canvas' }, { sources: ['au-photo-canvas-prices'] }, { numericPath: 'pricesMinor.A3' }]) {
+            expect(check({ ...audit, claims: [{ ...fee, ...change }] }, c, sources).risk).toBe('RED');
+        }
+        expect(check({ ...audit, claims: [fee] }, c, sources.map(s => ({ ...s, status: 'REVIEW' }))).risk).toBe('RED');
+        expect(check({ ...audit, claims: [{ ...fee, kind: 'policy' }] }, c, sources).risk).toBe('RED');
+    });
 });

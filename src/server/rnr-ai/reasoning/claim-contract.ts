@@ -2,7 +2,7 @@ import { validateReplyPublicSurface } from "@/server/customer-service/website/ou
 import { z } from 'zod';
 export const candidateSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), reply: z.string().min(1), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable() }).strict();
 export type Candidate = z.infer<typeof candidateSchema>;
-export const auditSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable(), openIssue: z.enum(['NONE', 'POLICY_ENTITLEMENT', 'DISPUTE', 'EXCEPTION', 'ORDER_STATE']), relevantCustomerTurnIds: z.array(z.string()), claims: z.array(z.object({ span: z.string(), product: z.string().nullable(), orderReference: z.string().nullable(), destination: z.string().nullable(), kind: z.enum(['product', 'capability', 'price', 'tax', 'shipping_cost', 'shipping_rule', 'delivery_promise', 'process', 'policy', 'additional_fee', 'order_status', 'payment_status']), sources: z.array(z.string()), marketDependent: z.boolean(), amountMinor: z.number().nullable(), currency: z.enum(['NZD', 'AUD']).nullable(), size: z.string().nullable(), numericPath: z.string().nullable(), liveRequired: z.boolean() }).strict()), safe: z.boolean(), helpful: z.boolean(), clarificationOnly: z.boolean(), customerInputRequest: z.string().nullable(), internalErrorLanguage: z.boolean(), unnecessaryQuestion: z.boolean(), issues: z.array(z.string()) }).strict();
+export const auditSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable(), openIssue: z.enum(['NONE', 'POLICY_ENTITLEMENT', 'DISPUTE', 'EXCEPTION', 'ORDER_STATE']), relevantCustomerTurnIds: z.array(z.string()), claims: z.array(z.object({ span: z.string(), product: z.string().nullable(), orderReference: z.string().nullable(), destination: z.string().nullable(), kind: z.enum(['product', 'capability', 'price', 'pricing_rule', 'tax', 'shipping_cost', 'shipping_rule', 'delivery_promise', 'process', 'policy', 'additional_fee', 'order_status', 'payment_status']), sources: z.array(z.string()), marketDependent: z.boolean(), amountMinor: z.number().nullable(), currency: z.enum(['NZD', 'AUD']).nullable(), size: z.string().nullable(), numericPath: z.string().nullable(), liveRequired: z.boolean() }).strict()), safe: z.boolean(), helpful: z.boolean(), clarificationOnly: z.boolean(), customerInputRequest: z.string().nullable(), internalErrorLanguage: z.boolean(), unnecessaryQuestion: z.boolean(), issues: z.array(z.string()) }).strict();
 export type ClaimAudit = z.infer<typeof auditSchema>;
 export type EvidenceSource = {
     id: string;
@@ -25,7 +25,7 @@ export const contractFailureCodes = [
     'invalid_active_context_source', 'unresolved_issue_requires_clarification_or_review',
     'order_answer_without_verified_state', 'not_claim_free_clarification',
     'claim_span_not_in_candidate', 'unsupported_source', 'missing_or_wrong_market',
-    'unapproved_policy_source', 'authenticated_live_evidence_required',
+    'unapproved_policy_source', 'invalid_pricing_rule', 'authenticated_live_evidence_required',
     'incomplete_money_binding', 'tool_product_binding_mismatch', 'tool_size_binding_mismatch',
     'tool_returned_size_mismatch', 'tool_currency_mismatch', 'product_source_binding_mismatch',
     'actual_text_amount_mismatch', 'actual_text_currency_mismatch',
@@ -36,6 +36,11 @@ export type ContractFailureCode = z.infer<typeof contractFailureCodeSchema>;
 function scopeOf(source: EvidenceSource): Record<string, unknown> {
     const scope=source.facts.scope;
     return scope&&typeof scope==='object'&&!Array.isArray(scope)?scope as Record<string,unknown>:{};
+}
+function feeSourceSupports(source: EvidenceSource, path: string | null) {
+    if (['policy', 'revision', 'fee'].includes(source.category)) return true;
+    return source.kind === 'knowledge' && source.category === 'pricing' && !!path
+        && ['feesMinor', 'extraPhotoMinor', 'backgroundRemovalMinor', 'sixPlusPerPersonMinor'].includes(path.replace(/^facts\./, '').split('.')[0]);
 }
 function liveSourceSupports(claim: ClaimAudit['claims'][number], source: EvidenceSource) {
     if(source.status!=='CONFIRMED'||source.kind!=='tool'||!source.authenticated)return false;
@@ -91,15 +96,26 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
             continue;
         }
         const verified = refs.filter((s): s is EvidenceSource => !!s);
-        const needsMarket = claim.marketDependent || ['price', 'tax', 'shipping_cost', 'delivery_promise', 'additional_fee'].includes(claim.kind);
+        const needsMarket = claim.marketDependent || ['price', 'pricing_rule', 'tax', 'shipping_cost', 'delivery_promise', 'additional_fee'].includes(claim.kind);
         if (needsMarket && (candidate.market === 'UNKNOWN' || verified.some(s => s.market !== 'GLOBAL' && s.market !== candidate.market)))
             failures.push('missing_or_wrong_market');
-        if (['policy', 'additional_fee'].includes(claim.kind) && !verified.some(s => ['policy', 'revision', 'fee'].includes(s.category)))
+        if ((claim.kind === 'policy' && !verified.some(s => ['policy', 'revision', 'fee'].includes(s.category)))
+            || (claim.kind === 'additional_fee' && !verified.some(s => feeSourceSupports(s, claim.numericPath))))
             failures.push('unapproved_policy_source');
         if (['order_status', 'payment_status', 'shipping_cost', 'delivery_promise'].includes(claim.kind) || claim.liveRequired) {
             if (!verified.some(s => liveSourceSupports(claim,s)))
                 failures.push('authenticated_live_evidence_required');
         }
+        if (claim.kind === 'pricing_rule') {
+            if (claim.amountMinor !== null || claim.numericPath !== null || claim.currency !== null
+                || /(?:[$]\s*\d|(?:NZD|AUD)\s*\d|\d[\d,.]*\s*(?:NZD|AUD|dollars?))/i.test(claim.span)
+                || !verified.some(s => s.kind === 'knowledge' && s.category === 'pricing'))
+                failures.push('invalid_pricing_rule');
+        }
+        const productSources = verified.filter(s => Array.isArray(s.facts.productKeys) && (s.facts.productKeys as unknown[]).length > 0);
+        if (['price', 'pricing_rule', 'additional_fee', 'shipping_cost'].includes(claim.kind) && productSources.length
+            && (!claim.product || productSources.some(s => !(s.facts.productKeys as string[]).includes(claim.product!.replaceAll('_', '-')))))
+            failures.push('product_source_binding_mismatch');
         if (claim.kind === 'price' || claim.kind === 'shipping_cost' || claim.kind === 'additional_fee') {
             if (claim.amountMinor === null || !claim.numericPath || claim.currency !== (candidate.market === 'AU' ? 'AUD' : 'NZD')) {
                 failures.push('incomplete_money_binding');
@@ -113,9 +129,6 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
                 if(source.facts.size&&normalize(source.facts.size)!==normalize(claim.size))failures.push('tool_returned_size_mismatch');
                 if(source.facts.currency&&source.facts.currency!==claim.currency)failures.push('tool_currency_mismatch');
             }
-            const productSources = verified.filter(s => Array.isArray(s.facts.productKeys) && (s.facts.productKeys as unknown[]).length > 0);
-            if (productSources.length && (!claim.product || productSources.some(s => !(s.facts.productKeys as string[]).includes(claim.product!.replaceAll('_', '-')))))
-                failures.push('product_source_binding_mismatch');
             const moneyValues = [...claim.span.matchAll(/(?:NZ\$|A\$|\$|NZD|AUD)\s*([0-9]+(?:[.,][0-9]+)*)|([0-9]+(?:[.,][0-9]+)*)\s*(?:NZD|AUD)/gi)].map(m => Math.round(Number((m[1] ?? m[2]).replaceAll(',', '')) * 100));
             if (!moneyValues.length && /^\d+(?:\.\d{1,2})?$/.test(claim.span))
                 moneyValues.push(Math.round(Number(claim.span) * 100));
@@ -125,7 +138,7 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
                 failures.push('actual_text_currency_mismatch');
             const numericPath = claim.numericPath.replace(/^facts\./, '');
             if(!['pricesMinor','priceMinor','amountMinor','baseMinorBeforeGst','priceMinorIncludingGst','feesMinor','extraPhotoMinor','backgroundRemovalMinor','sixPlusPerPersonMinor'].includes(numericPath.split('.')[0]))failures.push('invalid_monetary_fact_path');
-            const moneySources = verified.filter(s => claim.kind === 'shipping_cost' ? liveSourceSupports(claim,s) : claim.kind === 'price' ? (s.kind === 'knowledge' && s.category === 'pricing') || (s.kind === 'tool' && s.category === 'canonical_product_price') : ['policy','revision','fee'].includes(s.category));
+            const moneySources = verified.filter(s => claim.kind === 'shipping_cost' ? liveSourceSupports(claim,s) : claim.kind === 'price' ? (s.kind === 'knowledge' && s.category === 'pricing') || (s.kind === 'tool' && s.category === 'canonical_product_price') : feeSourceSupports(s, claim.numericPath));
             if (!moneySources.some(s => numericPath.split('.').reduce<unknown>((v, k) => v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined, s.facts) === claim.amountMinor))
                 failures.push('amount_not_at_cited_path');
             if (claim.size && numericPath.split('.')[0] === 'pricesMinor' && numericPath.split('.').at(-1)?.toLowerCase() !== claim.size.toLowerCase())

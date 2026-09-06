@@ -49,3 +49,31 @@ describe('safe provider diagnostics', () => {
     await expect(provider.generate(request)).rejects.toMatchObject({ reason: 'provider_not_called' });
   });
 });
+
+it('retains token accounting even when a paid response is incomplete', async () => {
+  const observed: unknown[] = [];
+  const provider = new OpenAiSolProvider({ apiKey: 'secret', fetchImpl: async () => Response.json({ status: 'incomplete', usage: { input_tokens: 2000, input_tokens_details: { cached_tokens: 1000, cache_write_tokens: 500 }, output_tokens: 1200, output_tokens_details: { reasoning_tokens: 900 } } }) });
+  await expect(provider.generate({ ...request, onDiagnostic: e => observed.push(e) })).rejects.toMatchObject({ reason: 'response_incomplete' });
+  expect(observed.at(-1)).toMatchObject({ usage: { inputTokens: 2000, cachedInputTokens: 1000, cacheWriteTokens: 500, outputTokens: 1200, reasoningTokens: 900 } });
+});
+it('reports absent accounting as unavailable, never zero spend', async () => {
+  const observed: unknown[] = [];
+  const provider = new OpenAiSolProvider({ apiKey: 'secret', fetchImpl: async () => Response.json({ status: 'incomplete' }) });
+  await expect(provider.generate({ ...request, onDiagnostic: e => observed.push(e) })).rejects.toThrow();
+  expect(observed.at(-1)).toMatchObject({ usage: { inputTokens: null, cachedInputTokens: null, cacheWriteTokens: null, outputTokens: null, reasoningTokens: null } });
+});
+it('caches only reusable instructions and reference facts, keeping changing customer input after the breakpoint', async () => {
+  const bodies: Record<string, unknown>[] = [];
+  const provider = new OpenAiSolProvider({ apiKey: 'secret', fetchImpl: async (_url, init) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return Response.json({ status: 'incomplete' });
+  } });
+  for (const conversationText of ['first customer', 'second customer']) await expect(provider.generate({ ...request, conversationText, reusableReference: '{"evidence":[]}' })).rejects.toThrow();
+  const inputs = bodies.map(b => b.input as { role: string; content: unknown }[]);
+  expect(bodies[0]).toMatchObject({ store: false, prompt_cache_options: { mode: 'explicit' } });
+  expect(inputs[0][0]).toEqual(inputs[1][0]);
+  expect(inputs[0][0].content).toEqual([{ type: 'input_text', text: 'safe\nBusiness reference data:\n{"evidence":[]}', prompt_cache_breakpoint: { mode: 'explicit' } }]);
+  expect(JSON.stringify(inputs[0][0])).not.toContain('customer');
+  expect(JSON.stringify(inputs[0][1])).not.toContain('breakpoint');
+  expect(inputs[0][1]).not.toEqual(inputs[1][1]);
+});

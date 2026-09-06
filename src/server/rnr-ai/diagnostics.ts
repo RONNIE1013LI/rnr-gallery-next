@@ -23,6 +23,13 @@ const providerDiagnosticSchema = z.object({
   reason: diagnosticReasonSchema,
   timeoutSource: z.enum(['none', 'provider', 'orchestration']),
   errorClass: z.enum(['none', 'auth', 'quota', 'rate_limit', 'http', 'connection', 'timeout', 'model', 'parse', 'schema', 'incomplete', 'configuration']),
+  usage: z.object({
+    inputTokens: z.number().int().nonnegative().nullable(),
+    cachedInputTokens: z.number().int().nonnegative().nullable(),
+    cacheWriteTokens: z.number().int().nonnegative().nullable(),
+    outputTokens: z.number().int().nonnegative().nullable(),
+    reasoningTokens: z.number().int().nonnegative().nullable(),
+  }).optional(),
   incompleteReason: z.enum(['none', 'max_output_tokens', 'content_filter', 'other']),
 });
 export type ProviderDiagnostic = z.infer<typeof providerDiagnosticSchema>;
@@ -39,7 +46,7 @@ const logSchema = z.object({
   risk: z.enum(['GREEN', 'YELLOW', 'RED']).nullable(),
   provider: providerDiagnosticSchema.optional(),
   contractPhase: z.enum(['initial_contract', 'repair_contract']).optional(),
-  contractFailures: z.array(contractFailureCodeSchema).max(27).optional(),
+  contractFailures: z.array(contractFailureCodeSchema).max(28).optional(),
 });
 export type ReasoningDiagnostic = z.infer<typeof logSchema>;
 // Projection drops unknown fields; every emitted string is a fixed enum or a hash.
