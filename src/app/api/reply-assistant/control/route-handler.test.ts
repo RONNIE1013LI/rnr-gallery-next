@@ -91,3 +91,31 @@ describe("AI control API", () => {
     expect(response.status).toBe(409);
   });
 });
+
+describe("independent channel controls", () => {
+  it("changes website only and never enqueues Meta backlog", async () => {
+    const current = handler();
+    const enqueue = vi.spyOn(current.store, "enqueueBacklog");
+    const response = await current.api.POST(mutation({ channel: "website", revision: 0, mode: "ON", periods: [], override: null }));
+    expect(response.status).toBe(200);
+    expect((await current.store.readControl("website")).config.mode).toBe("ON");
+    expect((await current.store.readControl("meta")).config.mode).toBe("OFF");
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+  it("changing Meta before website is read does not turn website on", async () => {
+    const current = handler();
+    expect((await current.api.POST(mutation({ channel: "meta", revision: 0, mode: "ON", periods: [], override: null }))).status).toBe(200);
+    expect((await current.store.readControl("website")).config.mode).toBe("OFF");
+    expect((await current.store.readControl("meta")).config.mode).toBe("ON");
+  });
+});
+
+it("reads the requested channel and rejects unknown channels", async () => {
+  const current = handler();
+  await current.api.POST(mutation({ channel: "website", revision: 0, mode: "ON", periods: [], override: null }));
+  const website = await current.api.GET(new Request(origin + "/api/reply-assistant/control?channel=website"));
+  expect(await website.json()).toMatchObject({ config: { mode: "ON" } });
+  expect(await (await current.api.GET()).json()).toMatchObject({ config: { mode: "OFF" } });
+  expect((await current.api.GET(new Request(origin + "/api/reply-assistant/control?channel=invalid"))).status).toBe(422);
+  expect((await current.api.POST(mutation({ channel: "all", revision: 0, mode: "ON", periods: [], override: null }))).status).toBe(422);
+});

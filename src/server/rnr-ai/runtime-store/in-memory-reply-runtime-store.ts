@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { AiControlConfig } from "../control/types";
 import type {
   AiControlSnapshot,
+  AiControlChannel,
   BacklogLease,
   BacklogResult,
   DeliveryLease,
@@ -54,6 +55,7 @@ function requireLeaseMs(value: number) {
 
 export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
   private control: AiControlConfig = initialControl;
+  private websiteControl: AiControlConfig | null = null;
   private readonly events = new Map<string, LeaseRecord<EventResult>>();
   private readonly deliveries = new Map<string, LeaseRecord<DeliveryResult>>();
   private readonly senderEchoes = new Map<string, number>();
@@ -67,13 +69,18 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
     this.now = now;
   }
 
-  async readControl(): Promise<AiControlSnapshot> {
-    return { config: this.control, readAt: new Date(this.now()).toISOString() };
+  async readControl(channel: AiControlChannel = "meta"): Promise<AiControlSnapshot> {
+    this.websiteControl ??= this.control;
+    return { config: channel === "website" ? this.websiteControl : this.control, readAt: new Date(this.now()).toISOString() };
   }
 
-  async compareAndSetControl(expectedRevision: number, next: AiControlConfig) {
-    if (this.control.revision !== expectedRevision || next.revision !== expectedRevision + 1) return false;
-    this.control = Object.freeze({ ...next, periods: Object.freeze([...next.periods]) });
+  async compareAndSetControl(expectedRevision: number, next: AiControlConfig, channel: AiControlChannel = "meta") {
+    this.websiteControl ??= this.control;
+    const current = channel === "website" ? this.websiteControl : this.control;
+    if (current.revision !== expectedRevision || next.revision !== expectedRevision + 1) return false;
+    const value = Object.freeze({ ...next, periods: Object.freeze([...next.periods]) });
+    if (channel === "website") this.websiteControl = value;
+    else this.control = value;
     return true;
   }
 

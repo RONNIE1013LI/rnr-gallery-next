@@ -174,7 +174,7 @@ describe("ReplyAssistantLiveDashboard", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<ReplyAssistantLiveDashboard {...props} />);
 
-    const control = screen.getByRole("region", { name: "AI control" });
+    const control = screen.getByRole("region", { name: "Meta AI control" });
     expect(control).toHaveTextContent("AI operating mode");
     expect(control).toHaveTextContent("AI will be ON during the scheduled periods below.");
     expect(control).toHaveTextContent("Monday");
@@ -190,10 +190,10 @@ describe("ReplyAssistantLiveDashboard", () => {
     vi.stubGlobal("fetch", vi.fn());
     render(<ReplyAssistantLiveDashboard {...props} initialMetrics={updatedMetrics} />);
 
-    const control = screen.getByRole("region", { name: "AI control" });
+    const control = screen.getByRole("region", { name: "Meta AI control" });
     const channelFilters = screen.getByLabelText("Metric channel");
-    const disclosure = screen.getByRole("button", { name: "Expand AI control settings" });
-    const settings = document.getElementById("ai-control-settings");
+    const disclosure = screen.getByRole("button", { name: "Expand Meta AI control settings" });
+    const settings = document.getElementById("ai-control-settings-meta");
 
     expect(control.compareDocumentPosition(channelFilters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
@@ -201,7 +201,7 @@ describe("ReplyAssistantLiveDashboard", () => {
 
     fireEvent.click(disclosure);
 
-    expect(screen.getByRole("button", { name: "Collapse AI control settings" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Collapse Meta AI control settings" })).toHaveAttribute("aria-expanded", "true");
     expect(settings).toHaveAttribute("data-mobile-expanded", "true");
   });
 
@@ -232,7 +232,7 @@ describe("ReplyAssistantLiveDashboard", () => {
       effective: { effectiveState: "OFF", source: "master_kill", nextTransitionAt: null },
     }} />);
 
-    const control = screen.getByRole("region", { name: "AI control" });
+    const control = screen.getByRole("region", { name: "Meta AI control" });
     expect(control).toHaveTextContent("AI is OFF");
     expect(control).toHaveTextContent("Master AI switch is disabled");
     expect(control).toHaveTextContent("Normal mode");
@@ -247,7 +247,7 @@ describe("ReplyAssistantLiveDashboard", () => {
       effective: { effectiveState: "OFF", source: "invalid", nextTransitionAt: null },
     }} />);
 
-    const status = screen.getByRole("region", { name: "Current AI status" });
+    const status = within(screen.getByRole("region", { name: "Meta AI control" })).getByRole("region", { name: "Current AI status" });
     expect(status).toHaveTextContent("AI is OFF because the control configuration is invalid");
     expect(status).toHaveTextContent("No scheduled transitions will run until the control configuration is corrected");
   });
@@ -273,7 +273,7 @@ describe("ReplyAssistantLiveDashboard", () => {
       effective: { effectiveState: "OFF", source: "invalid", nextTransitionAt: null },
     }} />);
 
-    expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("Runtime store unavailable — effective state is OFF");
+    expect(screen.getByRole("region", { name: "Meta AI control" })).toHaveTextContent("Runtime store unavailable — effective state is OFF");
   });
 
   it("requires confirmation before a temporary override POST and reports a revision conflict without retrying", async () => {
@@ -287,16 +287,16 @@ describe("ReplyAssistantLiveDashboard", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<ReplyAssistantLiveDashboard {...props} />);
 
-    fireEvent.change(screen.getByLabelText("Override date"), { target: { value: "2026-09-04" } });
-    fireEvent.change(screen.getByLabelText("Override time"), { target: { value: "12:00" } });
-    fireEvent.click(screen.getByRole("button", { name: "Turn AI ON temporarily" }));
+    fireEvent.change(within(screen.getByRole("region", { name: "Meta AI control" })).getByLabelText("Override date"), { target: { value: "2026-09-04" } });
+    fireEvent.change(within(screen.getByRole("region", { name: "Meta AI control" })).getByLabelText("Override time"), { target: { value: "12:00" } });
+    fireEvent.click(within(screen.getByRole("region", { name: "Meta AI control" })).getByRole("button", { name: "Turn AI ON temporarily" }));
     await act(async () => { await Promise.resolve(); });
 
-    expect(confirm).toHaveBeenCalledWith("Turn AI ON temporarily until 4 Sept 2026, 12:00 pm?");
+    expect(confirm).toHaveBeenCalledWith("Turn Meta AI ON temporarily until 4 Sept 2026, 12:00 pm?");
     expect(fetchMock).not.toHaveBeenCalled();
 
     confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Turn AI ON temporarily" }));
+    fireEvent.click(within(screen.getByRole("region", { name: "Meta AI control" })).getByRole("button", { name: "Turn AI ON temporarily" }));
     await act(async () => { await Promise.resolve(); });
 
     expect(screen.getByRole("alert")).toHaveTextContent("Control changed elsewhere. Refresh control before retrying.");
@@ -706,4 +706,21 @@ describe("ReplyAssistantLiveDashboard", () => {
     await advance(15_000);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
+
+it("saves Website independently and keeps Meta state unchanged", async () => {
+  const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+    expect(String(_url)).toBe("/api/reply-assistant/control?channel=website");
+    expect(JSON.parse(String(init?.body))).toMatchObject({ channel: "website", mode: "ON" });
+    return response({ config: { ...props.initialAiControl.config, mode: "ON", revision: 4 }, effective: { effectiveState: "ON", source: "mode", nextTransitionAt: null } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ReplyAssistantLiveDashboard {...props} initialWebsiteAiControl={props.initialAiControl} />);
+  const website = within(screen.getByRole("region", { name: "Website AI control" }));
+  const meta = screen.getByRole("region", { name: "Meta AI control" });
+  const metaBefore = meta.textContent;
+  await act(async () => { fireEvent.click(website.getByRole("button", { name: "ON" })); });
+  expect(website.getByRole("button", { name: "ON" })).toHaveAttribute("aria-pressed", "true");
+  expect(meta.textContent).toBe(metaBefore);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });

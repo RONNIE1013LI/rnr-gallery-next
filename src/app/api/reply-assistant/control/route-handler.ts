@@ -12,7 +12,10 @@ const periodSchema = z.object({
   end: time,
 }).strict().refine((value) => value.start !== value.end, "Schedule period cannot be empty");
 
+const channelSchema = z.enum(["meta", "website"]);
+
 const mutationSchema = z.object({
+  channel: channelSchema.default("meta"),
   revision: z.number().int().nonnegative(),
   mode: z.enum(["ON", "OFF", "SCHEDULE"]),
   periods: z.array(periodSchema).max(28),
@@ -37,10 +40,11 @@ export function createAiControlHandler(dependencies: Readonly<{
   now?: () => Date;
 }>) {
   return {
-    async GET() {
+    async GET(request?: Request) {
       try {
         await dependencies.requirePermission("use_reply_assistant");
-        const snapshot = await dependencies.store().readControl();
+        const channel = channelSchema.parse(request ? new URL(request.url).searchParams.get("channel") ?? "meta" : "meta");
+        const snapshot = await dependencies.store().readControl(channel);
         return noStoreJson({
           config: snapshot.config,
           effective: evaluateAiControl(snapshot, dependencies.now?.() ?? new Date(), dependencies.masterEnabled),
@@ -68,7 +72,7 @@ export function createAiControlHandler(dependencies: Readonly<{
         }
 
         const store = dependencies.store();
-        const before = await store.readControl();
+        const before = await store.readControl(input.channel);
         if (before.config.revision !== input.revision && equivalent(before.config, input)) {
           return noStoreJson({ config: before.config, effective: evaluateAiControl(before, now, dependencies.masterEnabled) });
         }
@@ -79,14 +83,14 @@ export function createAiControlHandler(dependencies: Readonly<{
           periods: Object.freeze(input.periods),
           override: input.override ? Object.freeze({ ...input.override, actorUserId: access.user.id }) : null,
         });
-        if (before.config.revision !== input.revision || !await store.compareAndSetControl(input.revision, next)) {
+        if (before.config.revision !== input.revision || !await store.compareAndSetControl(input.revision, next, input.channel)) {
           return noStoreJson({ error: { code: "CONTROL_REVISION_CONFLICT" } }, 409);
         }
 
         const after = { config: next, readAt: now.toISOString() };
         const beforeEffective = evaluateAiControl(before, now, dependencies.masterEnabled);
         const afterEffective = evaluateAiControl(after, now, dependencies.masterEnabled);
-        if (beforeEffective.effectiveState === "OFF" && afterEffective.effectiveState === "ON") {
+        if (input.channel === "meta" && beforeEffective.effectiveState === "OFF" && afterEffective.effectiveState === "ON") {
           await store.enqueueBacklog(next.revision, {
             from: new Date(now.getTime() - 24 * 60 * 60 * 1_000).toISOString(),
             to: now.toISOString(),

@@ -381,7 +381,7 @@ export function createWebsiteAiControlGate(input: {
     try {
       return (
         evaluateAiControl(
-          await input.store.readControl(),
+          await input.store.readControl("website"),
           input.now?.() ?? new Date(),
           config.masterEnabled,
         ).effectiveState === "ON"

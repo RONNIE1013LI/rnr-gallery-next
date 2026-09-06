@@ -173,6 +173,7 @@ export function ReplyAssistantLiveDashboard({
   canReview,
   selectedReviewSelector,
   initialAiControl = unavailableAiControl,
+  initialWebsiteAiControl = unavailableAiControl,
 }: Readonly<{
   initialCursor: string;
   initialItems: readonly ReplyQueueItem[];
@@ -183,6 +184,7 @@ export function ReplyAssistantLiveDashboard({
   canReview: boolean;
   selectedReviewSelector?: string | null;
   initialAiControl?: AiControlView;
+  initialWebsiteAiControl?: AiControlView;
 }>) {
   const [items, setItems] = useState(initialItems);
   const [newInboxIds, setNewInboxIds] = useState<readonly string[]>([]);
@@ -194,13 +196,6 @@ export function ReplyAssistantLiveDashboard({
   const [caseMemories, setCaseMemories] = useState(initialCaseMemories);
   const [refreshState, setRefreshState] = useState<"idle" | "refreshing" | "failed">("idle");
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const [aiControl, setAiControl] = useState(initialAiControl);
-  const [aiControlExpanded, setAiControlExpanded] = useState(false);
-  const [controlBusy, setControlBusy] = useState(false);
-  const [controlError, setControlError] = useState<string | null>(null);
-  const [overrideDate, setOverrideDate] = useState("");
-  const [overrideTime, setOverrideTime] = useState("");
-  const [scheduleDraft, setScheduleDraft] = useState({ day: 1, start: "09:00", end: "17:00" });
   const [metaReviews, setMetaReviews] = useState<readonly MetaReviewMetadata[]>([]);
   const [selectedMetaReview, setSelectedMetaReview] = useState<MetaReviewDetail | null>(null);
   const [reviewState, setReviewState] = useState<"idle" | "loading" | "failed">("idle");
@@ -210,66 +205,6 @@ export function ReplyAssistantLiveDashboard({
   const inFlightRef = useRef(false);
 
   useEffect(() => { itemsRef.current = items; }, [items]);
-
-  const refreshAiControl = useCallback(async () => {
-    setControlBusy(true);
-    setControlError(null);
-    try {
-      const response = await fetch("/api/reply-assistant/control", { cache: "no-store", headers: { accept: "application/json" } });
-      if (!response.ok) throw new Error("control_read_failed");
-      const body = await response.json() as Omit<AiControlView, "available">;
-      setAiControl({ ...body, available: true });
-    } catch {
-      setAiControl(unavailableAiControl);
-      setControlError("Runtime store unavailable — effective state is OFF.");
-    } finally {
-      setControlBusy(false);
-    }
-  }, []);
-
-  const saveAiControl = useCallback(async (input: Readonly<{
-    mode?: AiControlConfig["mode"];
-    periods?: AiControlConfig["periods"];
-    override?: Readonly<{ state: "ON" | "OFF"; expiresAt: string }> | null;
-  }>) => {
-    setControlBusy(true);
-    setControlError(null);
-    try {
-      const response = await fetch("/api/reply-assistant/control", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          revision: aiControl.config.revision,
-          mode: input.mode ?? aiControl.config.mode,
-          periods: input.periods ?? aiControl.config.periods,
-          override: input.override === undefined
-            ? aiControl.config.override && { state: aiControl.config.override.state, expiresAt: aiControl.config.override.expiresAt }
-            : input.override,
-        }),
-      });
-      if (response.status === 409) {
-        setControlError("Control changed elsewhere. Refresh control before retrying.");
-        return;
-      }
-      if (!response.ok) throw new Error("control_write_failed");
-      const body = await response.json() as Omit<AiControlView, "available">;
-      setAiControl({ ...body, available: true });
-    } catch {
-      setControlError("AI control was not changed. Refresh and try again.");
-    } finally {
-      setControlBusy(false);
-    }
-  }, [aiControl]);
-
-  const setTemporaryOverride = useCallback((state: "ON" | "OFF") => {
-    const expiresAt = buildAucklandOverrideExpiry(overrideDate, overrideTime);
-    if (!expiresAt) {
-      setControlError("Choose a future Pacific/Auckland date and time within 24 hours.");
-      return;
-    }
-    if (!window.confirm(`Turn AI ${state} temporarily until ${formatAiDateTime(expiresAt)}?`)) return;
-    void saveAiControl({ override: { state, expiresAt } });
-  }, [overrideDate, overrideTime, saveAiControl]);
 
   const refreshMetaReviews = useCallback(async () => {
     setReviewState("loading");
@@ -371,87 +306,12 @@ export function ReplyAssistantLiveDashboard({
   const filteredItems = channelScope === "all"
     ? items
     : items.filter((item) => item.channel === channelScope);
-  const activeOverride = aiControl.effective.source === "override" ? aiControl.config.override : null;
+
 
   return (
     <div className={styles.liveDashboard}>
-      <section className={styles.aiControlPanel} aria-label="AI control">
-        <div className={styles.controlHeader}>
-          <div><p>Shared R&amp;R AI Brain</p><h2>AI control</h2></div>
-          <strong data-state={aiControl.effective.effectiveState}>AI is {aiControl.effective.effectiveState}</strong>
-          <button
-            type="button"
-            className={styles.aiControlDisclosure}
-            aria-controls="ai-control-settings"
-            aria-expanded={aiControlExpanded}
-            aria-label={`${aiControlExpanded ? "Collapse" : "Expand"} AI control settings`}
-            onClick={() => setAiControlExpanded((current) => !current)}
-          >
-            {aiControlExpanded ? "Collapse settings" : "Expand settings"}
-          </button>
-        </div>
-        <div
-          id="ai-control-settings"
-          className={styles.aiControlSettings}
-          data-mobile-expanded={aiControlExpanded}
-        >
-          {!aiControl.available ? <p className={styles.controlWarning}>Runtime store unavailable — effective state is OFF.</p> : null}
-          <section className={styles.currentStatus} aria-label="Current AI status">
-            <h3>Current status</h3>
-            {aiControl.effective.source === "master_kill" ? <>
-              <p><strong>Reason:</strong> Master AI switch is disabled</p>
-              <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
-              <p><strong>Next scheduled transition:</strong> Paused until Master AI is enabled</p>
-            </> : aiControl.effective.source === "override" ? <>
-              <p>Temporary override until {formatAiDateTime(aiControl.effective.nextTransitionAt)}</p>
-              <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
-            </> : aiControl.effective.source === "invalid" ? <>
-              <p>AI is OFF because the control configuration is invalid.</p>
-              <p>No scheduled transitions will run until the control configuration is corrected.</p>
-              <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
-            </> : <>
-              <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
-              {aiControl.config.mode === "SCHEDULE" ? <p><strong>Next change:</strong> {formatAiDateTime(aiControl.effective.nextTransitionAt)}</p> : null}
-            </>}
-          </section>
-          <div className={styles.controlActions}>
-            <span>AI operating mode</span>
-            {(["OFF", "ON", "SCHEDULE"] as const).map((mode) => (
-              <button key={mode} type="button" aria-pressed={aiControl.config.mode === mode} disabled={!aiControl.available || controlBusy || aiControl.config.mode === mode} onClick={() => void saveAiControl({ mode })}>{mode}</button>
-            ))}
-            <button type="button" disabled={controlBusy} onClick={() => void refreshAiControl()}>Refresh control</button>
-          </div>
-          <p className={styles.scheduleExplanation}>AI will be ON during the scheduled periods below.</p>
-          <div className={styles.scheduleEditor}>
-            <label>Day<select value={scheduleDraft.day} disabled={!aiControl.available || controlBusy} onChange={(event) => setScheduleDraft((current) => ({ ...current, day: Number(event.target.value) }))}>
-              {weekdays.map(({ day, name }) => <option key={name} value={day}>{name}</option>)}
-            </select></label>
-            <label>Start<input type="time" value={scheduleDraft.start} disabled={!aiControl.available || controlBusy} onChange={(event) => setScheduleDraft((current) => ({ ...current, start: event.target.value }))} /></label>
-            <label>End<input type="time" value={scheduleDraft.end} disabled={!aiControl.available || controlBusy} onChange={(event) => setScheduleDraft((current) => ({ ...current, end: event.target.value }))} /></label>
-            <button type="button" disabled={!aiControl.available || controlBusy || scheduleDraft.start === scheduleDraft.end} onClick={() => void saveAiControl({
-              mode: "SCHEDULE",
-              periods: [...aiControl.config.periods, { ...scheduleDraft, day: scheduleDraft.day as 0 | 1 | 2 | 3 | 4 | 5 | 6 }],
-            })}>Add schedule period</button>
-          </div>
-          {aiControl.config.periods.length ? <ul className={styles.scheduleList} aria-label="Scheduled AI ON periods">{aiControl.config.periods.map((period, index) => ({ period, index })).sort((left, right) => {
-            const leftOrder = left.period.day === 0 ? 7 : left.period.day;
-            const rightOrder = right.period.day === 0 ? 7 : right.period.day;
-            return leftOrder - rightOrder || left.period.start.localeCompare(right.period.start);
-          }).map(({ period, index }) => (
-            <li key={`${period.day}-${period.start}-${period.end}-${index}`}><span>{formatSchedulePeriod(period)}</span><button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ periods: aiControl.config.periods.filter((_, current) => current !== index) })}>Remove</button></li>
-          ))}</ul> : null}
-          <div className={styles.overrideControls}>
-            <div className={styles.overrideHeading}><strong>Temporary override</strong><span>Timezone: Pacific/Auckland</span></div>
-            <label>Override date<input type="date" value={overrideDate} disabled={!aiControl.available || controlBusy} onChange={(event) => setOverrideDate(event.target.value)} /></label>
-            <label>Override time<input type="time" value={overrideTime} disabled={!aiControl.available || controlBusy} onChange={(event) => setOverrideTime(event.target.value)} /></label>
-            <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => setTemporaryOverride("ON")}>Turn AI ON temporarily</button>
-            <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => setTemporaryOverride("OFF")}>Turn AI OFF temporarily</button>
-            {activeOverride ? <button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ override: null })}>Cancel override</button> : null}
-          </div>
-          {activeOverride ? <p className={styles.controlNotice}>Temporary override: AI {activeOverride.state}. Until: {formatAiDateTime(activeOverride.expiresAt)}</p> : null}
-          {controlError ? <p className={styles.controlError} role="alert">{controlError}</p> : null}
-        </div>
-      </section>
+      <ChannelAiControl channel="website" initialAiControl={initialWebsiteAiControl} />
+      <ChannelAiControl channel="meta" initialAiControl={initialAiControl} />
       <section className={styles.metaReviewPanel} aria-label="Meta human reviews">
         <div className={styles.controlHeader}><div><p>Encrypted, 48-hour retention</p><h2>Meta human reviews</h2></div><button type="button" disabled={reviewState === "loading"} onClick={() => void refreshMetaReviews()}>Refresh Meta reviews</button></div>
         {reviewState === "failed" ? <p className={styles.controlError} role="alert">Meta reviews could not be loaded.</p> : null}
@@ -544,5 +404,157 @@ export function ReplyAssistantLiveDashboard({
         />
       </section>
     </div>
+  );
+}
+
+function ChannelAiControl({ channel, initialAiControl }: { channel: "website" | "meta"; initialAiControl: AiControlView }) {
+  const label = channel === "website" ? "Website" : "Meta";
+  const [aiControl, setAiControl] = useState(initialAiControl);
+  const [aiControlExpanded, setAiControlExpanded] = useState(false);
+  const [controlBusy, setControlBusy] = useState(false);
+  const [controlError, setControlError] = useState<string | null>(null);
+  const [overrideDate, setOverrideDate] = useState("");
+  const [overrideTime, setOverrideTime] = useState("");
+  const [scheduleDraft, setScheduleDraft] = useState({ day: 1, start: "09:00", end: "17:00" });
+  const refreshAiControl = useCallback(async () => {
+    setControlBusy(true);
+    setControlError(null);
+    try {
+      const response = await fetch(`/api/reply-assistant/control?channel=${channel}`, { cache: "no-store", headers: { accept: "application/json" } });
+      if (!response.ok) throw new Error("control_read_failed");
+      const body = await response.json() as Omit<AiControlView, "available">;
+      setAiControl({ ...body, available: true });
+    } catch {
+      setAiControl(unavailableAiControl);
+      setControlError("Runtime store unavailable — effective state is OFF.");
+    } finally {
+      setControlBusy(false);
+    }
+  }, [channel]);
+
+  const saveAiControl = useCallback(async (input: Readonly<{
+    mode?: AiControlConfig["mode"];
+    periods?: AiControlConfig["periods"];
+    override?: Readonly<{ state: "ON" | "OFF"; expiresAt: string }> | null;
+  }>) => {
+    setControlBusy(true);
+    setControlError(null);
+    try {
+      const response = await fetch(`/api/reply-assistant/control?channel=${channel}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          channel,
+          revision: aiControl.config.revision,
+          mode: input.mode ?? aiControl.config.mode,
+          periods: input.periods ?? aiControl.config.periods,
+          override: input.override === undefined
+            ? aiControl.config.override && { state: aiControl.config.override.state, expiresAt: aiControl.config.override.expiresAt }
+            : input.override,
+        }),
+      });
+      if (response.status === 409) {
+        setControlError("Control changed elsewhere. Refresh control before retrying.");
+        return;
+      }
+      if (!response.ok) throw new Error("control_write_failed");
+      const body = await response.json() as Omit<AiControlView, "available">;
+      setAiControl({ ...body, available: true });
+    } catch {
+      setControlError("AI control was not changed. Refresh and try again.");
+    } finally {
+      setControlBusy(false);
+    }
+  }, [aiControl, channel]);
+
+  const setTemporaryOverride = useCallback((state: "ON" | "OFF") => {
+    const expiresAt = buildAucklandOverrideExpiry(overrideDate, overrideTime);
+    if (!expiresAt) {
+      setControlError("Choose a future Pacific/Auckland date and time within 24 hours.");
+      return;
+    }
+    if (!window.confirm(`Turn ${label} AI ${state} temporarily until ${formatAiDateTime(expiresAt)}?`)) return;
+    void saveAiControl({ override: { state, expiresAt } });
+  }, [overrideDate, overrideTime, saveAiControl, label]);
+
+  const activeOverride = aiControl.effective.source === "override" ? aiControl.config.override : null;
+  return (
+      <section className={styles.aiControlPanel} aria-label={`${label} AI control`}>
+        <div className={styles.controlHeader}>
+          <div><p>Shared R&amp;R AI Brain</p><h2>{label} AI</h2></div>
+          <strong data-state={aiControl.effective.effectiveState}>AI is {aiControl.effective.effectiveState}</strong>
+          <button
+            type="button"
+            className={styles.aiControlDisclosure}
+            aria-controls={`ai-control-settings-${channel}`}
+            aria-expanded={aiControlExpanded}
+            aria-label={`${aiControlExpanded ? "Collapse" : "Expand"} ${label} AI control settings`}
+            onClick={() => setAiControlExpanded((current) => !current)}
+          >
+            {aiControlExpanded ? "Collapse settings" : "Expand settings"}
+          </button>
+        </div>
+        <div
+          id={`ai-control-settings-${channel}`}
+          className={styles.aiControlSettings}
+          data-mobile-expanded={aiControlExpanded}
+        >
+          {!aiControl.available ? <p className={styles.controlWarning}>Runtime store unavailable — effective state is OFF.</p> : null}
+          <section className={styles.currentStatus} aria-label="Current AI status">
+            <h3>Current status</h3>
+            {aiControl.effective.source === "master_kill" ? <>
+              <p><strong>Reason:</strong> Master AI switch is disabled</p>
+              <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
+              <p><strong>Next scheduled transition:</strong> Paused until Master AI is enabled</p>
+            </> : aiControl.effective.source === "override" ? <>
+              <p>Temporary override until {formatAiDateTime(aiControl.effective.nextTransitionAt)}</p>
+              <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
+            </> : aiControl.effective.source === "invalid" ? <>
+              <p>AI is OFF because the control configuration is invalid.</p>
+              <p>No scheduled transitions will run until the control configuration is corrected.</p>
+              <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
+            </> : <>
+              <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
+              {aiControl.config.mode === "SCHEDULE" ? <p><strong>Next change:</strong> {formatAiDateTime(aiControl.effective.nextTransitionAt)}</p> : null}
+            </>}
+          </section>
+          <div className={styles.controlActions}>
+            <span>AI operating mode</span>
+            {(["OFF", "ON", "SCHEDULE"] as const).map((mode) => (
+              <button key={mode} type="button" aria-pressed={aiControl.config.mode === mode} disabled={!aiControl.available || controlBusy || aiControl.config.mode === mode} onClick={() => void saveAiControl({ mode })}>{mode}</button>
+            ))}
+            <button type="button" disabled={controlBusy} onClick={() => void refreshAiControl()}>Refresh control</button>
+          </div>
+          <p className={styles.scheduleExplanation}>AI will be ON during the scheduled periods below.</p>
+          <div className={styles.scheduleEditor}>
+            <label>Day<select value={scheduleDraft.day} disabled={!aiControl.available || controlBusy} onChange={(event) => setScheduleDraft((current) => ({ ...current, day: Number(event.target.value) }))}>
+              {weekdays.map(({ day, name }) => <option key={name} value={day}>{name}</option>)}
+            </select></label>
+            <label>Start<input type="time" value={scheduleDraft.start} disabled={!aiControl.available || controlBusy} onChange={(event) => setScheduleDraft((current) => ({ ...current, start: event.target.value }))} /></label>
+            <label>End<input type="time" value={scheduleDraft.end} disabled={!aiControl.available || controlBusy} onChange={(event) => setScheduleDraft((current) => ({ ...current, end: event.target.value }))} /></label>
+            <button type="button" disabled={!aiControl.available || controlBusy || scheduleDraft.start === scheduleDraft.end} onClick={() => void saveAiControl({
+              mode: "SCHEDULE",
+              periods: [...aiControl.config.periods, { ...scheduleDraft, day: scheduleDraft.day as 0 | 1 | 2 | 3 | 4 | 5 | 6 }],
+            })}>Add schedule period</button>
+          </div>
+          {aiControl.config.periods.length ? <ul className={styles.scheduleList} aria-label="Scheduled AI ON periods">{aiControl.config.periods.map((period, index) => ({ period, index })).sort((left, right) => {
+            const leftOrder = left.period.day === 0 ? 7 : left.period.day;
+            const rightOrder = right.period.day === 0 ? 7 : right.period.day;
+            return leftOrder - rightOrder || left.period.start.localeCompare(right.period.start);
+          }).map(({ period, index }) => (
+            <li key={`${period.day}-${period.start}-${period.end}-${index}`}><span>{formatSchedulePeriod(period)}</span><button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ periods: aiControl.config.periods.filter((_, current) => current !== index) })}>Remove</button></li>
+          ))}</ul> : null}
+          <div className={styles.overrideControls}>
+            <div className={styles.overrideHeading}><strong>Temporary override</strong><span>Timezone: Pacific/Auckland</span></div>
+            <label>Override date<input type="date" value={overrideDate} disabled={!aiControl.available || controlBusy} onChange={(event) => setOverrideDate(event.target.value)} /></label>
+            <label>Override time<input type="time" value={overrideTime} disabled={!aiControl.available || controlBusy} onChange={(event) => setOverrideTime(event.target.value)} /></label>
+            <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => setTemporaryOverride("ON")}>Turn AI ON temporarily</button>
+            <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => setTemporaryOverride("OFF")}>Turn AI OFF temporarily</button>
+            {activeOverride ? <button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ override: null })}>Cancel override</button> : null}
+          </div>
+          {activeOverride ? <p className={styles.controlNotice}>Temporary override: AI {activeOverride.state}. Until: {formatAiDateTime(activeOverride.expiresAt)}</p> : null}
+          {controlError ? <p className={styles.controlError} role="alert">{controlError}</p> : null}
+        </div>
+      </section>
   );
 }

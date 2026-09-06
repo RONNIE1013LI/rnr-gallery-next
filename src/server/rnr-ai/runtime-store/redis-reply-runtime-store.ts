@@ -3,6 +3,7 @@ import { Redis } from "@upstash/redis";
 import type { AiControlConfig } from "../control/types";
 import type {
   AiControlSnapshot,
+  AiControlChannel,
   BacklogLease,
   BacklogResult,
   DeliveryLease,
@@ -82,7 +83,15 @@ redis.call("DEL", KEYS[1])
 return 1
 `;
 
+const CONTROL_READ_SCRIPT = `
+local legacy = redis.call("GET", KEYS[1]) or ARGV[1]
+redis.call("SET", KEYS[2], legacy, "NX")
+return redis.call("GET", KEYS[3]) or ARGV[1]
+`;
+
 const CONTROL_CAS_SCRIPT = `
+local legacy = redis.call("GET", KEYS[2]) or ARGV[3]
+redis.call("SET", KEYS[3], legacy, "NX")
 local raw = redis.call("GET", KEYS[1])
 local revision = 0
 if raw then revision = tonumber(cjson.decode(raw).revision) end
@@ -172,17 +181,20 @@ export class RedisReplyRuntimeStore implements ReplyRuntimeStore {
     return `${this.prefix}:${suffix}`;
   }
 
-  async readControl(): Promise<AiControlSnapshot> {
-    const config = await this.redis.get<AiControlConfig>(this.key("control"));
+  async readControl(channel: AiControlChannel = "meta"): Promise<AiControlSnapshot> {
+    const raw = await this.redis.eval<string[], string | AiControlConfig>(CONTROL_READ_SCRIPT,
+      [this.key("control"), this.key("control:website"), this.key(channel === "website" ? "control:website" : "control")],
+      [JSON.stringify(initialControl)]);
+    const config = typeof raw === "string" ? JSON.parse(raw) as AiControlConfig : raw;
     return { config: config ?? initialControl, readAt: new Date(this.now()).toISOString() };
   }
 
-  async compareAndSetControl(expectedRevision: number, next: AiControlConfig) {
+  async compareAndSetControl(expectedRevision: number, next: AiControlConfig, channel: AiControlChannel = "meta") {
     if (next.revision !== expectedRevision + 1) return false;
-    return await this.redis.eval<[string, string], number>(
+    return await this.redis.eval<string[], number>(
       CONTROL_CAS_SCRIPT,
-      [this.key("control")],
-      [String(expectedRevision), JSON.stringify(next)],
+      [this.key(channel === "website" ? "control:website" : "control"), this.key("control"), this.key("control:website")],
+      [String(expectedRevision), JSON.stringify(next), JSON.stringify(initialControl)],
     ) === 1;
   }
 

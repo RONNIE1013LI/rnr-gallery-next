@@ -81,8 +81,15 @@ export default async function ReplyAssistantPage({
     config: { revision: 0, mode: "OFF" as const, timezone: "Pacific/Auckland" as const, periods: [], override: null },
     effective: { effectiveState: "OFF" as const, source: "invalid" as const, nextTransitionAt: null },
   };
+  let initialWebsiteAiControl: AiControlView = initialAiControl;
   try {
-    const snapshot = await RedisReplyRuntimeStore.fromEnvironment().readControl();
+    const store = RedisReplyRuntimeStore.fromEnvironment();
+    const [snapshot, websiteSnapshot] = await Promise.all([store.readControl("meta"), store.readControl("website")]);
+    initialWebsiteAiControl = {
+      available: true,
+      config: websiteSnapshot.config,
+      effective: evaluateAiControl(websiteSnapshot, new Date(), rnrAiConfig.masterEnabled),
+    };
     initialAiControl = {
       available: true,
       config: snapshot.config,
@@ -118,6 +125,7 @@ export default async function ReplyAssistantPage({
         canReview={access.adminRole === "admin"}
         selectedReviewSelector={selectedReviewSelector}
         initialAiControl={initialAiControl}
+        initialWebsiteAiControl={initialWebsiteAiControl}
       />
     </section>
   );

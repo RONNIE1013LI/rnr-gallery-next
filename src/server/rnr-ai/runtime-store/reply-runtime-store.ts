@@ -33,9 +33,11 @@ export type ReviewMetadata = Readonly<{
 }>;
 export type ReviewMetadataInput = Omit<ReviewMetadata, "key" | "expiresAt">;
 
+export type AiControlChannel = "meta" | "website";
+
 export interface ReplyRuntimeStore {
-  readControl(): Promise<AiControlSnapshot>;
-  compareAndSetControl(expectedRevision: number, next: AiControlConfig): Promise<boolean>;
+  readControl(channel?: AiControlChannel): Promise<AiControlSnapshot>;
+  compareAndSetControl(expectedRevision: number, next: AiControlConfig, channel?: AiControlChannel): Promise<boolean>;
   claimEvent(keyHash: string, leaseMs: number): Promise<EventLease | null>;
   settleEvent(lease: EventLease, result: EventResult): Promise<void>;
   readTakeover(conversationKeyHash: string): Promise<TakeoverState | null>;

@@ -92,6 +92,12 @@ describe.runIf(Boolean(url))("actual Redis public route composition", () => {
     await redis.set(`${process.env.RNR_AI_REDIS_NAMESPACE}:control`, {
       revision: 1, mode: "ON", timezone: "Pacific/Auckland", periods: [], override: null,
     });
+    await redis.set(`${process.env.RNR_AI_REDIS_NAMESPACE}:control:website`, {
+      revision: 1, mode: "ON", timezone: "Pacific/Auckland", periods: [], override: null,
+    });
+    await redis.set(`${process.env.RNR_AI_REDIS_NAMESPACE}:control`, {
+      revision: 2, mode: "OFF", timezone: "Pacific/Auckland", periods: [], override: null,
+    });
     const nativeFetch = globalThis.fetch;
     const candidate = { mode: "ANSWER", reply: "Hello! How can we help?", market: "UNKNOWN", marketEvidenceTurn: null };
     const outputs = [{ ...candidate, requestedTools: [] }, {
