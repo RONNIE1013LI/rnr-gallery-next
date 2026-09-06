@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { CanvasPreviewProps } from "./canvas-product-preview";
@@ -13,11 +13,12 @@ type Actions = { view: (name:string)=>void; zoom:(factor:number)=>void; rotate:(
 export default function CanvasProductScene(props:CanvasPreviewProps) {
   return <Scene key={`${props.imageSrc}:${props.sizeKey}:${props.orientation}`} {...props}/>;
 }
-function Scene({imageSrc,sizeKey,orientation="landscape"}:CanvasPreviewProps) {
+function Scene({imageSrc,sizeKey,orientation}:CanvasPreviewProps) {
   const host=useRef<HTMLDivElement>(null),panel=useRef<HTMLDivElement>(null),actions=useRef<Actions|null>(null);
   const [status,setStatus]=useState("Loading 3D preview…"),[auto,setAuto]=useState(false);
-  const profile=useMemo(()=>getCanvasProfile(sizeKey,orientation)!,[sizeKey,orientation]);
+  const [displayProfile,setDisplayProfile]=useState(()=>getCanvasProfile(sizeKey,orientation)!);
   useEffect(()=>{
+    let profile=getCanvasProfile(sizeKey,orientation)!;
     const element=host.current;
     if(!element)return;
     let renderer:THREE.WebGLRenderer;
@@ -63,6 +64,9 @@ function Scene({imageSrc,sizeKey,orientation="landscape"}:CanvasPreviewProps) {
       if(result.some(r=>r.status==="rejected")){setStatus("Could not load the 3D texture. Close and reopen to retry; close 3D view to return to the artwork image.");return;}
       const [artwork,reference]=result.map(r=>(r as PromiseFulfilledResult<THREE.Texture>).value);
       for(const t of [artwork,reference]){t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());}
+      const image=artwork.image as HTMLImageElement;
+      profile=getCanvasProfile(sizeKey,orientation??(image.width>=image.height?"landscape":"portrait"))!;
+      setDisplayProfile(profile);
       const model=createCanvasModel(profile,artwork,reference);model.textures.forEach(t=>textures.add(t));scene.add(model.root);
       model.root.traverse(object=>{if(object instanceof THREE.Mesh){geometry.add(object.geometry);for(const m of Array.isArray(object.material)?object.material:[object.material])materials.add(m);}});
       element.dataset.braceCount=String(model.root.userData.braceCount);
@@ -75,10 +79,10 @@ function Scene({imageSrc,sizeKey,orientation="landscape"}:CanvasPreviewProps) {
     void load().catch(()=>{if(alive)setStatus("Could not display 3D. Close 3D view to return to the artwork image.");});
     return ()=>{alive=false;actions.current=null;cancelAnimationFrame(frame);observer.disconnect();intersection.disconnect();document.removeEventListener("visibilitychange",invalidate);renderer.domElement.removeEventListener("webglcontextlost",lost);controls.dispose();geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());light.shadow.map?.dispose();renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();};
   // This component is keyed to the entire selection in CanvasProductScene.
-  },[imageSrc,profile]);
+  },[imageSrc,sizeKey,orientation]);
 
   return <div ref={panel} className={styles.panel}>
-    <p className={styles.dimensions}>{sizeKey.toUpperCase()} · {Number((profile.width*100).toFixed(1))} × {Number((profile.height*100).toFixed(1))} × 3 cm</p>
+    <p className={styles.dimensions}>{sizeKey.toUpperCase()} · {Number((displayProfile.width*100).toFixed(1))} × {Number((displayProfile.height*100).toFixed(1))} × 3 cm</p>
     <div ref={host} className={styles.stage} title="Interactive canvas preview" role="application" aria-label="Interactive canvas. Drag to rotate; scroll or pinch to zoom." tabIndex={0} onKeyDown={event=>{
       if(event.key==="+"||event.key==="="){event.preventDefault();actions.current?.zoom(.85);}
       if(event.key==="-"){event.preventDefault();actions.current?.zoom(1/.85);}
@@ -86,7 +90,7 @@ function Scene({imageSrc,sizeKey,orientation="landscape"}:CanvasPreviewProps) {
     {status&&<p className={styles.status} role="status">{status}</p>}
     <div className={styles.controls} role="group" aria-label="3D view controls">
       {([['front','Front'],['back','Back'],['side','Side'],['detail','Detail'],['rear-detail','Back detail'],['reset','Reset']] as const).map(([view,label])=><button type="button" key={view} disabled={!!status} onClick={()=>actions.current?.view(view)}>{label}</button>)}
-      {profile.braces!=="none"&&<button type="button" disabled={!!status} onClick={()=>actions.current?.view("brace-detail")}>Brace detail</button>}
+      {displayProfile.braces!=="none"&&<button type="button" disabled={!!status} onClick={()=>actions.current?.view("brace-detail")}>Brace detail</button>}
       <button type="button" disabled={!!status} aria-pressed={auto} onClick={()=>setAuto(actions.current?.rotate()??false)}>Rotate</button>
       <button type="button" disabled={!!status} aria-label="Zoom in" onClick={()=>actions.current?.zoom(.85)}>＋</button>
       <button type="button" disabled={!!status} aria-label="Zoom out" onClick={()=>actions.current?.zoom(1/.85)}>−</button>

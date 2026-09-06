@@ -4,6 +4,23 @@ import { createCanvasModel } from "./model";
 import { getCanvasProfile } from "./profiles";
 
 describe("wrapped canvas geometry",()=>{
+  it("uses edge-only sampling for every rear printed surface",()=>{
+    const art=new THREE.Texture({width:1190,height:840} as HTMLImageElement);
+    const {root}=createCanvasModel(getCanvasProfile("a0")!,art,new THREE.Texture());
+    const shell=root.getObjectByName("Wrapped canvas shell") as THREE.Mesh;
+    const front=(shell.material as THREE.Material[])[0];
+    const rear=root.children.filter(object=>/printed return|Overlapping rear corner|Continuous rear wrap shoulder/.test(object.name)) as THREE.Mesh[];
+    expect(rear).toHaveLength(9);
+    for(const mesh of rear){
+      expect(mesh.material).not.toBe(front);
+      const material=mesh.material as THREE.MeshPhysicalMaterial;
+      const shader={fragmentShader:"#include <map_fragment>"};
+      material.onBeforeCompile(shader as never,{} as never);
+      expect(shader.fragmentShader).toContain("edgeUV");
+      expect(material.map!.generateMipmaps).toBe(false);
+    }
+  });
+
   it("joins the printed face and sides with rounded normals while leaving the back open",()=>{
     const art=new THREE.Texture({width:1190,height:840} as HTMLImageElement);
     const {root}=createCanvasModel(getCanvasProfile("a0")!,art,new THREE.Texture());

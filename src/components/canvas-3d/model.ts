@@ -121,6 +121,23 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
     shader.fragmentShader=shader.fragmentShader.replace("#include <map_fragment>",mapChunk);
   };
   picture.customProgramCacheKey=()=>`contained-canvas-artwork-${matches}`;
+  // The back samples only the outermost pixel row/column, never the artwork interior.
+  const edgeMap=artwork.clone();
+  edgeMap.generateMipmaps=false;edgeMap.minFilter=THREE.LinearFilter;
+  edgeMap.needsUpdate=true;textures.push(edgeMap);
+  const returnMaterial=picture.clone();returnMaterial.map=edgeMap;
+  returnMaterial.side=THREE.DoubleSide;
+  returnMaterial.onBeforeCompile=shader=>{
+    const sample=`vec2 edgeUV=clamp(vMapUv,0.0,1.0);
+      vec2 edgeDistance=min(edgeUV,1.0-edgeUV)*vec2(${w.toFixed(8)},${h.toFixed(8)});
+      vec2 halfPixel=vec2(${(.5/image.width).toFixed(10)},${(.5/image.height).toFixed(10)});
+      if(edgeDistance.x<edgeDistance.y) edgeUV.x=edgeUV.x<0.5?halfPixel.x:1.0-halfPixel.x;
+      else edgeUV.y=edgeUV.y<0.5?halfPixel.y:1.0-halfPixel.y;
+      edgeUV=clamp(edgeUV,halfPixel,1.0-halfPixel);
+      vec4 sampledDiffuseColor=texture2D(map,edgeUV);`;
+    shader.fragmentShader=shader.fragmentShader.replace("#include <map_fragment>",THREE.ShaderChunk.map_fragment.replace("vec4 sampledDiffuseColor = texture2D( map, vMapUv );",sample));
+  };
+  returnMaterial.customProgramCacheKey=()=>`rear-edge-colour-${w}-${h}-${image.width}-${image.height}`;
   const shellGeometry=new RoundedBoxGeometry(w,h,d,5,.002);
   const positions=shellGeometry.attributes.position,uv=shellGeometry.attributes.uv;
   // A single position-based mapping gives duplicated seam vertices identical UVs.
@@ -161,14 +178,13 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
   const bridgeUV:number[]=[],bridgeNormals:number[]=[];
   for(let i=0;i<bridgeVertices.length;i+=3){
     const [x,y,z]=bridgeVertices.slice(i,i+3);
-    const inward=Math.max(0,d/2-z);
-    bridgeUV.push((x-Math.sign(x)*inward*THREE.MathUtils.smoothstep(Math.abs(x),w/2-.006,w/2-.002))/aw+.5,(y-Math.sign(y)*inward*THREE.MathUtils.smoothstep(Math.abs(y),h/2-.006,h/2-.002))/ah+.5);
+    bridgeUV.push(x/w+.5,y/h+.5);
     const normal=new THREE.Vector3(x-THREE.MathUtils.clamp(x,-w/2+.002,w/2-.002),y-THREE.MathUtils.clamp(y,-h/2+.002,h/2-.002),z-THREE.MathUtils.clamp(z,-d/2+.002,d/2-.002)).normalize();
     bridgeNormals.push(normal.x,normal.y,normal.z);
   }
   bridgeGeometry.setAttribute("uv",new THREE.Float32BufferAttribute(bridgeUV,2));
   bridgeGeometry.setAttribute("normal",new THREE.Float32BufferAttribute(bridgeNormals,3));
-  const bridge=new THREE.Mesh(bridgeGeometry,picture);bridge.name="Continuous rear wrap shoulder";bridge.castShadow=true;bridge.receiveShadow=true;root.add(bridge);
+  const bridge=new THREE.Mesh(bridgeGeometry,returnMaterial);bridge.name="Continuous rear wrap shoulder";bridge.castShadow=true;bridge.receiveShadow=true;root.add(bridge);
   shellGeometry.groups=shellGeometry.groups.filter(group=>group.materialIndex!==5);
   const shell=new THREE.Mesh(shellGeometry,[picture,picture,picture,picture,picture,white]);
   shell.name="Wrapped canvas shell";shell.castShadow=true;shell.receiveShadow=true;root.add(shell);
@@ -189,10 +205,6 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
   box("Bottom folded canvas",0,-h/2+(fold+printedFold)/2,rz,w-2*printedFold,fold-printedFold,.00035,white);
   box("Left folded canvas",-w/2+(fold+printedFold)/2,0,rz,fold-printedFold,h-2*fold,.00035,white);
   box("Right folded canvas",w/2-(fold+printedFold)/2,0,rz,fold-printedFold,h-2*fold,.00035,white);
-  const returnMaterial=picture.clone();
-  returnMaterial.side=THREE.DoubleSide;
-  returnMaterial.onBeforeCompile=picture.onBeforeCompile;
-  returnMaterial.customProgramCacheKey=picture.customProgramCacheKey;
   // Each return is a curved cloth strip rather than a squared-off solid block.
   function rearStrip(name:string,sx:number,sy:number,corner=false){
     const horizontal=sy!==0;
@@ -209,9 +221,7 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
       const lip=corner?.00065*Math.sin(Math.PI*inward/printedFold):0;
       const z=rz-.00042+roll-lip;
       position.setXYZ(i,x,y,z);
-      const sampleX=horizontal?x:sx*(w/2-d-inward);
-      const sampleY=horizontal?sy*(h/2-d-inward):y;
-      texcoord.setXY(i,sampleX/aw+.5,sampleY/ah+.5);
+      texcoord.setXY(i,x/w+.5,y/h+.5);
     }
     geometry.computeVertexNormals();
     const mesh=new THREE.Mesh(geometry,returnMaterial);mesh.name=name;

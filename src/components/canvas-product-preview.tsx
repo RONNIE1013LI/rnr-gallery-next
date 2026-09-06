@@ -11,7 +11,7 @@ const CanvasProductScene = dynamic(() => import("./canvas-product-scene"), {
   loading: () => <p role="status">Loading 3D preview…</p>,
 });
 export type CanvasPreviewProps = { imageSrc: string; sizeKey: string; orientation?: Orientation; sizes?: readonly string[]; children?: ReactNode };
-export function CanvasProductPreview({ imageSrc, sizeKey, orientation = "landscape", sizes, children }: CanvasPreviewProps) {
+export function CanvasProductPreview({ imageSrc, sizeKey, orientation, sizes, children }: CanvasPreviewProps) {
   const [open, setOpen] = useState(false);
   const [previewSize, setPreviewSize] = useState(sizeKey);
   const activeSize = sizes?.includes(previewSize) ? previewSize : sizeKey;
