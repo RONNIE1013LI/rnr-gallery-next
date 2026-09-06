@@ -174,6 +174,7 @@ export function ReplyAssistantLiveDashboard({
   selectedReviewSelector,
   initialAiControl = unavailableAiControl,
   initialWebsiteAiControl = unavailableAiControl,
+  loadInitialData = false,
 }: Readonly<{
   initialCursor: string;
   initialItems: readonly ReplyQueueItem[];
@@ -185,6 +186,7 @@ export function ReplyAssistantLiveDashboard({
   selectedReviewSelector?: string | null;
   initialAiControl?: AiControlView;
   initialWebsiteAiControl?: AiControlView;
+  loadInitialData?: boolean;
 }>) {
   const [items, setItems] = useState(initialItems);
   const [newInboxIds, setNewInboxIds] = useState<readonly string[]>([]);
@@ -199,12 +201,53 @@ export function ReplyAssistantLiveDashboard({
   const [metaReviews, setMetaReviews] = useState<readonly MetaReviewMetadata[]>([]);
   const [selectedMetaReview, setSelectedMetaReview] = useState<MetaReviewDetail | null>(null);
   const [reviewState, setReviewState] = useState<"idle" | "loading" | "failed">("idle");
+  const [initialMessagesState, setInitialMessagesState] = useState<"loading" | "ready" | "failed">(loadInitialData ? "loading" : "ready");
+  const [initialHistoryState, setInitialHistoryState] = useState<"loading" | "ready" | "failed">(loadInitialData ? "loading" : "ready");
+  const [messageLoadAttempt, setMessageLoadAttempt] = useState(0);
+  const [historyLoadAttempt, setHistoryLoadAttempt] = useState(0);
   const cursorRef = useRef(initialCursor);
   const itemsRef = useRef(initialItems);
   const activeControllerRef = useRef<AbortController | null>(null);
   const inFlightRef = useRef(false);
 
   useEffect(() => { itemsRef.current = items; }, [items]);
+
+  useEffect(() => {
+    if (!loadInitialData) return;
+    const controller = new AbortController();
+    const options = { cache: "no-store" as const, headers: { accept: "application/json" }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]) };
+    void (async () => {
+      try {
+        const response = await fetch("/api/reply-assistant/messages", options);
+        if (!response.ok) throw new Error("inbox_load_failed");
+        const body = await response.json() as { items: readonly ReplyQueueItem[] };
+        if (controller.signal.aborted) return;
+        setItems(current => mergeReplyQueueItems(current, body.items, selectedReviewSelector));
+        setInitialMessagesState("ready");
+      } catch { if (!controller.signal.aborted) setInitialMessagesState("failed"); }
+    })();
+    return () => controller.abort();
+  }, [loadInitialData, messageLoadAttempt, selectedReviewSelector]);
+
+  useEffect(() => {
+    if (!loadInitialData) return;
+    const controller = new AbortController();
+    const options = { cache: "no-store" as const, headers: { accept: "application/json" }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]) };
+    void (async () => {
+      try {
+        const response = await fetch("/api/reply-assistant/updates?section=history", options);
+        if (!response.ok) throw new Error("history_load_failed");
+        const body = await response.json() as LiveUpdateResponse;
+        if (controller.signal.aborted) return;
+        if (body.metrics) { setMetricCounts(body.metrics); setMetricCards(replyAssistantMetricCards(body.metrics)); }
+        if (body.learningCandidates) setLearningCandidates(body.learningCandidates.items);
+        if (body.caseMemories) setCaseMemories(body.caseMemories.items);
+        cursorRef.current = body.cursor;
+        setInitialHistoryState("ready");
+      } catch { if (!controller.signal.aborted) setInitialHistoryState("failed"); }
+    })();
+    return () => controller.abort();
+  }, [loadInitialData, historyLoadAttempt]);
 
   const refreshMetaReviews = useCallback(async () => {
     setReviewState("loading");
@@ -257,13 +300,16 @@ export function ReplyAssistantLiveDashboard({
     activeControllerRef.current = controller;
     setRefreshState("refreshing");
     try {
-      const response = await fetch(`/api/reply-assistant/updates?cursor=${encodeURIComponent(cursorRef.current)}`, {
+      const response = await fetch(loadInitialData ? "/api/reply-assistant/messages" : `/api/reply-assistant/updates?cursor=${encodeURIComponent(cursorRef.current)}`, {
         cache: "no-store",
         headers: { accept: "application/json" },
         signal: controller.signal,
       });
       if (!response.ok) throw new Error("live_updates_failed");
-      const update = await response.json() as LiveUpdateResponse;
+      const body = await response.json() as LiveUpdateResponse & { items?: readonly ReplyQueueItem[] };
+      const update: LiveUpdateResponse = loadInitialData
+        ? { cursor: cursorRef.current, hasMore: false, queueItems: body.items ?? [], metrics: null, learningCandidates: null, caseMemories: null }
+        : body;
       if (controller.signal.aborted) return;
       const knownLatestMessageByInbox = new Map(itemsRef.current.map((item) => [item.inboxId, item.latestMessageId]));
       const arrived = update.queueItems
@@ -290,7 +336,7 @@ export function ReplyAssistantLiveDashboard({
       if (activeControllerRef.current === controller) activeControllerRef.current = null;
       inFlightRef.current = false;
     }
-  }, [selectedReviewSelector]);
+  }, [selectedReviewSelector, loadInitialData]);
 
   useEffect(() => () => {
     activeControllerRef.current?.abort();
@@ -331,7 +377,7 @@ export function ReplyAssistantLiveDashboard({
         </article> : null}
       </section>
       <div className={styles.dashboardToolbar}>
-        {metricCounts?.channelMetrics ? (
+        {loadInitialData || metricCounts?.channelMetrics ? (
           <div className={styles.metricFilters} aria-label="Metric channel">
             {(["all", "website", "facebook"] as const).map((scope) => (
               <button
@@ -363,13 +409,21 @@ export function ReplyAssistantLiveDashboard({
             type="button"
             className={styles.refreshButton}
             aria-label="Refresh conversations"
-            disabled={refreshState === "refreshing"}
+            disabled={refreshState === "refreshing" || initialMessagesState !== "ready"}
             onClick={() => void refresh()}
           >
             Refresh
           </button>
         </div>
       </div>
+      {initialMessagesState === "failed" || initialHistoryState === "failed" ? <div role="alert">
+        <p>{initialMessagesState === "failed" ? "Conversations could not be loaded. " : ""}{initialHistoryState === "failed" ? "Historical statistics and learning could not be loaded." : ""}</p>
+        {initialMessagesState === "failed" ? <button type="button" onClick={() => { setInitialMessagesState("loading"); setMessageLoadAttempt(attempt => attempt + 1); }}>Retry conversations</button> : null}
+        {initialHistoryState === "failed" ? <button type="button" onClick={() => { setInitialHistoryState("loading"); setHistoryLoadAttempt(attempt => attempt + 1); }}>Retry historical data</button> : null}
+      </div> : null}
+      {initialHistoryState === "loading" ? <p role="status">Loading historical statistics and learning…</p> : null}
+      {initialHistoryState === "ready" ? <>
+      {loadInitialData ? <button type="button" onClick={() => { setInitialHistoryState("loading"); setHistoryLoadAttempt(attempt => attempt + 1); }}>Refresh historical data</button> : null}
       <section className={styles.metricPanel} aria-label="Reply assistant metrics">
         <div className={styles.metrics}>{displayedMetricCards.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
         {visibleMetricCards.length > 8 ? (
@@ -389,19 +443,21 @@ export function ReplyAssistantLiveDashboard({
         canReview={canReview}
       />
       <CaseMemoryReview cases={caseMemories} canReview={canReview} />
+      </> : null}
       <section className={styles.conversationPanel} aria-label="Needs attention conversations">
         <div className={styles.conversationHeading}>
           <h2>Needs attention</h2>
-          <span>{filteredItems.length} {filteredItems.length === 1 ? "conversation" : "conversations"}</span>
+          <span>{initialMessagesState === "ready" ? `${filteredItems.length} ${filteredItems.length === 1 ? "conversation" : "conversations"}` : "Conversations loading"}</span>
         </div>
-        <ReplyAssistantClient
+        {initialMessagesState === "loading" ? <p role="status">Loading conversations…</p> : null}
+        {initialMessagesState === "ready" || filteredItems.length > 0 ? <ReplyAssistantClient
           initialItems={initialItems.filter((item) => channelScope === "all" || item.channel === channelScope)}
           liveItems={filteredItems}
           newInboxIds={newInboxIds}
           onRefresh={() => { void refresh(); }}
           selectedReviewSelector={selectedReviewSelector}
           channelScope={channelScope}
-        />
+        /> : null}
       </section>
     </div>
   );

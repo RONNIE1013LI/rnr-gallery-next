@@ -35,3 +35,37 @@ describe.skipIf(!url)("Meta inbox real Redis", () => {
     }
   });
 });
+
+it.skipIf(!url)("invalidates cached previews on new activity and rejects a stale in-flight cache write", async () => {
+  if (!url || new URL(url).hostname !== "127.0.0.1") throw new Error("local_test_redis_required");
+  const redis = new Redis({ url, token: "synthetic-local-redis-test", responseEncoding: false });
+  const namespace = "test:inbox:" + randomUUID();
+  let receivedAt = new Date();
+  let text = "First message";
+  let duringRead: (() => Promise<void>) | null = null;
+  const loadConversation = vi.fn(async () => {
+    const event = { channel: "facebook" as const, role: "customer" as const, eventType: "customer_message" as const, externalConversationKey: "synthetic-customer", externalMessageKey: text, externalReplyToMessageKey: null, text, attachments: [], receivedAt };
+    if (duringRead) { const task = duringRead; duringRead = null; await task(); }
+    return { channel: "facebook" as const, events: [event], complete: true, incompleteReason: null, characters: text.length, turnsConsidered: 1 };
+  });
+  const inbox = new MetaInbox({ redis, namespace, encryptionKey: "synthetic-key-".repeat(4), idHashSecret: "synthetic-hash", pageId: "synthetic-page", context: { loadConversation }, discover: async () => [] });
+  try {
+    await inbox.index("synthetic-customer", receivedAt);
+    const first = await inbox.list();
+    const id = first.items[0].inboxId;
+    expect(first.items[0].timeline[0].text).toBe("First message");
+    expect(await redis.ttl(namespace + ":inbox:meta:cache:" + id)).toBeGreaterThan(60);
+    await inbox.list();
+    expect(loadConversation).toHaveBeenCalledTimes(1);
+    receivedAt = new Date(receivedAt.getTime() + 1000);
+    await inbox.index("synthetic-customer", receivedAt);
+    duringRead = async () => {
+      receivedAt = new Date(receivedAt.getTime() + 1000);
+      text = "New activity";
+      await inbox.index("synthetic-customer", receivedAt);
+    };
+    await inbox.list();
+    expect(await redis.get(namespace + ":inbox:meta:cache:" + id)).toBeNull();
+    expect((await inbox.list()).items[0].timeline[0].text).toBe("New activity");
+  } finally { const keys = await redis.keys(namespace + ":*"); if (keys.length) await redis.del(...keys); }
+});

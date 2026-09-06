@@ -1,8 +1,6 @@
-import { createProductionInbox } from "@/server/rnr-ai/inbox/production-inbox";
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import type { SafeQueuePage } from "@/server/customer-service/repositories/customer-service-repository";
-import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
 import { encodeReplyAssistantCursor } from "@/server/customer-service/live-updates";
 import { hashReviewAlertToken } from "@/server/customer-service/website/review-alert-service";
 import { evaluateAiControl } from "@/server/rnr-ai/control/schedule";
@@ -11,7 +9,6 @@ import { RedisReplyRuntimeStore } from "@/server/rnr-ai/runtime-store/redis-repl
 import { loadBusinessBrain } from "@/server/rnr-ai/business-brain/loader";
 import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 import styles from "./reply-assistant.module.css";
-import { replyAssistantMetricCards } from "./metric-cards";
 import { KnowledgeProvenance } from "./knowledge-provenance";
 import { ReplyAssistantLiveDashboard, type AiControlView } from "./live-dashboard";
 
@@ -27,12 +24,12 @@ export default async function ReplyAssistantPage({
   const rnrAiConfig = parseRnrAiMetaConfig();
   const businessBrain = loadBusinessBrain();
   const inboxEnabled = config.enabled || config.websiteEnabled;
-  const runtime = inboxEnabled ? createCustomerServiceRuntime() : null;
   const requestedReview = (await searchParams).review;
   let selectedReviewSelector: string | null = null;
   let selectedReviewItem: SafeQueuePage["items"][number] | null = null;
-  if (runtime && config.websiteEnabled && typeof requestedReview === "string") {
+  if (inboxEnabled && config.websiteEnabled && typeof requestedReview === "string") {
     try {
+      const { createProductionInbox } = await import("@/server/rnr-ai/inbox/production-inbox");
       const resolved = await createProductionInbox().resolveWebsiteReviewDeepLink({
         tokenHash: hashReviewAlertToken(requestedReview),
         now: new Date(),
@@ -43,39 +40,7 @@ export default async function ReplyAssistantPage({
       selectedReviewSelector = null;
     }
   }
-  const emptyQueue: SafeQueuePage = { items: [] };
-  const initialCursor = runtime
-    ? await runtime.repository.getReplyAssistantUiCursor()
-    : encodeReplyAssistantCursor(0);
-  const [queue, rawMetrics, learningCandidates, caseMemories] = runtime
-    ? await Promise.all([
-      createProductionInbox().listQueue(100),
-      runtime.repository.metricCounts(),
-      runtime.repository.listLearningCandidates(20),
-      runtime.repository.listCaseMemoryCandidates(20),
-    ])
-    : [emptyQueue, {
-      totalIncomingEligible: 0, draftsGenerated: 0, acceptedUnchanged: 0, editedAccepted: 0,
-      rawCustomerEvents: 0, staffContextEvents: 0, meaningfulTurns: 0,
-      aggregatedFragments: 0, acknowledgementsSuppressed: 0,
-      rejected: 0, gateBlocked: 0, outputValidatorBlocked: 0, providerCalls: 0,
-      policyViolationAttempts: 0, totalCostMicrousd: 0, totalLatencyMs: 0,
-      imageProviderCalls: 0, imageInputTokens: 0, imageCachedInputTokens: 0, imageOutputTokens: 0,
-      imageTotalCostMicrousd: 0, imageTotalLatencyMs: 0, imageFailures: 0,
-      imageCleanupDeleted: 0, imageCleanupFailures: 0,
-      imageContexts: 0, imageAnalysesSucceeded: 0, imageAnalysesBlocked: 0,
-      imageAwareDraftsGenerated: 0, imageAwareAcceptedUnchanged: 0, imageAwareEditedAccepted: 0,
-      imageAwareRejected: 0, imageRequestOriginalRecommendations: 0,
-      imageAwareTotalCostMicrousd: 0,
-      totalActualHumanReplies: 0, matchedHumanReplies: 0, unmatchedHumanReplies: 0,
-      acceptedUnchangedHumanReplies: 0, editedHumanReplies: 0,
-      independentlyWrittenHumanReplies: 0, reusableCaseMemories: 0,
-      excludedHighRiskCases: 0, casesRetrievedInDrafts: 0,
-      learningCandidatesPending: 0, learningCandidatesApproved: 0,
-      learningCandidatesRejected: 0,
-      commonEditReasons: [],
-    }, { items: [] }, { items: [] }];
-  const cards = replyAssistantMetricCards(rawMetrics);
+  const initialCursor = encodeReplyAssistantCursor(0);
   let initialAiControl: AiControlView = {
     available: false,
     config: { revision: 0, mode: "OFF" as const, timezone: "Pacific/Auckland" as const, periods: [], override: null },
@@ -98,9 +63,7 @@ export default async function ReplyAssistantPage({
   } catch {
     // Missing or unavailable runtime storage is intentionally represented as OFF.
   }
-  const initialItems = selectedReviewItem
-    ? [selectedReviewItem, ...queue.items.filter((item) => item.inboxId !== selectedReviewItem.inboxId)]
-    : queue.items;
+  const initialItems = selectedReviewItem ? [selectedReviewItem] : [];
 
   return (
     <section className={styles.page}>
@@ -118,10 +81,10 @@ export default async function ReplyAssistantPage({
       <ReplyAssistantLiveDashboard
         initialCursor={initialCursor}
         initialItems={initialItems}
-        initialMetricCards={cards}
-        initialMetrics={rawMetrics}
-        initialLearningCandidates={learningCandidates.items}
-        initialCaseMemories={caseMemories.items}
+        initialMetricCards={[]}
+        initialLearningCandidates={[]}
+        initialCaseMemories={[]}
+        loadInitialData={inboxEnabled}
         canReview={access.adminRole === "admin"}
         selectedReviewSelector={selectedReviewSelector}
         initialAiControl={initialAiControl}

@@ -9,9 +9,10 @@ describe("Meta inbox readthrough", () => {
     let ids: string[] = [];
     const redis = {
       get: vi.fn(async (key: string) => values.get(key) ?? null),
+      mget: vi.fn(async (...keys: string[]) => keys.map(key => values.get(key) ?? null)),
       set: vi.fn(async (key: string, value: unknown, options?: { nx?: boolean }) => { if (options?.nx && values.has(key)) return null; values.set(key, value); return "OK"; }),
       del: vi.fn(async (key: string) => values.delete(key)),
-      eval: vi.fn(async (_script: string, keys: string[], args: unknown[]) => { values.set(keys[0], args[2]); ids = [...new Set([...ids, String(args[0])])]; return 1; }),
+      eval: vi.fn(async (_script: string, keys: string[], args: unknown[]) => { if (keys.length === 2) { if (values.get(keys[0]) !== args[0]) return 0; values.set(keys[1], args[1]); return 1; } values.set(keys[0], args[2]); ids = [...new Set([...ids, String(args[0])])]; return 1; }),
       zadd: vi.fn(async (_key: string, value: { member: string }) => { ids = [...new Set([...ids, value.member])]; }),
       zrange: vi.fn(async () => ids), zremrangebyscore: vi.fn(),
     };
@@ -26,6 +27,8 @@ describe("Meta inbox readthrough", () => {
     expect(JSON.stringify([...values])).not.toContain("Actually sent");
     await inbox.list();
     expect(loadConversation).toHaveBeenCalledTimes(1);
+    expect(redis.mget).toHaveBeenCalledTimes(2);
+    expect(redis.get).not.toHaveBeenCalled();
     expect(await inbox.resolve("0".repeat(64))).toBeNull();
     const page = await inbox.timeline({ inboxId: expected, cursor: `meta:${expected}`, limit: 50 });
     expect(page.events[0].text).toBe("Actually sent");

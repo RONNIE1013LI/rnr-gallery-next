@@ -160,3 +160,14 @@ describe("Reply Assistant website-review deep link", () => {
     expect(mocks.refreshLearningCandidates).not.toHaveBeenCalled();
   });
 });
+
+it("returns the authorized page without waiting for inbox data", async () => {
+  vi.clearAllMocks();
+  mocks.requirePermission.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff" });
+  mocks.listQueue.mockImplementation(() => new Promise(() => {}));
+  const page = await Promise.race([ReplyAssistantPage({ searchParams: Promise.resolve({}) }), new Promise(resolve => setTimeout(() => resolve(null), 100))]);
+  expect(page).not.toBeNull();
+  render(page as React.ReactElement);
+  expect(mocks.listQueue).not.toHaveBeenCalled();
+  expect(mocks.renderDashboard).toHaveBeenCalledWith(expect.objectContaining({ loadInitialData: true }));
+});

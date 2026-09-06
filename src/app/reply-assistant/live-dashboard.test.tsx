@@ -724,3 +724,39 @@ it("saves Website independently and keeps Meta state unchanged", async () => {
   expect(meta.textContent).toBe(metaBefore);
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
+
+it("shows controls and conversations while historical data is still pending", async () => {
+  let finishHistory!: (value: Response) => void;
+  const history = new Promise<Response>(resolve => { finishHistory = resolve; });
+  const fetchMock = vi.fn((url: RequestInfo | URL) => String(url).includes("section=history") ? history : Promise.resolve(response({ items: [baseItem] })));
+  vi.stubGlobal("fetch", fetchMock);
+  await act(async () => { render(<ReplyAssistantLiveDashboard {...props} initialItems={[]} loadInitialData />); });
+  expect(screen.getByRole("region", { name: "Website AI control" })).toBeInTheDocument();
+  expect(screen.getByText("Can you combine photos?")).toBeInTheDocument();
+  expect(screen.getByText("Loading historical statistics and learning…")).toBeInTheDocument();
+  await act(async () => { finishHistory(response({ cursor: "cursor-2", metrics: updatedMetrics, learningCandidates: { items: [] }, caseMemories: { items: [] } })); });
+  expect(screen.queryByText("Loading historical statistics and learning…")).not.toBeInTheDocument();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it("keeps the inbox usable when history fails and retries only after an explicit action", async () => {
+  const fetchMock = vi.fn((url: RequestInfo | URL) => Promise.resolve(String(url).includes("section=history") ? response({}, 500) : response({ items: [baseItem] })));
+  vi.stubGlobal("fetch", fetchMock);
+  await act(async () => { render(<ReplyAssistantLiveDashboard {...props} initialItems={[]} loadInitialData />); });
+  expect(screen.getByText("Can you combine photos?")).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent("Historical statistics and learning could not be loaded.");
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Retry historical data" })); });
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+});
+
+it("refreshes conversations independently after a history failure", async () => {
+  const fetchMock = vi.fn((url: RequestInfo | URL) => Promise.resolve(String(url).includes("section=history") ? response({}, 500) : response({ items: [baseItem] })));
+  vi.stubGlobal("fetch", fetchMock);
+  await act(async () => { render(<ReplyAssistantLiveDashboard {...props} initialItems={[]} loadInitialData />); });
+  expect(screen.getByRole("button", { name: "Refresh conversations" })).toBeEnabled();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Refresh conversations" })); });
+  expect(fetchMock).toHaveBeenLastCalledWith("/api/reply-assistant/messages", expect.anything());
+  expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("section=history"))).toHaveLength(1);
+  expect(screen.getByText("Can you combine photos?")).toBeInTheDocument();
+});

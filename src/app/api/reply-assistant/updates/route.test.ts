@@ -89,3 +89,16 @@ describe("reply assistant incremental updates API", () => {
     await expect(response.json()).resolves.toEqual({ error: { code: "INVALID_CURSOR" } });
   });
 });
+
+it("loads history independently without listing conversations and still authorizes first", async () => {
+  const listUpdates = vi.fn(async () => updatePage);
+  const initialHistory = vi.fn(async () => ({ ...updatePage, queueItems: [] }));
+  const permission = vi.fn(async () => ({ user: { id: "staff-1" } }));
+  const handler = createReplyAssistantUpdatesHandler({ enabled: true, requirePermission: permission, listUpdates, initialHistory });
+  expect((await handler.GET(new Request("https://admin.test/api/reply-assistant/updates?section=history"))).status).toBe(200);
+  expect(initialHistory).toHaveBeenCalledTimes(1);
+  expect(listUpdates).not.toHaveBeenCalled();
+  permission.mockRejectedValueOnce(new HttpError("Forbidden", 403));
+  expect((await handler.GET(new Request("https://admin.test/api/reply-assistant/updates?section=history"))).status).toBe(403);
+  expect(initialHistory).toHaveBeenCalledTimes(1);
+});

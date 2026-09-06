@@ -28,7 +28,7 @@ export class MetaInbox {
     cipher.setAAD(Buffer.from(id)); cipher.setAuthTag(tag);
     return JSON.parse(Buffer.concat([cipher.update(body), cipher.final()]).toString()) as T;
   }
-  async index(externalConversationKey: string, receivedAt: Date) {
+  private async writeIndex(externalConversationKey: string, receivedAt: Date) {
     const identityKeyHash = createHmac("sha256", this.dependencies.idHashSecret).update(externalConversationKey).digest("hex");
     const id = metaInboxId(identityKeyHash);
     const locator = { channel: "facebook" as const, externalConversationKey, pageId: this.dependencies.pageId, updatedAt: receivedAt.toISOString() };
@@ -40,6 +40,9 @@ redis.call('ZADD', KEYS[2], ARGV[2], ARGV[1])
 redis.call('DEL', KEYS[3])
 return 1`, [this.key(id), this.key("activity"), this.key(`cache:${id}`)],
       [id, receivedAt.getTime(), this.seal(id, { locator, identityKeyHash }), RETENTION]);
+  }
+  async index(externalConversationKey: string, receivedAt: Date) {
+    await this.writeIndex(externalConversationKey, receivedAt);
     await this.dependencies.redis.zremrangebyscore(this.key("activity"), 0, Date.now() - RETENTION * 1000);
   }
   async resolve(id: string) {
@@ -66,17 +69,26 @@ return 1`, [this.key(id), this.key("activity"), this.key(`cache:${id}`)],
     // A Redis lease bounds discovery across server instances and dashboard polling.
     if (await this.dependencies.redis.set(this.key("discovery"), "1", { nx: true, ex: 300 })) {
       const locators = await this.dependencies.discover();
-      for (const locator of locators) await this.index(locator.externalConversationKey, new Date(locator.updatedAt ?? 0));
+      for (let offset = 0; offset < locators.length; offset += 20) {
+        await Promise.all(locators.slice(offset, offset + 20).map(locator =>
+          this.writeIndex(locator.externalConversationKey, new Date(locator.updatedAt ?? 0))));
+      }
+      await this.dependencies.redis.zremrangebyscore(this.key("activity"), 0, Date.now() - RETENTION * 1000);
     }
     const ids = await this.dependencies.redis.zrange<string[]>(this.key("activity"), 0, Math.min(limit, 100) - 1, { rev: true });
+    if (!ids.length) return { items: [] };
+    const records = await this.dependencies.redis.mget<(string | null)[]>(
+      ...ids.flatMap(id => [this.key(id), this.key(`cache:${id}`)]),
+    );
     const items: SafeInboxItem[] = [];
     const deadline = Date.now() + 15_000;
     // Five concurrent reads bound Graph fanout while keeping initial load usable.
     for (let offset = 0; offset < ids.length; offset += 5) {
-      await Promise.all(ids.slice(offset, offset + 5).map(async (id) => {
-      const target = await this.resolve(id);
-      if (!target) return;
-      const cached = await this.dependencies.redis.get<string>(this.key(`cache:${id}`));
+      await Promise.all(ids.slice(offset, offset + 5).map(async (id, index) => {
+      const raw = records[(offset + index) * 2];
+      if (!raw) return;
+      const target = this.open<{ locator: MetaConversationLocator; identityKeyHash: string }>(id, raw);
+      const cached = records[(offset + index) * 2 + 1];
       if (cached) { items.push(this.open<SafeInboxItem>(id, cached)); return; }
       const snapshot = Date.now() < deadline
         ? await this.dependencies.context.loadConversation(target.locator, { maxTurns: 50 })
@@ -96,9 +108,12 @@ return 1`, [this.key(id), this.key("activity"), this.key(`cache:${id}`)],
         draftText: null, gateResult: null, attachmentCount: snapshot.events.reduce((n, event) => n + event.attachments.length, 0),
         imageAnalysisStatus: "not_applicable", imageAssessmentSummary: null, humanReplyReceived: false,
         websiteReview: null, timeline, hasEarlierTimeline: !snapshot.complete,
-        historyIncompleteReason: `${snapshot.incompleteReason ? `History incomplete: ${snapshot.incompleteReason}. ` : ""}Discovery covers the last 24 hours, up to 100 conversations / 5 Graph pages, refreshed every 5 minutes. Preview shows up to 50 messages and is cached up to 30 seconds; load earlier history for up to 500 messages / 60,000 characters / 6 Graph pages.`,
+        historyIncompleteReason: `${snapshot.incompleteReason ? `History incomplete: ${snapshot.incompleteReason}. ` : ""}Discovery covers the last 24 hours, up to 100 conversations / 5 Graph pages, refreshed every 5 minutes. Preview shows up to 50 messages and is cached up to 2 minutes; new webhook activity invalidates the preview immediately; load earlier history for up to 500 messages / 60,000 characters / 6 Graph pages.`,
       };
-      if (snapshot.events.length) await this.dependencies.redis.set(this.key(`cache:${id}`), this.seal(id, item), { ex: 30 });
+      if (snapshot.events.length) await this.dependencies.redis.eval(`
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])
+return 1`, [this.key(id), this.key(`cache:${id}`)], [raw, this.seal(id, item), 120]);
       items.push(item);
       }));
     }
