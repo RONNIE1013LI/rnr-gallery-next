@@ -46,3 +46,11 @@ Opt-in test variables: RNR_CHAT_AUTH_TEST_REDIS_URL, RNR_INBOX_TEST_REDIS_URL, W
 - Full isolated database tests/build started on GitHub run 34030228437, commit a02c237; pending. Later budget/manual/UI changes require final-head verification. Feature branch only was pushed; no Production release.
 - Read-only Production environment presence check confirms required Redis, encryption, website rollout, Graph and auth keys exist (values not printed). Live runtime readiness still requires post-release acceptance.
 - Read-only backend UI currently shows AI mode OFF. User asked whether to restore ON for acceptance; no setting changed. Existing admin login is usable.
+
+## Final candidate checks, 2026-09-06 23:42 NZST
+
+First full isolated run34030228437 completed:6106 tests passed, two credential-boundary assertions failed,11 skipped. The real PostgreSQL105-session loader integration passed. Fixed the root cause by creating the Graph inbox reader inside the existing Meta runtime credential boundary; neither security assertion was relaxed. Thirty focused security/runtime/inbox tests then passed.
+
+Independent reviews of budget reconciliation and shared AI Control found no remaining material defect. Added actual Auckland-midnight refund coverage; conservative optional cache-write accounting and once-only settlement preserve unknown usage reservations without paid retries. Both shared mode/schedule/override and master flag gate website generation, each provider attempt and publication; OFF retains a durable manual review.
+
+Root fresh local verification:41files339tests passed with real loopbackRedis across website/auth/inbox/Meta/admin;10files125tests passed across actual customer-chat routes/UI/recovery, including native auth and true OFF-to-staff-publication without artificial turn settlement. Full changed-file ESLint and typecheck passed. These are local transport-isolated checks, not live acceptance. Final complete database suite/build remains required on the pushed final candidate.
