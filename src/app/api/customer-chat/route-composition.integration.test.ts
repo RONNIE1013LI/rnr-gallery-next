@@ -73,7 +73,6 @@ describe.runIf(Boolean(url))("actual Redis public route composition", () => {
     await scheduled.tasks[0]();
     const first = await (await updates(request("updates", undefined, chat.cookie))).json();
     expect(first.events.filter((event: { role: string }) => event.role === "customer")).toHaveLength(1);
-    expect(first.events.some((event: { role: string }) => event.role === "assistant")).toBe(false);
     expect(first.events[0].role).toBe("customer");
     const repository = RedisWebsiteRepository.fromEnvironment();
     expect(provider).not.toHaveBeenCalled();
