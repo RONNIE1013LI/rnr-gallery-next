@@ -4569,7 +4569,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       sharedBrainDecision: { risk: variant === "yellow" ? "YELLOW" : variant === "red" ? "RED" : "GREEN",
         nextAction: "AUTO_REPLY_ELIGIBLE", intent: "photo_guidance", replyText, reasons: [], claims: [], toolEvidence: [] },
       validatorCodes: [], inputTokens: 10, cachedInputTokens: 0, outputTokens: 10,
-      estimatedCostMicrousd: 0, latencyMs: 1, dailyScopeKey: "2026-08-19",
+      estimatedCostMicrousd: 0, latencyMs: 1, dailyScopeKey: "daily:2026-08-19",
     });
     if (variant === "changed_text") await database.update(customerServiceAiAttempts).set({ draftText: replyText + " Extra promise." }).where(eq(customerServiceAiAttempts.id, attempt.id));
     if (variant === "changed_signature") await database.update(customerServiceAiAttempts).set({ websiteDecision: { version: "rnr-shared-reply-v1", signature: "00".repeat(32) } }).where(eq(customerServiceAiAttempts.id, attempt.id));
