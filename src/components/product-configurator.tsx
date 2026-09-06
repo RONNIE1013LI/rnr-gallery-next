@@ -37,6 +37,7 @@ import {
 import styles from "./storefront.module.css";
 import { useContainedDialog } from "./forms/use-contained-dialog";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
+import { CanvasProductPreview } from "./canvas-product-preview";
 import { PurchaseTrustStrip } from "./purchase-trust-strip";
 import { AnalyticsEventTracker } from "./analytics-event-tracker";
 import {
@@ -296,6 +297,7 @@ export function ProductConfigurator({
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
         <section className={styles.artworkPreview} aria-label="Artwork preview">
+        <CanvasProductPreview imageSrc={previewImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={orientation}>
         <div className={styles.artworkPreviewMedia}>
           <Image
             src={previewImage}
@@ -314,6 +316,7 @@ export function ProductConfigurator({
             <span aria-hidden="true" role="img">🔍</span>
           </button>
         </div>
+        </CanvasProductPreview>
         <div className={styles.artworkPreviewCopy}>
           <p className={styles.eyebrow}>Example shown</p>
           <h2>{product.title}</h2>
