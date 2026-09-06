@@ -190,3 +190,18 @@ it('only multiplies the approved six-plus fee by a qualifying quantity', () => {
     expect(check({ ...audit, claims: [fee] }, { ...candidate, reply: 'AUD150' }, sources).risk).toBe('GREEN');
     expect(check({ ...audit, claims: [{ ...fee, quantity: 5 }] }, { ...candidate, reply: 'AUD150' }, sources).risk).toBe('RED');
 });
+
+it.each([3, 6])('does not pass a per-person rate off as the total fee for %s people', quantity => {
+    const sources = reasoningEvidence({ channel: 'meta', market: 'AU', conversation: [], attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'synthetic' } });
+    const c = { ...candidate, reply: `The total fee for ${quantity} people is AUD25.` };
+    const fee = { ...audit.claims[0], span: c.reply, kind: 'additional_fee' as const, product: 'digital-oil-painting-canvas', amountMinor: 2500, quantity, numericPath: 'sixPlusPerPersonMinor', sources: ['au-people-pets-fees'] };
+    expect(check({ ...audit, claims: [fee] }, c, sources).risk).toBe('RED');
+});
+
+it('allows an explicit six-plus per-person rate without treating it as a fee total', () => {
+    const sources = reasoningEvidence({ channel: 'meta', market: 'AU', conversation: [], attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'synthetic' } });
+    const c = { ...candidate, reply: 'For six people, the fee is AUD25 per person.' };
+    const rate = { ...audit.claims[0], span: c.reply, kind: 'unit_rate' as const, product: 'digital-oil-painting-canvas', amountMinor: 2500, quantity: 6, numericPath: 'sixPlusPerPersonMinor', sources: ['au-people-pets-fees'] };
+    expect(check({ ...audit, claims: [rate] }, c, sources).risk).toBe('GREEN');
+    expect(check({ ...audit, claims: [{ ...rate, quantity: 3 }] }, c, sources).risk).toBe('RED');
+});

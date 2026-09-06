@@ -2,7 +2,7 @@ import { validateReplyPublicSurface } from "@/server/customer-service/website/ou
 import { z } from 'zod';
 export const candidateSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), reply: z.string().min(1), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable() }).strict();
 export type Candidate = z.infer<typeof candidateSchema>;
-export const auditSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable(), openIssue: z.enum(['NONE', 'POLICY_ENTITLEMENT', 'DISPUTE', 'EXCEPTION', 'ORDER_STATE']), relevantCustomerTurnIds: z.array(z.string()), claims: z.array(z.object({ span: z.string(), product: z.string().nullable(), orderReference: z.string().nullable(), destination: z.string().nullable(), kind: z.enum(['product', 'capability', 'price', 'pricing_rule', 'tax', 'shipping_cost', 'shipping_rule', 'delivery_promise', 'process', 'policy', 'additional_fee', 'order_status', 'payment_status']), sources: z.array(z.string()), marketDependent: z.boolean(), amountMinor: z.number().nullable(), currency: z.enum(['NZD', 'AUD']).nullable(), size: z.string().nullable(), quantity: z.number().int().positive().nullable(), numericPath: z.string().nullable(), calculation: z.array(z.object({ sourceId: z.string(), numericPath: z.string() }).strict()).max(2), liveRequired: z.boolean() }).strict()), safe: z.boolean(), helpful: z.boolean(), clarificationOnly: z.boolean(), customerInputRequest: z.string().nullable(), internalErrorLanguage: z.boolean(), unnecessaryQuestion: z.boolean(), issues: z.array(z.string()) }).strict();
+export const auditSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable(), openIssue: z.enum(['NONE', 'POLICY_ENTITLEMENT', 'DISPUTE', 'EXCEPTION', 'ORDER_STATE']), relevantCustomerTurnIds: z.array(z.string()), claims: z.array(z.object({ span: z.string(), product: z.string().nullable(), orderReference: z.string().nullable(), destination: z.string().nullable(), kind: z.enum(['product', 'capability', 'price', 'pricing_rule', 'tax', 'shipping_cost', 'shipping_rule', 'delivery_promise', 'process', 'policy', 'additional_fee', 'unit_rate', 'order_status', 'payment_status']), sources: z.array(z.string()), marketDependent: z.boolean(), amountMinor: z.number().nullable(), currency: z.enum(['NZD', 'AUD']).nullable(), size: z.string().nullable(), quantity: z.number().int().positive().nullable(), numericPath: z.string().nullable(), calculation: z.array(z.object({ sourceId: z.string(), numericPath: z.string() }).strict()).max(2), liveRequired: z.boolean() }).strict()), safe: z.boolean(), helpful: z.boolean(), clarificationOnly: z.boolean(), customerInputRequest: z.string().nullable(), internalErrorLanguage: z.boolean(), unnecessaryQuestion: z.boolean(), issues: z.array(z.string()) }).strict();
 export type ClaimAudit = z.infer<typeof auditSchema>;
 export type EvidenceSource = {
     id: string;
@@ -128,11 +128,11 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
             continue;
         }
         const verified = refs.filter((s): s is EvidenceSource => !!s);
-        const needsMarket = claim.marketDependent || ['price', 'pricing_rule', 'tax', 'shipping_cost', 'delivery_promise', 'additional_fee'].includes(claim.kind);
+        const needsMarket = claim.marketDependent || ['price', 'pricing_rule', 'tax', 'shipping_cost', 'delivery_promise', 'additional_fee', 'unit_rate'].includes(claim.kind);
         if (needsMarket && (candidate.market === 'UNKNOWN' || verified.some(s => s.market !== 'GLOBAL' && s.market !== candidate.market)))
             failures.push('missing_or_wrong_market');
         if ((claim.kind === 'policy' && !verified.some(s => ['policy', 'revision', 'fee'].includes(s.category)))
-            || (claim.kind === 'additional_fee' && !verified.some(s => feeSourceSupports(s, claim.numericPath ?? (claim.calculation.length === 1 ? claim.calculation[0].numericPath : null)))))
+            || (['additional_fee', 'unit_rate'].includes(claim.kind) && !verified.some(s => feeSourceSupports(s, claim.numericPath ?? (claim.calculation.length === 1 ? claim.calculation[0].numericPath : null)))))
             failures.push('unapproved_policy_source');
         if (['order_status', 'payment_status', 'shipping_cost', 'delivery_promise'].includes(claim.kind) || claim.liveRequired) {
             if (!verified.some(s => liveSourceSupports(claim,s)))
@@ -146,10 +146,10 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
                 failures.push('invalid_pricing_rule');
         }
         const productSources = verified.filter(s => Array.isArray(s.facts.productKeys) && (s.facts.productKeys as unknown[]).length > 0);
-        if (['price', 'pricing_rule', 'additional_fee', 'shipping_cost'].includes(claim.kind) && productSources.length
+        if (['price', 'pricing_rule', 'additional_fee', 'unit_rate', 'shipping_cost'].includes(claim.kind) && productSources.length
             && (!claim.product || productSources.some(s => !(s.facts.productKeys as string[]).includes(claim.product!.replaceAll('_', '-')))))
             failures.push('product_source_binding_mismatch');
-        if (claim.kind === 'price' || claim.kind === 'shipping_cost' || claim.kind === 'additional_fee') {
+        if (claim.kind === 'price' || claim.kind === 'shipping_cost' || claim.kind === 'additional_fee' || claim.kind === 'unit_rate') {
             if (claim.amountMinor === null || (!claim.numericPath && !claim.calculation.length) || claim.currency !== (candidate.market === 'AU' ? 'AUD' : 'NZD')) {
                 failures.push('incomplete_money_binding');
                 continue;
@@ -174,6 +174,9 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
                 continue;
             }
             const numericPath = claim.numericPath!.replace(/^facts\./, '');
+            if ((numericPath === 'sixPlusPerPersonMinor' || claim.kind === 'unit_rate')
+                && (claim.kind !== 'unit_rate' || numericPath !== 'sixPlusPerPersonMinor' || claim.quantity === null || claim.quantity < 6))
+                failures.push('invalid_price_calculation');
             if(!['pricesMinor','priceMinor','amountMinor','baseMinorBeforeGst','priceMinorIncludingGst','feesMinor','extraPhotoMinor','backgroundRemovalMinor','sixPlusPerPersonMinor'].includes(numericPath.split('.')[0]))failures.push('invalid_monetary_fact_path');
             const moneySources = verified.filter(s => claim.kind === 'shipping_cost' ? liveSourceSupports(claim,s) : claim.kind === 'price' ? (s.kind === 'knowledge' && s.category === 'pricing') || (s.kind === 'tool' && s.category === 'canonical_product_price') : feeSourceSupports(s, claim.numericPath));
             if (!moneySources.some(s => numericPath.split('.').reduce<unknown>((v, k) => v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined, s.facts) === claim.amountMinor))
