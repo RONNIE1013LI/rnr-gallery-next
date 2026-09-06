@@ -122,8 +122,9 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
                 return stop('repeated_tool_request', 'orchestrator_exception');
         }
         let candidate: Candidate = plan;
+        const customerTurnIds = context.turns.filter(turn => turn.role === 'customer').map(turn => turn.id);
         stage = 'verification';
-        let audit = await modelCall(verifier, { ...data(), candidate }, auditSchemaForSources(evidence), 2400);
+        let audit = await modelCall(verifier, { ...data(), candidate }, auditSchemaForSources(evidence, customerTurnIds), 2400);
         verificationSuccess = true;
         stage = 'contract';
         const turns: Turn[] = context.turns.filter((t): t is typeof t & {
@@ -141,7 +142,7 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
                 verificationSuccess = false;
                 candidate = await modelCall(generator, { ...data(), previousCandidate: candidate, verificationFeedback: contract.failures, qualityFeedback: { helpful: audit.helpful, unnecessaryQuestion: audit.unnecessaryQuestion }, issues: audit.issues }, candidateSchema, 1200);
                 stage = 'repair_verification';
-                audit = await modelCall(verifier, { ...data(), candidate }, auditSchemaForSources(evidence), 2400);
+                audit = await modelCall(verifier, { ...data(), candidate }, auditSchemaForSources(evidence, customerTurnIds), 2400);
                 verificationSuccess = true;
                 stage = 'contract';
                 contract = checkSafetyContract(candidate, audit, evidence, turns);

@@ -207,10 +207,38 @@ it('allows an explicit six-plus per-person rate without treating it as a fee tot
 });
 
 it('restricts audit references to available sources, including current live evidence', () => {
-    const schema = auditSchemaForSources([source]);
+    const schema = auditSchemaForSources([source], ['c1']);
     expect(schema.safeParse(audit).success).toBe(true);
     expect(schema.safeParse({ ...audit, claims: [{ ...audit.claims[0], sources: ['au-photo-print-canvas-prices'] }] }).success).toBe(false);
     expect(schema.safeParse({ ...audit, claims: [{ ...audit.claims[0], calculation: [{ sourceId: 'invented', numericPath: 'priceMinor' }] }] }).success).toBe(false);
     const toolSource = { ...source, id: 'tool-1', kind: 'tool' as const };
-    expect(auditSchemaForSources([source, toolSource]).safeParse({ ...audit, claims: [{ ...audit.claims[0], sources: ['tool-1'] }] }).success).toBe(true);
+    expect(auditSchemaForSources([source, toolSource], ['c1']).safeParse({ ...audit, claims: [{ ...audit.claims[0], sources: ['tool-1'] }] }).success).toBe(true);
+});
+
+
+it('restricts audit context references to actual customer turn IDs', () => {
+    const schema = auditSchemaForSources([source], ['c1', 'c3']);
+    expect(schema.safeParse({ ...audit, marketEvidenceTurn: 'c3', relevantCustomerTurnIds: ['c1', 'c3'] }).success).toBe(true);
+    expect(schema.safeParse({ ...audit, marketEvidenceTurn: 'staff2' }).success).toBe(false);
+    expect(schema.safeParse({ ...audit, relevantCustomerTurnIds: ['c1', 'staff2'] }).success).toBe(false);
+});
+
+it('requires complete bindings for calculated prices and fees without weakening amount validation', () => {
+    const sources = reasoningEvidence({ channel: 'meta', market: 'AU', conversation: [], attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'synthetic' } });
+    const schema = auditSchemaForSources(sources, ['c1']);
+    const sum = { ...audit.claims[0], span: 'AUD164.99', product: 'digital-oil-painting-canvas', amountMinor: 16499, size: 'A3', quantity: 3, numericPath: null, sources: ['au-oil-painting-canvas-prices', 'au-people-pets-fees'], calculation: [{ sourceId: 'au-oil-painting-canvas-prices', numericPath: 'pricesMinor.A3' }, { sourceId: 'au-people-pets-fees', numericPath: 'feesMinor.3' }] };
+    expect(schema.safeParse({ ...audit, claims: [sum] }).success).toBe(true);
+    for (const invalid of [{ quantity: null }, { quantity: 0 }, { quantity: 1.5 }, { size: null }, { amountMinor: null }, { currency: null }, { numericPath: 'pricesMinor.A3' }, { calculation: sum.calculation.slice(0, 1) }, { calculation: [...sum.calculation, sum.calculation[0]] }, { kind: 'product' }, { calculation: [{ ...sum.calculation[0], sourceId: 'invented' }, sum.calculation[1]] }]) {
+        expect(schema.safeParse({ ...audit, claims: [{ ...sum, ...invalid }] }).success).toBe(false);
+    }
+    const malicious = { ...sum, span: 'AUD1', amountMinor: 100 };
+    expect(schema.safeParse({ ...audit, claims: [malicious] }).success).toBe(true);
+    expect(check({ ...audit, claims: [malicious] }, { ...candidate, reply: malicious.span }, sources).failures).toContain('invalid_price_calculation');
+    const fee = { ...sum, kind: 'additional_fee' as const, span: 'AUD150', amountMinor: 15000, quantity: 6, size: null, sources: ['au-people-pets-fees'], calculation: [{ sourceId: 'au-people-pets-fees', numericPath: 'sixPlusPerPersonMinor' }] };
+    expect(schema.safeParse({ ...audit, claims: [fee] }).success).toBe(true);
+    for (const invalid of [{ quantity: null }, { quantity: 5 }, { amountMinor: null }, { currency: null }, { calculation: sum.calculation }]) {
+        expect(schema.safeParse({ ...audit, claims: [{ ...fee, ...invalid }] }).success).toBe(false);
+    }
+    const rate = { ...fee, kind: 'unit_rate', amountMinor: 2500, numericPath: 'sixPlusPerPersonMinor', calculation: [] };
+    expect(schema.safeParse({ ...audit, claims: [rate] }).success).toBe(true);
 });

@@ -43,10 +43,14 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect(JSON.stringify(data)).not.toContain('private-hash');
         const checked = JSON.parse(String(h.fetchImpl.mock.calls[1][1]?.body));
         expect(JSON.parse(checked.input[1].content[0].text).candidate.reply).toBe(base.reply);
-        const allowedSources = checked.text.format.schema.properties.claims.items.properties.sources.items.enum;
+        const variants = checked.text.format.schema.properties.claims.items.anyOf;
+        const allowedSources = variants[0].properties.sources.items.enum;
         expect(allowedSources).toContain('au-photo-canvas-prices');
         expect(allowedSources).not.toContain('au-photo-print-canvas-prices');
-        expect(checked.text.format.schema.properties.claims.items.properties.calculation.items.properties.sourceId.enum).toEqual(allowedSources);
+        for (const variant of variants) {
+            expect(variant.properties.sources.items.enum).toEqual(allowedSources);
+            expect(variant.properties.calculation.items.properties.sourceId.enum).toEqual(allowedSources);
+        }
     });
     it('keeps a safe but repeatedly unhelpful clarification for review after one quality repair', async () => {
         const c: Candidate = { ...base, mode: 'CLARIFICATION', reply: 'Has the design been approved or printed?' };
@@ -71,6 +75,9 @@ describe('production structured Brain with mocked Responses transport (no paid m
             role: string;
         }) => t.role)).toEqual(['customer', 'staff', 'customer']);
         expect(sent.activeCustomerTurn.id).toBe('t3');
+        const schema = JSON.parse(String(h.fetchImpl.mock.calls[1][1]?.body)).text.format.schema;
+        expect(schema.properties.relevantCustomerTurnIds.items.enum).toEqual(['t1', 't3']);
+        expect(schema.properties.marketEvidenceTurn.anyOf[0].enum).toEqual(['t1', 't3']);
         expect(sent.resolvedThrough).toBeNull();
     });
     it('only treats adapter-owned automation metadata as an administrative resolution', () => {
@@ -111,6 +118,13 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect((await h.brain.generate(r)).risk).toBe('GREEN');
         expect(h.tools.execute).toHaveBeenCalledWith({ name: 'order_status', input: { customerReference: 'server-authenticated', orderReference: 'EVAL-42' } });
         expect(JSON.stringify(h.fetchImpl.mock.calls)).not.toContain('server-authenticated');
+        const schema = JSON.parse(String(h.fetchImpl.mock.calls[2][1]?.body)).text.format.schema;
+        expect(schema.properties.relevantCustomerTurnIds.items.enum).toEqual(['t1']);
+        expect(schema.properties.marketEvidenceTurn.anyOf[0].enum).toEqual(['t1']);
+        for (const variant of schema.properties.claims.items.anyOf) {
+            expect(variant.properties.sources.items.enum).toContain('tool-1');
+            expect(variant.properties.calculation.items.properties.sourceId.enum).toContain('tool-1');
+        }
     });
     it.each(['shipping_cost', 'delivery_promise', 'order_status', 'payment_status'] as const)('rejects %s supported only by static knowledge', async (kind) => {
         const c = { ...base, reply: 'Confirmed for your order.', market: 'AU' as const, marketEvidenceTurn: 't1' };
