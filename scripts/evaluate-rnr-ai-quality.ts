@@ -5,6 +5,7 @@ import { loadBusinessBrain } from '../src/server/rnr-ai/business-brain/loader';
 import { OpenAiSolProvider } from '../src/server/rnr-ai/providers/openai-sol';
 import { BusinessToolRegistry } from '../src/server/rnr-ai/tools/tool-registry';
 import { createWebsiteBrainAdapter } from '../src/server/rnr-ai/website/website-brain-adapter';
+import type { StructuredProvider } from '../src/server/rnr-ai/reasoning/brain';
 
 // Synthetic held-out scenarios, not customer transcripts or fixed expected wording.
 const cases: { id: string; turns: ['customer' | 'staff', string][]; assess: string }[] = [
@@ -30,12 +31,21 @@ async function main() {
   if (!process.env.OPENAI_API_KEY?.trim()) throw new Error('A local OPENAI_API_KEY is required; no model called');
   const businessBrain = loadBusinessBrain();
   const unavailable = async () => ({ status: 'unavailable_review_required' as const, source: 'evaluation_no_live_business_access', facts: {} });
-  const brain = createRnrAiBrain({ provider: new OpenAiSolProvider({ apiKey: process.env.OPENAI_API_KEY }), tools: new BusinessToolRegistry({ businessBrain, shipping: { quote: unavailable }, orderStatus: { read: unavailable }, paymentStatus: { read: unavailable } }) });
+  const provider = new OpenAiSolProvider({ apiKey: process.env.OPENAI_API_KEY });
+  const modelOutputs: unknown[] = [];
+  const structured: StructuredProvider['structured'] = async (...args) => {
+    const result = await provider.structured(...args);
+    // This runner accepts only its synthetic fixtures, never real conversations.
+    modelOutputs.push(result.decision);
+    return result;
+  };
+  const brain = createRnrAiBrain({ provider: { generate: request => provider.generate(request), structured }, tools: new BusinessToolRegistry({ businessBrain, shipping: { quote: unavailable }, orderStatus: { read: unavailable }, paymentStatus: { read: unavailable } }) });
   const website = createWebsiteBrainAdapter({ brain, businessBrain });
   const results = [];
   evaluation: for (const item of selected) {
    for (const channel of ['meta', 'website'] as const) {
     const started = Date.now();
+    modelOutputs.length = 0;
     const decision = channel === 'website' ? (await website.generate({
       current: { id: `synthetic-${item.id}`, text: item.turns.at(-1)![1] },
       context: item.turns.map(([role, text], i) => ({ role, text, receivedAt: new Date(Date.UTC(2026, 8, 6, 0, i)).toISOString() })),
@@ -43,7 +53,7 @@ async function main() {
     })).decision : await brain.generate({ channel: 'meta', market: 'UNKNOWN', businessBrain, attachments: [], toolContext: { conversationKeyHash: `synthetic-${item.id}` },
       conversation: item.turns.map(([role, text], i) => ({ role, text, providerMessageKey: `synthetic-${item.id}-${i}`, sentAt: new Date(Date.UTC(2026, 8, 6, 0, i)).toISOString(), channel: 'meta', attachmentOrdinals: [] })),
     }, { deadlineAt: Date.now() + 40_000 });
-    const result = { id: item.id, channel, assess: item.assess, elapsedMs: Date.now() - started, decision };
+    const result = { id: item.id, channel, assess: item.assess, elapsedMs: Date.now() - started, decision, modelOutputs: [...modelOutputs] };
     results.push(result);
     process.stdout.write(`SYNTHETIC_REPLY_RESULT ${JSON.stringify(result)}\n`);
     // Infrastructure failure is not a model-quality score. Stop, do not burn more calls.
