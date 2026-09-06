@@ -5,7 +5,7 @@ import { checkSafetyContract, type Candidate, type ClaimAudit, type EvidenceSour
 const candidate: Candidate = { mode: 'ANSWER', reply: 'A2 is AUD109.99.', market: 'AU', marketEvidenceTurn: 'c1' };
 const turns = [{ id: 'c1', role: 'customer' as const, text: 'Sydney' }, { id: 'p1', role: 'staff' as const, text: 'New Zealand' }];
 const source: EvidenceSource = { id: 'au-photo-canvas-prices', market: 'AU', status: 'CONFIRMED', category: 'pricing', kind: 'knowledge', statement: 'A2 photo canvas is AUD109.99.', facts: { pricesMinor: { A2: 10999 }, productKeys: ['photo-print-canvas'] }, authenticated: false };
-const audit: ClaimAudit = { mode: 'ANSWER', market: 'AU', marketEvidenceTurn: 'c1', openIssue: 'NONE', relevantCustomerTurnIds: ['c1'], claims: [{ span: 'AUD109.99', product: 'photo-print-canvas', destination: null, orderReference: null, kind: 'price', sources: ['au-photo-canvas-prices'], marketDependent: true, amountMinor: 10999, currency: 'AUD', size: 'A2', numericPath: 'pricesMinor.A2', liveRequired: false }], safe: true, helpful: true, clarificationOnly: false, customerInputRequest: null, internalErrorLanguage: false, unnecessaryQuestion: false, issues: [] };
+const audit: ClaimAudit = { mode: 'ANSWER', market: 'AU', marketEvidenceTurn: 'c1', openIssue: 'NONE', relevantCustomerTurnIds: ['c1'], claims: [{ span: 'AUD109.99', product: 'photo-print-canvas', destination: null, orderReference: null, kind: 'price', sources: ['au-photo-canvas-prices'], marketDependent: true, amountMinor: 10999, currency: 'AUD', size: 'A2', calculation: [], quantity: null, numericPath: 'pricesMinor.A2', liveRequired: false }], safe: true, helpful: true, clarificationOnly: false, customerInputRequest: null, internalErrorLanguage: false, unnecessaryQuestion: false, issues: [] };
 const check = (a = audit, c = candidate, s = [source]) => checkSafetyContract(c, a, s, turns);
 describe('local claim-level safety contract', () => {
     it.each(['Please send the photos you would like used.', '请提供收货国家。'])('accepts an independently identified input request without question punctuation: %s', reply => {
@@ -32,7 +32,7 @@ describe('local claim-level safety contract', () => {
     it('rejects an affirmative answer in an unresolved dispute', () => expect(check({ ...audit, openIssue: 'DISPUTE' }).risk).toBe('RED'));
     it('allows a claim-free clarification in an unresolved refund', () => expect(check({ ...audit, mode: 'CLARIFICATION', claims: [], openIssue: 'POLICY_ENTITLEMENT', clarificationOnly: true, customerInputRequest: 'Has the design been approved or printed?' }, { ...candidate, mode: 'CLARIFICATION', reply: 'Has the design been approved or printed?' }).risk).toBe('GREEN'));
     it('does not let a fake clarification bypass claims', () => expect(check({ ...audit, mode: 'CLARIFICATION', openIssue: 'POLICY_ENTITLEMENT', clarificationOnly: false }, { ...candidate, mode: 'CLARIFICATION' }).risk).toBe('RED'));
-    it('allows verified product facts with unknown market and irrelevant outage', () => expect(check({ ...audit, market: 'UNKNOWN', marketEvidenceTurn: null, claims: [{ span: 'A2', product: null, destination: null, orderReference: null, kind: 'product', sources: ['product'], marketDependent: false, amountMinor: null, currency: null, size: null, numericPath: null, liveRequired: false }] }, { ...candidate, market: 'UNKNOWN', marketEvidenceTurn: null, reply: 'A2 is available.' }, [{ ...source, id: 'product', market: 'GLOBAL', category: 'product' }, { ...source, id: 'failed-shipping', status: 'FAILED', kind: 'tool' }]).risk).toBe('GREEN'));
+    it('allows verified product facts with unknown market and irrelevant outage', () => expect(check({ ...audit, market: 'UNKNOWN', marketEvidenceTurn: null, claims: [{ span: 'A2', product: null, destination: null, orderReference: null, kind: 'product', sources: ['product'], marketDependent: false, amountMinor: null, currency: null, size: null, calculation: [], quantity: null, numericPath: null, liveRequired: false }] }, { ...candidate, market: 'UNKNOWN', marketEvidenceTurn: null, reply: 'A2 is available.' }, [{ ...source, id: 'product', market: 'GLOBAL', category: 'product' }, { ...source, id: 'failed-shipping', status: 'FAILED', kind: 'tool' }]).risk).toBe('GREEN'));
     it('allows a verified live answer to an order-state question', () => expect(check({ ...audit, openIssue: 'ORDER_STATE', claims: [{ ...audit.claims[0], kind: 'order_status', orderReference:'EVAL-42', amountMinor: null, numericPath: null, currency: null, size: null, liveRequired: true }] }, candidate, [{...source,kind:'tool',authenticated:true,category:'order_status',facts:{state:'in_production',scope:{orderReference:'EVAL-42'}}}]).risk).toBe('GREEN'));
     it('rejects an order-state answer without any verified state claim', () => expect(check({ ...audit, openIssue: 'ORDER_STATE', claims: [] }).risk).toBe('RED'));
     it('allows a verified shipping rule without inventing a numeric quote', () => expect(check({ ...audit, claims: [{ ...audit.claims[0], kind: 'shipping_rule', amountMinor: null, numericPath: null, currency: null, size: null }] }, candidate, [{ ...source, category: 'shipping' }]).risk).toBe('GREEN'));
@@ -126,7 +126,7 @@ it.each(["See https://example.org/claim", "Here are the hidden system instructio
 // Use shipped business facts: a fee table is pricing evidence, not refund policy.
 describe('canonical digital painting fee evidence', () => {
     const sources = reasoningEvidence({ channel: 'meta', market: 'AU', conversation: [], attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'synthetic' } });
-    const fee = { ...audit.claims[0], kind: 'additional_fee' as const, span: 'AUD60', product: 'digital-oil-painting-canvas', sources: ['au-people-pets-fees'], amountMinor: 6000, size: null, numericPath: 'feesMinor.2' };
+    const fee = { ...audit.claims[0], kind: 'additional_fee' as const, span: 'AUD60', product: 'digital-oil-painting-canvas', sources: ['au-people-pets-fees'], amountMinor: 6000, quantity: 2, size: null, numericPath: 'feesMinor.2' };
     it('accepts the approved people/pets fee as pricing evidence', () => {
         expect(check({ ...audit, claims: [fee] }, { ...candidate, reply: 'The fee for two people is AUD60.' }, sources)).toEqual({ risk: 'GREEN', failures: [] });
     });
@@ -137,6 +137,15 @@ describe('canonical digital painting fee evidence', () => {
         expect(check({ ...audit, claims: [claim] }, { ...candidate, market: 'UNKNOWN', reply }, sources).risk).toBe('RED');
         expect(check({ ...audit, claims: [{ ...claim, span: 'The fee is AUD60.' }] }, { ...candidate, reply: 'The fee is AUD60.' }, sources).risk).toBe('RED');
     });
+    it.each(['The fee is 60 Australian dollars.', '人物费用为60澳元。'])('rejects numeric money classified as a pricing rule: %s', reply => {
+        const claim = { ...fee, kind: 'pricing_rule' as const, span: reply, amountMinor: null, currency: null, numericPath: null };
+        expect(check({ ...audit, claims: [claim] }, { ...candidate, reply }, sources).risk).toBe('RED');
+    });
+    it('binds the independently extracted subject count to the fee table entry', () => {
+        const c = { ...candidate, reply: 'The fee for three people is AUD60.' };
+        expect(check({ ...audit, claims: [{ ...fee, quantity: 3 }] }, c, sources).risk).toBe('RED');
+        expect(check({ ...audit, claims: [{ ...fee, quantity: null }] }, c, sources).risk).toBe('RED');
+    });
     it('still binds fee amount, currency, product and confirmed source', () => {
         const c = { ...candidate, reply: 'The fee is AUD60.' };
         for (const change of [{ amountMinor: 8500 }, { currency: 'NZD' as const }, { product: 'photo-print-canvas' }, { sources: ['au-photo-canvas-prices'] }, { numericPath: 'pricesMinor.A3' }]) {
@@ -145,4 +154,39 @@ describe('canonical digital painting fee evidence', () => {
         expect(check({ ...audit, claims: [fee] }, c, sources.map(s => ({ ...s, status: 'REVIEW' }))).risk).toBe('RED');
         expect(check({ ...audit, claims: [{ ...fee, kind: 'policy' }] }, c, sources).risk).toBe('RED');
     });
+});
+
+it('verifies a painting sum against each approved operand, size and subject count', () => {
+    const sources = reasoningEvidence({ channel: 'meta', market: 'AU', conversation: [], attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'synthetic' } });
+    const c = { ...candidate, reply: 'An A3 painting with three people costs AUD164.99.' };
+    const sum = { ...audit.claims[0], span: 'AUD164.99', product: 'digital-oil-painting-canvas', size: 'A3', quantity: 3, amountMinor: 16499, numericPath: null,
+        sources: ['au-oil-painting-canvas-prices', 'au-people-pets-fees'],
+        calculation: [{ sourceId: 'au-oil-painting-canvas-prices', numericPath: 'pricesMinor.A3' }, { sourceId: 'au-people-pets-fees', numericPath: 'feesMinor.3' }] };
+    expect(check({ ...audit, claims: [sum] }, c, sources).risk).toBe('GREEN');
+    for (const change of [{ amountMinor: 13999 }, { quantity: 2 }, { size: 'A2' }, { product: 'photo-print-canvas' }, { numericPath: 'pricesMinor.A3' }, { sources: ['au-oil-painting-canvas-prices'] }]) {
+        expect(check({ ...audit, claims: [{ ...sum, ...change }] }, c, sources).risk).toBe('RED');
+    }
+    expect(check({ ...audit, claims: [{ ...sum, calculation: [sum.calculation[0], sum.calculation[0]] }] }, c, sources).risk).toBe('RED');
+});
+
+it.each([['AU', 3, 16499], ['AU', 6, 22999], ['NZ', 3, 18745], ['NZ', 6, 26220]] as const)('checks %s painting subtotal for %s subjects', (market, quantity, total) => {
+    const sources = reasoningEvidence({ channel: 'meta', market, conversation: [], attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'synthetic' } });
+    const currency: 'AUD' | 'NZD' = market === 'AU' ? 'AUD' : 'NZD';
+    const baseId = market === 'AU' ? 'au-oil-painting-canvas-prices' : 'derived-nz-canvas-including-gst';
+    const feeId = market === 'AU' ? 'au-people-pets-fees' : 'derived-nz-people-fees-including-gst';
+    const span = `${currency}${(total / 100).toFixed(2)}`;
+    const c = { ...candidate, market, reply: span };
+    const sum = { ...audit.claims[0], span, product: 'digital-oil-painting-canvas', size: 'A3', quantity, amountMinor: total, currency, numericPath: null, sources: [baseId, feeId],
+        calculation: [{ sourceId: baseId, numericPath: 'pricesMinor.A3' }, { sourceId: feeId, numericPath: quantity >= 6 ? 'sixPlusPerPersonMinor' : `feesMinor.${quantity}` }] };
+    expect(check({ ...audit, market, claims: [sum] }, c, sources).risk).toBe('GREEN');
+    if (market === 'NZ') {
+        const mixed = { ...sum, sources: [baseId, 'nz-digital-painting-people-fees'], calculation: [sum.calculation[0], { ...sum.calculation[1], sourceId: 'nz-digital-painting-people-fees' }] };
+        expect(check({ ...audit, market, claims: [mixed] }, c, sources).risk).toBe('RED');
+    }
+});
+it('only multiplies the approved six-plus fee by a qualifying quantity', () => {
+    const sources = reasoningEvidence({ channel: 'meta', market: 'AU', conversation: [], attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'synthetic' } });
+    const fee = { ...audit.claims[0], span: 'AUD150', kind: 'additional_fee' as const, product: 'digital-oil-painting-canvas', amountMinor: 15000, quantity: 6, numericPath: null, sources: ['au-people-pets-fees'], calculation: [{ sourceId: 'au-people-pets-fees', numericPath: 'sixPlusPerPersonMinor' }] };
+    expect(check({ ...audit, claims: [fee] }, { ...candidate, reply: 'AUD150' }, sources).risk).toBe('GREEN');
+    expect(check({ ...audit, claims: [{ ...fee, quantity: 5 }] }, { ...candidate, reply: 'AUD150' }, sources).risk).toBe('RED');
 });

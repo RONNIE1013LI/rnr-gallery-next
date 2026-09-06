@@ -12,7 +12,7 @@ const expectedCodes = [
   'incomplete_money_binding', 'tool_product_binding_mismatch', 'tool_size_binding_mismatch',
   'tool_returned_size_mismatch', 'tool_currency_mismatch', 'product_source_binding_mismatch',
   'actual_text_amount_mismatch', 'actual_text_currency_mismatch',
-  'invalid_monetary_fact_path', 'amount_not_at_cited_path', 'size_price_binding_mismatch',
+  'invalid_monetary_fact_path', 'amount_not_at_cited_path', 'size_price_binding_mismatch', 'quantity_fee_binding_mismatch', 'invalid_price_calculation',
 ] as const;
 const safe: ReasoningDiagnostic = { messageHash: 'a'.repeat(64), model: 'gpt-5.6-luna', stage: 'generation', reason: 'none', candidateCreated: false, reasoningSuccess: false, verificationSuccess: false, risk: null };
 
@@ -33,9 +33,9 @@ describe('contract diagnostics privacy boundary', () => {
     try { expect(() => logReasoningDiagnostic(safe)).not.toThrow(); } finally { spy.mockRestore(); }
   });
 
-  it('uses the exact 28 deterministic failure codes from the contract', () => {
+  it('uses the exact 30 deterministic failure codes from the contract', () => {
     expect(contractFailureCodes).toEqual(expectedCodes);
-    expect(contractFailureCodes).toHaveLength(28);
+    expect(contractFailureCodes).toHaveLength(30);
   });
 
   it.each(expectedCodes)('logs %s only as an allowlisted enum', (failure) => {

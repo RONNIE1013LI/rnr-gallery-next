@@ -6,7 +6,7 @@ import { reasoningContext, reasoningEvidence } from './evidence';
 import type { RnrAiRequest, ConversationTurn, ToolEvidence } from '../types';
 import type { Candidate, ClaimAudit } from './claim-contract';
 const base: Candidate = { mode: 'ANSWER', reply: 'A2 is 59.4 × 42 cm.', market: 'UNKNOWN', marketEvidenceTurn: null };
-const fact: ClaimAudit['claims'][number] = { span: base.reply, product: null, destination: null, orderReference: null, kind: 'product', sources: ['product-config'], marketDependent: false, amountMinor: null, currency: null, size: null, numericPath: null, liveRequired: false };
+const fact: ClaimAudit['claims'][number] = { span: base.reply, product: null, destination: null, orderReference: null, kind: 'product', sources: ['product-config'], marketDependent: false, amountMinor: null, currency: null, size: null, calculation: [], quantity: null, numericPath: null, liveRequired: false };
 function audit(candidate: Candidate = base, claims: ClaimAudit['claims'] = [fact], extra: Partial<ClaimAudit> = {}): ClaimAudit { return { mode: candidate.mode, market: candidate.market, marketEvidenceTurn: candidate.marketEvidenceTurn, openIssue: 'NONE', relevantCustomerTurnIds: ['t1'], claims, safe: true, helpful: true, clarificationOnly: candidate.mode === 'CLARIFICATION', customerInputRequest: candidate.mode === 'CLARIFICATION' ? candidate.reply : null, internalErrorLanguage: false, unnecessaryQuestion: false, issues: [], ...extra }; }
 function request(texts: [
     ConversationTurn['role'],
