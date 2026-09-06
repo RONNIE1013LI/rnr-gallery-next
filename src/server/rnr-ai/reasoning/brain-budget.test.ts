@@ -39,6 +39,16 @@ function delayedProvider(outputs: readonly unknown[], delays: readonly number[])
 }
 
 describe('reasoning stage budgets', () => {
+  it.each([15_000, 30_000])('bounds repair verification by remaining request time: %i ms', async (verificationDelay) => {
+    vi.useFakeTimers(); vi.setSystemTime(0);
+    try {
+      const current = delayedProvider([plan(), audit(false), candidate, audit(true)], [4_000, 5_000, 4_000, verificationDelay]);
+      const pending = generateReasonedReply(request(), current.provider, { execute: vi.fn() }, { deadlineAt: BRAIN_BUDGET_MS });
+      await vi.advanceTimersByTimeAsync(40_001);
+      await expect(pending).resolves.toMatchObject({ risk: verificationDelay === 15_000 ? 'GREEN' : 'RED' });
+      expect(current.requests[3].deadlineAt).toBe(40_000);
+    } finally { vi.useRealTimers(); }
+  });
   it('uses independent bounded stages for the measured four-call repair fixture', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
@@ -51,7 +61,7 @@ describe('reasoning stage budgets', () => {
       await vi.advanceTimersByTimeAsync(30_000);
 
       await expect(pending).resolves.toMatchObject({ risk: 'GREEN', nextAction: 'AUTO_REPLY_ELIGIBLE', replyText: repaired.reply });
-      expect(current.requests.map(item => item.deadlineAt)).toEqual([12_000, 40_000, 18_495, 26_156]);
+      expect(current.requests.map(item => item.deadlineAt)).toEqual([12_000, 40_000, 18_495, 40_000]);
       expect(current.requests.map(item => item.retryMinimumMs)).toEqual([3_500, 8_000, 3_500, 8_000]);
       const contracts = spy.mock.calls.map(call => call[1]).filter(entry => entry?.stage === 'contract');
       expect(contracts).toEqual(expect.arrayContaining([
@@ -139,7 +149,7 @@ describe('reasoning stage budgets', () => {
   });
 
   it('keeps the approved stage and total budget constants exact', () => {
-    expect(STAGE_BUDGET_MS).toEqual({ generation: 12_000, verification: 40_000, repair: 7_000, repair_verification: 11_000 });
+    expect(STAGE_BUDGET_MS).toEqual({ generation: 12_000, verification: 40_000, repair: 7_000, repair_verification: 40_000 });
     expect(BRAIN_BUDGET_MS).toBe(40_000);
     expect(REPAIR_ADMISSION_MS).toBe(19_000);
     expect(STAGE_RETRY_MINIMUM_MS).toEqual({ generation: 3_500, verification: 8_000 });
