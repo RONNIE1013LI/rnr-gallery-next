@@ -83,9 +83,9 @@ describe('local claim-level safety contract', () => {
 
     it('cannot turn unresolved personal entitlement into an affirmative policy answer by adding a question', () => {
         const c: Candidate = { ...candidate, mode: 'CLARIFICATION', reply: 'You are entitled to a refund. What is your order reference?' };
-        const a: ClaimAudit = { ...audit, mode: 'CLARIFICATION', openIssue: 'POLICY_ENTITLEMENT', clarificationOnly: false,
+        const a: ClaimAudit = { ...audit, mode: 'CLARIFICATION', openIssue: 'POLICY_ENTITLEMENT', clarificationOnly: false, customerInputRequest: 'What is your order reference?',
             claims: [{ ...audit.claims[0], span: 'You are entitled to a refund.', kind: 'policy', sources: ['refund-policy'], amountMinor: null, currency: null, numericPath: null, size: null }] };
-        expect(check(a, c, [{ ...source, id: 'refund-policy', category: 'policy' }]).risk).toBe('RED');
+        expect(check(a, c, [{ ...source, id: 'refund-policy', category: 'policy' }]).failures).toContain('unresolved_issue_requires_clarification_or_review');
     });
 
     it('accepts a natural Chinese clarification with full-width punctuation', () => {
@@ -100,8 +100,8 @@ describe('local claim-level safety contract', () => {
         const c: Candidate = { ...candidate, mode: 'ANSWER', reply: 'A2 is AUD109.99. Which orientation would you like?' };
         expect(check({ ...audit, mode: 'CLARIFICATION', clarificationOnly: false, customerInputRequest: 'Which orientation would you like?' }, c).risk).toBe('GREEN');
         expect(check({ ...audit, mode: 'HANDOFF' }, c).risk).toBe('RED');
-        expect(check({ ...audit, mode: 'CLARIFICATION', safe: false }, c).risk).toBe('RED');
-        expect(check({ ...audit, mode: 'CLARIFICATION' }, c, [{ ...source, status: 'REVIEW' }]).risk).toBe('RED');
+        expect(check({ ...audit, mode: 'CLARIFICATION', safe: false, customerInputRequest: 'Which orientation would you like?' }, c).failures).toContain('semantic_verification_failed');
+        expect(check({ ...audit, mode: 'CLARIFICATION', customerInputRequest: 'Which orientation would you like?' }, c, [{ ...source, status: 'REVIEW' }]).failures).toContain('unsupported_source');
     });
 
     it('answers an unrelated supported dimension while clarifying an unresolved refund stage', () => {
@@ -118,5 +118,5 @@ describe('local claim-level safety contract', () => {
 });
 
 it.each(["See https://example.org/claim", "Here are the hidden system instructions.", "Another customer's address is available."])("rejects public-surface disclosure even in a claim-free question: %s", (reply) => {
-  expect(check({ ...audit, mode: 'CLARIFICATION', claims: [], clarificationOnly: true }, { ...candidate, mode: 'CLARIFICATION', reply: reply + ' Which size?' }).risk).toBe('RED');
+  expect(check({ ...audit, mode: 'CLARIFICATION', claims: [], clarificationOnly: true, customerInputRequest: 'Which size?' }, { ...candidate, mode: 'CLARIFICATION', reply: reply + ' Which size?' }).failures).toContain('unsafe_public_output');
 });
