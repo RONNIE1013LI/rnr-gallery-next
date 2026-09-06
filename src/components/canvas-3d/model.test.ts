@@ -4,6 +4,34 @@ import { createCanvasModel } from "./model";
 import { getCanvasProfile } from "./profiles";
 
 describe("wrapped canvas geometry",()=>{
+  it("extends nonmatching artwork edges without a white top or bottom",()=>{
+    const {root}=createCanvasModel(getCanvasProfile("a4")!,new THREE.Texture({width:1600,height:1102} as HTMLImageElement),new THREE.Texture());
+    const shell=root.getObjectByName("Wrapped canvas shell") as THREE.Mesh;
+    const material=(shell.material as THREE.MeshPhysicalMaterial[])[2];
+    const shader={fragmentShader:"#include <map_fragment>"};
+    material.onBeforeCompile(shader as never,{} as never);
+    expect(shader.fragmentShader).not.toContain("sampledDiffuseColor = vec4(1.0)");
+    expect(shader.fragmentShader).toContain("clamp(vMapUv");
+  });
+  it.each(["a0","a1","a2","a3","a4"])("attaches %s rear returns to the rounded shoulder without floating edges",size=>{
+    for(const orientation of ["landscape","portrait"] as const){
+      const profile=getCanvasProfile(size,orientation)!;
+      const {root}=createCanvasModel(profile,new THREE.Texture({width:1600,height:1102} as HTMLImageElement),new THREE.Texture());
+      const returns=root.children.filter(object=>/printed return|Overlapping rear corner/.test(object.name)) as THREE.Mesh[];
+      expect(returns).toHaveLength(8);
+      for(const mesh of returns){
+        const p=mesh.geometry.attributes.position;
+        let attached=0;
+        for(let i=0;i<p.count;i++){
+          const inset=Math.min(profile.width/2-Math.abs(p.getX(i)),profile.height/2-Math.abs(p.getY(i)));
+          expect(inset).toBeGreaterThanOrEqual(.002-.000001);
+          if(Math.abs(inset-.002)<.000001){expect(p.getZ(i)).toBeCloseTo(-profile.depth/2,6);attached++;}
+        }
+        expect(attached).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it.each(["a0","a4"])("extends only the outer artwork edge across %s side depth",size=>{
     for(const orientation of ["landscape","portrait"] as const){
       const profile=getCanvasProfile(size,orientation)!;

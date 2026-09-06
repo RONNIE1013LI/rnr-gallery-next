@@ -114,13 +114,12 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
   picture.onBeforeCompile=(shader)=>{
     const mapChunk=THREE.ShaderChunk.map_fragment.replace(
       "vec4 sampledDiffuseColor = texture2D( map, vMapUv );",
-      matches
-        ? "vec2 canvasUV = clamp(vMapUv, 0.0, 1.0); vec4 sampledDiffuseColor = texture2D(map, canvasUV);"
-        : "vec4 sampledDiffuseColor = texture2D( map, vMapUv ); if (vMapUv.x < 0.0 || vMapUv.x > 1.0 || vMapUv.y < 0.0 || vMapUv.y > 1.0) sampledDiffuseColor = vec4(1.0);",
+      // Preserve the entire artwork; fill any aspect-ratio margin with its nearest edge colour.
+      "vec2 canvasUV = clamp(vMapUv, 0.0, 1.0); vec4 sampledDiffuseColor = texture2D(map, canvasUV);",
     );
     shader.fragmentShader=shader.fragmentShader.replace("#include <map_fragment>",mapChunk);
   };
-  picture.customProgramCacheKey=()=>`contained-canvas-artwork-${matches}`;
+  picture.customProgramCacheKey=()=>"edge-extended-canvas-artwork";
   // The back samples only the outermost pixel row/column, never the artwork interior.
   const edgeMap=artwork.clone();
   edgeMap.generateMipmaps=false;edgeMap.minFilter=THREE.LinearFilter;
@@ -128,8 +127,9 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
   const returnMaterial=picture.clone();returnMaterial.map=edgeMap;
   returnMaterial.side=THREE.DoubleSide;
   returnMaterial.onBeforeCompile=shader=>{
-    const sample=`vec2 edgeUV=clamp(vMapUv,0.0,1.0);
-      vec2 edgeDistance=min(edgeUV,1.0-edgeUV)*vec2(${w.toFixed(8)},${h.toFixed(8)});
+    const sample=`vec2 frameUV=clamp(vMapUv,0.0,1.0);
+      vec2 edgeDistance=min(frameUV,1.0-frameUV)*vec2(${w.toFixed(8)},${h.toFixed(8)});
+      vec2 edgeUV=(frameUV-0.5)*vec2(${(w/aw).toFixed(8)},${(h/ah).toFixed(8)})+0.5;
       vec2 halfPixel=vec2(${(.5/image.width).toFixed(10)},${(.5/image.height).toFixed(10)});
       if(edgeDistance.x<edgeDistance.y) edgeUV.x=edgeUV.x<0.5?halfPixel.x:1.0-halfPixel.x;
       else edgeUV.y=edgeUV.y<0.5?halfPixel.y:1.0-halfPixel.y;
@@ -138,7 +138,8 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
     shader.fragmentShader=shader.fragmentShader.replace("#include <map_fragment>",THREE.ShaderChunk.map_fragment.replace("vec4 sampledDiffuseColor = texture2D( map, vMapUv );",sample));
   };
   returnMaterial.customProgramCacheKey=()=>`rear-edge-colour-${w}-${h}-${image.width}-${image.height}`;
-  const shellGeometry=new RoundedBoxGeometry(w,h,d,5,.002);
+  const cornerRadius=.002;
+  const shellGeometry=new RoundedBoxGeometry(w,h,d,5,cornerRadius);
   const positions=shellGeometry.attributes.position,uv=shellGeometry.attributes.uv;
   // A single position-based mapping gives duplicated seam vertices identical UVs.
   // Separate per-face mappings introduce a visible jump across the rounded shoulder.
@@ -206,18 +207,20 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
   // Each return is a curved cloth strip rather than a squared-off solid block.
   function rearStrip(name:string,sx:number,sy:number,corner=false){
     const horizontal=sy!==0;
-    const length=corner?printedFold:(horizontal?w-.002:h-2*printedFold);
-    const geometry=new THREE.PlaneGeometry(length,printedFold,24,12);
+    const returnWidth=printedFold-cornerRadius;
+    const length=corner?returnWidth:(horizontal?w-2*cornerRadius:h-2*printedFold);
+    const geometry=new THREE.PlaneGeometry(length,returnWidth,24,12);
     const position=geometry.attributes.position,texcoord=geometry.attributes.uv;
     for(let i=0;i<position.count;i++){
-      const along=position.getX(i),inward=position.getY(i)+printedFold/2;
+      const along=position.getX(i),inward=position.getY(i)+returnWidth/2+cornerRadius;
       let x=horizontal?along:sx*(w/2-inward);
       const y=horizontal?sy*(h/2-inward):along;
-      if(corner)x=sx*(w/2-printedFold/2)+along;
-      // Rounded outer roll and a raised lip on the overlapping corner flap.
-      const roll=.00012*Math.exp(-inward/.0012);
-      const lip=corner?.00065*Math.sin(Math.PI*inward/printedFold):0;
-      const z=rz-.00042+roll-lip;
+      if(corner)x=sx*(w/2-(printedFold+cornerRadius)/2)+along;
+      // Attach at the rear tangent of the rounded skin, then raise the inward cloth fold.
+      const inset=Math.min(w/2-Math.abs(x),h/2-Math.abs(y));
+      const attachment=THREE.MathUtils.smoothstep(inset,cornerRadius,cornerRadius+.003);
+      const lip=corner?.00065*Math.sin(Math.PI*(inward-cornerRadius)/returnWidth):0;
+      const z=-d/2-attachment*(.00044+lip);
       position.setXYZ(i,x,y,z);
       texcoord.setXY(i,x/w+.5,y/h+.5);
     }
