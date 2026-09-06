@@ -2,7 +2,7 @@ import { validateReplyPublicSurface } from "@/server/customer-service/website/ou
 import { z } from 'zod';
 export const candidateSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), reply: z.string().min(1), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable() }).strict();
 export type Candidate = z.infer<typeof candidateSchema>;
-export const auditSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable(), openIssue: z.enum(['NONE', 'POLICY_ENTITLEMENT', 'DISPUTE', 'EXCEPTION', 'ORDER_STATE']), relevantCustomerTurnIds: z.array(z.string()), claims: z.array(z.object({ span: z.string(), product: z.string().nullable(), orderReference: z.string().nullable(), destination: z.string().nullable(), kind: z.enum(['product', 'capability', 'price', 'tax', 'shipping_cost', 'shipping_rule', 'delivery_promise', 'process', 'policy', 'additional_fee', 'order_status', 'payment_status']), sources: z.array(z.string()), marketDependent: z.boolean(), amountMinor: z.number().nullable(), currency: z.enum(['NZD', 'AUD']).nullable(), size: z.string().nullable(), numericPath: z.string().nullable(), liveRequired: z.boolean() }).strict()), safe: z.boolean(), helpful: z.boolean(), clarificationOnly: z.boolean(), internalErrorLanguage: z.boolean(), unnecessaryQuestion: z.boolean(), issues: z.array(z.string()) }).strict();
+export const auditSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable(), openIssue: z.enum(['NONE', 'POLICY_ENTITLEMENT', 'DISPUTE', 'EXCEPTION', 'ORDER_STATE']), relevantCustomerTurnIds: z.array(z.string()), claims: z.array(z.object({ span: z.string(), product: z.string().nullable(), orderReference: z.string().nullable(), destination: z.string().nullable(), kind: z.enum(['product', 'capability', 'price', 'tax', 'shipping_cost', 'shipping_rule', 'delivery_promise', 'process', 'policy', 'additional_fee', 'order_status', 'payment_status']), sources: z.array(z.string()), marketDependent: z.boolean(), amountMinor: z.number().nullable(), currency: z.enum(['NZD', 'AUD']).nullable(), size: z.string().nullable(), numericPath: z.string().nullable(), liveRequired: z.boolean() }).strict()), safe: z.boolean(), helpful: z.boolean(), clarificationOnly: z.boolean(), customerInputRequest: z.string().nullable(), internalErrorLanguage: z.boolean(), unnecessaryQuestion: z.boolean(), issues: z.array(z.string()) }).strict();
 export type ClaimAudit = z.infer<typeof auditSchema>;
 export type EvidenceSource = {
     id: string;
@@ -55,7 +55,8 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
     if (!validateReplyPublicSurface(candidate.reply).ok) failures.push('unsafe_public_output');
     const byId = new Map(sources.map(s => [s.id, s]));
     const customerIds = new Set(turns.filter(t => t.role === 'customer').map(t => t.id));
-    const genuineClarification = candidate.mode === 'CLARIFICATION' && audit.mode === 'CLARIFICATION' && audit.clarificationOnly && audit.claims.length === 0 && /[?？]/.test(candidate.reply);
+    const hasInputRequest = !!audit.customerInputRequest?.trim() && candidate.reply.includes(audit.customerInputRequest);
+    const genuineClarification = candidate.mode === 'CLARIFICATION' && audit.mode === 'CLARIFICATION' && audit.clarificationOnly && audit.claims.length === 0 && hasInputRequest;
     // Helpfulness is not factual risk. A question with no asserted entitlement may be sent even when policy is missing.
     if (!audit.safe && !genuineClarification)
         failures.push('semantic_verification_failed');
@@ -64,7 +65,7 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
         failures.push('uncovered_money_claim');
     if (audit.internalErrorLanguage)
         failures.push('internal_error_language');
-    const verifiedMixedReply = audit.safe && candidate.mode !== 'HANDOFF' && audit.mode !== 'HANDOFF' && audit.claims.length > 0 && /[?？]/.test(candidate.reply);
+    const verifiedMixedReply = audit.safe && candidate.mode !== 'HANDOFF' && audit.mode !== 'HANDOFF' && audit.claims.length > 0 && hasInputRequest;
     if (candidate.mode !== audit.mode && !verifiedMixedReply)
         failures.push('response_mode_disagreement');
     if (candidate.market !== audit.market)
@@ -79,7 +80,7 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
         failures.push('order_answer_without_verified_state');
     // Supported facts may precede a needed question. Only a genuinely claim-free
     // clarification receives the existing safe=false exception above.
-    if (candidate.mode === 'CLARIFICATION' && (!/[?？]/.test(candidate.reply) || (!audit.clarificationOnly && audit.claims.length === 0)))
+    if (candidate.mode === 'CLARIFICATION' && (!hasInputRequest || (!audit.clarificationOnly && audit.claims.length === 0)))
         failures.push('not_claim_free_clarification');
     for (const claim of audit.claims) {
         if (!claim.span || !candidate.reply.includes(claim.span))
