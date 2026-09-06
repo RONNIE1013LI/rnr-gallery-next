@@ -1,7 +1,6 @@
 import { parseAuthConfig } from "@/server/auth/config";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
-import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
-import { getOptionalSession } from "@/server/auth/get-optional-session";
+import { createWebsitePublicRouteRuntime } from "@/server/rnr-ai/website/public-route-runtime";
 import { readWebsiteAnalyticsBusinessConfig } from "@/server/analytics/website-analytics-config";
 import { createCustomerChatSessionHandler } from "./route-handler";
 
@@ -13,13 +12,14 @@ export async function POST(request: Request) {
     if (!config.websiteEnabled) {
       return Response.json({ error: { code: "SERVICE_UNAVAILABLE" } }, { status: 503, headers: { "Cache-Control": "no-store" } });
     }
+    const customerService = await createWebsitePublicRouteRuntime();
     return createCustomerChatSessionHandler({
       enabled: config.websiteEnabled,
       trustedOrigin: parseAuthConfig().origin,
       sessionSecret: config.websiteSessionSecret,
       permitSecret: config.websiteAbuseHashSecret,
-      repository: createCustomerServiceRuntime().repository,
-      getOptionalSession,
+      repository: customerService.repository,
+      getOptionalSession: customerService.getOptionalSession,
       analyticsConfig: readWebsiteAnalyticsBusinessConfig(),
     }).POST(request);
   } catch {

@@ -1,6 +1,5 @@
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
-import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
-import { getOptionalSession } from "@/server/auth/get-optional-session";
+import { createWebsitePublicRouteRuntime } from "@/server/rnr-ai/website/public-route-runtime";
 import { readWebsiteAnalyticsBusinessConfig } from "@/server/analytics/website-analytics-config";
 import { createCustomerChatUpdatesHandler } from "./route-handler";
 
@@ -15,13 +14,13 @@ export async function GET(request: Request) {
         { status: 503, headers: { "Cache-Control": "no-store" } },
       );
     }
-    const customerService = createCustomerServiceRuntime();
+    const customerService = await createWebsitePublicRouteRuntime();
     return createCustomerChatUpdatesHandler({
       enabled: config.websiteEnabled,
       sessionSecret: config.websiteSessionSecret,
       cursorSecret: config.websiteAbuseHashSecret,
       repository: customerService.repository,
-      getOptionalSession,
+      getOptionalSession: customerService.getOptionalSession,
       analyticsConfig: readWebsiteAnalyticsBusinessConfig(),
     }).GET(request);
   } catch {

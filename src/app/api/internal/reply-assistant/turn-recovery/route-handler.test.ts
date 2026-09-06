@@ -65,3 +65,27 @@ describe("turn recovery route", () => {
     expect(runMaintenance).toHaveBeenCalledTimes(1);
   });
 });
+
+it("runs shared recovery only after authorization and stops starting work at its deadline", async () => {
+  let now = 0;
+  const runShared = vi.fn(async () => { now = 51_000; });
+  const runOnce = vi.fn(async () => ({ claimed: 0, completed: 0, retried: 0, cancelled: 0 }));
+  const runMaintenance = vi.fn(async () => undefined);
+  const handler = createTurnRecoveryHandler({ secret: "recovery-secret-at-least-32-bytes", runShared, runOnce, runMaintenance, now: () => now });
+  expect((await handler(new Request("https://example.test"))).status).toBe(401);
+  expect(runShared).not.toHaveBeenCalled();
+  expect((await handler(new Request("https://example.test", { headers: { authorization: "Bearer recovery-secret-at-least-32-bytes" } }))).status).toBe(200);
+  expect(runShared).toHaveBeenCalledTimes(1);
+  expect(runOnce).not.toHaveBeenCalled();
+  expect(runMaintenance).not.toHaveBeenCalled();
+});
+
+it("preserves historical maintenance when Redis recovery fails and reports failure", async () => {
+  const runOnce = vi.fn(async () => ({ claimed: 0, completed: 0, retried: 0, cancelled: 0 }));
+  const runMaintenance = vi.fn(async () => undefined);
+  const handler = createTurnRecoveryHandler({ secret: "recovery-secret-at-least-32-bytes", runShared: async () => { throw Error("synthetic Redis outage"); }, runOnce, runMaintenance });
+  const response = await handler(new Request("https://example.test", { headers: { authorization: "Bearer recovery-secret-at-least-32-bytes" } }));
+  expect(response.status).toBe(503);
+  expect(runOnce).toHaveBeenCalledOnce();
+  expect(runMaintenance).toHaveBeenCalledOnce();
+});

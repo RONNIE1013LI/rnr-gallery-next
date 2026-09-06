@@ -1,9 +1,9 @@
 import {
+  defaultProductRegistry,
   getRegistryProductBySlug,
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
 import { adLandingPages } from "@/domain/ads/landing-pages";
-import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import type { SafeProductContext } from "../types";
 
 const PRODUCT_PATH = /^\/(au\/)?products\/([a-z0-9]+(?:-[a-z0-9]+)*)(\/configure)?$/;
@@ -43,6 +43,12 @@ export function isServerResolvedProductContext(value: unknown): value is SafePro
 }
 
 export async function resolveCurrentSafeProductContext(pathname: string) {
+  const { getSafePublicProductRegistry } = await import("@/server/admin/product-registry-runtime");
   const { registry } = await getSafePublicProductRegistry();
   return resolveSafeProductContext(pathname, registry);
+}
+
+// Versioned product identity only. Prices require separately verified business evidence.
+export async function resolveLocalChatProductContext(pathname: string) {
+  return resolveSafeProductContext(pathname, defaultProductRegistry);
 }

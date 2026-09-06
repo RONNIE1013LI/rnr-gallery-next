@@ -15,20 +15,27 @@ export function createWebsiteReviewAlertCronHandler(input: Readonly<{
   secret: string;
   deliverNext(): Promise<DeliveryResult>;
   maxAlerts?: number;
+  runShared?(): Promise<unknown>;
+  now?: () => number;
 }>) {
   const maxAlerts = Math.max(1, Math.min(25, input.maxAlerts ?? 10));
   return async function handle(request: Request) {
     if (!authorized(request.headers.get("authorization"), input.secret)) {
       return new Response(null, { status: 401 });
     }
+    const now = input.now ?? Date.now;
+    const deadline = now() + 50_000;
+    let sharedFailed = false;
+    try { await input.runShared?.(); } catch { sharedFailed = true; }
+
     const totals = { sent: 0, retried: 0, uncertain: 0 };
-    for (let index = 0; index < maxAlerts; index += 1) {
+    for (let index = 0; index < maxAlerts && now() < deadline; index += 1) {
       const result = await input.deliverNext();
       if (result.result === "empty" || result.result === "not_configured") break;
       if (result.result === "sent") totals.sent += 1;
       if (result.result === "retry_wait") totals.retried += 1;
       if (result.result === "uncertain") totals.uncertain += 1;
     }
-    return Response.json(totals, { headers: { "cache-control": "no-store" } });
+    return Response.json(sharedFailed ? { ...totals, error: { code: "SHARED_RECOVERY_UNAVAILABLE" } } : totals, { status: sharedFailed ? 503 : 200, headers: { "cache-control": "no-store" } });
   };
 }

@@ -123,6 +123,8 @@ export function CustomerChat({
   const [sending, setSending] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
   const [historyError, setHistoryError] = useState(false);
+  const [identityUnavailable, setIdentityUnavailable] = useState(false);
+  const identityUnavailableRef = useRef(false);
   const [feedback, setFeedback] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const [newMessageAvailable, setNewMessageAvailable] = useState(false);
@@ -184,7 +186,7 @@ export function CustomerChat({
   }
 
   const poll = useCallback(async (): Promise<PollResult> => {
-    if (!pollingAllowedForAutomation("customer-chat")) return "blocked";
+    if (identityUnavailableRef.current || !pollingAllowedForAutomation("customer-chat")) return "blocked";
     if (pollingRef.current) return "pending";
     pollingRef.current = true;
     const awaitingReplyGeneration = awaitingReplyGenerationRef.current;
@@ -204,9 +206,15 @@ export function CustomerChat({
           headers: { Accept: "application/json" },
           signal: controller.signal,
         });
-        const updates = response.ok
-          ? publicUpdates(await response.json().catch(() => null))
-          : null;
+        const body = await response.json().catch(() => null);
+        if (body?.error?.code === "WEBSITE_CHAT_IDENTITY_UNAVAILABLE") {
+          identityUnavailableRef.current = true;
+          setIdentityUnavailable(true);
+          setHistoryError(false);
+          setFeedback("Your signed-in chat session is unavailable. Please sign in again to continue.");
+          return "blocked";
+        }
+        const updates = response.ok ? publicUpdates(body) : null;
         if (!updates) {
           showHistoryError();
           return "error";
@@ -396,7 +404,7 @@ export function CustomerChat({
   }, [open]);
 
   async function sendMessage(current: PendingMessage) {
-    if (sendingRef.current) return;
+    if (identityUnavailableRef.current || sendingRef.current) return;
     sendingRef.current = true;
     followLatestRef.current = true;
     readingHistoryRef.current = false;
@@ -434,7 +442,11 @@ export function CustomerChat({
             headers: { "Content-Type": "application/json", Accept: "application/json" },
             body: JSON.stringify({ version: 1, clientMessageKey: current.clientMessageKey }),
           });
-          if (!session.ok) return null;
+          if (!session.ok) {
+            const failure = await session.json().catch(() => null);
+            if (failure?.error?.code === "WEBSITE_CHAT_IDENTITY_UNAVAILABLE") throw new Error("WEBSITE_CHAT_IDENTITY_UNAVAILABLE");
+            return null;
+          }
           const body = await session.json().catch(() => null) as { permit?: unknown } | null;
           return typeof body?.permit === "string" && body.permit.length <= 256 ? body.permit : null;
         };
@@ -484,6 +496,8 @@ export function CustomerChat({
         if (currentlyTrackable()) startPendingPolling();
         return;
       }
+      const failure = await response.json().catch(() => null);
+      if (failure?.error?.code === "WEBSITE_CHAT_IDENTITY_UNAVAILABLE") throw new Error("WEBSITE_CHAT_IDENTITY_UNAVAILABLE");
       if (response.status === 429) {
         setPendingMessage(null);
         if (current.restoreDraftOnFailure) setDraft(current.message);
@@ -503,7 +517,17 @@ export function CustomerChat({
           : message
       )));
       setFeedback("Message not sent. Try again.");
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === "WEBSITE_CHAT_IDENTITY_UNAVAILABLE") {
+        identityUnavailableRef.current = true;
+        setIdentityUnavailable(true);
+        setPendingMessage(null);
+        if (current.restoreDraftOnFailure) setDraft(current.message);
+        setOutgoingMessages((messages) => messages.map((message) => message.clientMessageKey === current.clientMessageKey ? { ...message, status: "failed" } : message));
+        setFeedback("Your signed-in chat session is unavailable. Please sign in again to continue.");
+        stopPendingPolling();
+        return;
+      }
       setPendingMessage(current);
       if (current.restoreDraftOnFailure) setDraft(current.message);
       setOutgoingMessages((messages) => messages.map((message) => (
@@ -531,7 +555,7 @@ export function CustomerChat({
   }
 
   function startQuickAction(action: (typeof QUICK_ACTIONS)[number]) {
-    if (sendingRef.current) return;
+    if (identityUnavailableRef.current || sendingRef.current) return;
     try {
       emitAnalyticsEvent({
         event: "chat_quick_action_clicked",
@@ -605,7 +629,7 @@ export function CustomerChat({
                 className={styles.transcriptContent}
                 data-chat-transcript-content
               >
-                {historyError ? <div className={styles.historyError} role="status">
+                {historyError && !identityUnavailable ? <div className={styles.historyError} role="status">
                   <p>We couldn’t load your earlier messages. You can still start a new chat.</p>
                   <button type="button" onClick={() => void poll()}>Retry conversation history</button>
                 </div> : null}
@@ -617,7 +641,7 @@ export function CustomerChat({
                       key={action.id}
                       type="button"
                       className={styles.quickAction}
-                      disabled={sending}
+                      disabled={sending || identityUnavailable}
                       onClick={() => startQuickAction(action)}
                     >{action.label}</button>)}
                   </div>
@@ -646,7 +670,7 @@ export function CustomerChat({
               }}
             >New message</button> : null}
           </div>
-          <p id="customer-chat-status" className={styles.status} aria-live="polite">{feedback}</p>
+          <p id="customer-chat-status" className={styles.status} aria-live="polite">{feedback}{identityUnavailable ? <> <a href="/account/sign-in">Sign in again</a></> : null}</p>
           <form className={styles.composer} onSubmit={(event) => {
             event.preventDefault();
             submitDraft();
@@ -659,7 +683,7 @@ export function CustomerChat({
                 rows={3}
                 maxLength={2_000}
                 placeholder="Type your message..."
-                disabled={sending}
+                disabled={sending || identityUnavailable}
                 onChange={(event) => setDraft(event.target.value)}
                 onCompositionStart={() => { isComposingRef.current = true; }}
                 onCompositionEnd={() => { isComposingRef.current = false; }}
@@ -678,7 +702,7 @@ export function CustomerChat({
             </label>
             <button type="submit" className={styles.sendButton} aria-label="Send message" title="Send message" disabled={sending || !draft.trim() || retryMessage !== null}><FaArrowUp aria-hidden="true" /></button>
           </form>
-          {retryMessage ? <button type="button" className={styles.retryButton} onClick={() => void sendMessage(retryMessage)} disabled={sending}>Retry message</button> : null}
+          {retryMessage ? <button type="button" className={styles.retryButton} onClick={() => void sendMessage(retryMessage)} disabled={sending || identityUnavailable}>Retry message</button> : null}
           <div className={styles.liveRegion} data-testid="customer-chat-live-region" aria-live="polite" aria-atomic="true">{announcement}</div>
         </section>
       ) : null}

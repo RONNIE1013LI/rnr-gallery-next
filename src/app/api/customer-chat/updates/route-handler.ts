@@ -1,3 +1,4 @@
+import { WebsiteChatIdentityUnavailableError } from "@/server/rnr-ai/website/chat-auth";
 import type { CustomerServiceRepository } from "@/server/customer-service/repositories/customer-service-repository";
 import {
   createWebsitePublicUpdatesReader,
@@ -9,7 +10,7 @@ import {
   hashWebsiteSessionToken,
   readWebsiteSessionToken,
 } from "@/server/customer-service/website/session";
-import { resolveWebsiteAnalyticsBehavioralContext } from "@/server/analytics/website-analytics-v2-business-recorder";
+import { resolveWebsiteAnalyticsBehavioralContext } from "@/server/analytics/website-analytics-behavioral-context";
 import type { WebsiteAnalyticsRuntimeConfig } from "@/server/analytics/website-analytics-config";
 import { resolveWebsiteInboxIdentity } from "@/server/customer-service/identity/customer-identity";
 
@@ -42,10 +43,11 @@ export function createCustomerChatUpdatesHandler(dependencies: Dependencies) {
   return Object.freeze({
     async GET(request: Request) {
       if (!dependencies.enabled) return json({ error: { code: "SERVICE_UNAVAILABLE" } }, 503);
-      const token = readWebsiteSessionToken(request, dependencies.cookieEnvironment);
-      if (!token) return json({ cursor: null, hasMore: false, events: [], state: "pending" });
 
       try {
+        const authenticated = await dependencies.getOptionalSession(request.headers);
+        const token = readWebsiteSessionToken(request, dependencies.cookieEnvironment);
+        if (!token) return json({ cursor: null, hasMore: false, events: [], state: "pending" });
         const currentTime = (dependencies.now ?? (() => new Date()))();
         const conversationHash = hashWebsiteConversationKey(token, dependencies.sessionSecret);
         const analyticsContext = resolveWebsiteAnalyticsBehavioralContext(
@@ -53,7 +55,6 @@ export function createCustomerChatUpdatesHandler(dependencies: Dependencies) {
           dependencies.analyticsConfig,
           currentTime,
         );
-        const authenticated = await dependencies.getOptionalSession(request.headers);
         const identity = resolveWebsiteInboxIdentity({
           authenticatedCustomerId: authenticated?.user.id ?? null,
           stableVisitorDigest: analyticsContext.consentLinked
@@ -80,6 +81,7 @@ export function createCustomerChatUpdatesHandler(dependencies: Dependencies) {
           limit: 50,
         }));
       } catch (error) {
+        if (error instanceof WebsiteChatIdentityUnavailableError) return Response.json({ error: { code: error.code } }, { status: 503, headers: noStoreHeaders });
         if (error instanceof Error && error.message === "website_public_updates_cursor_invalid") {
           return json({ error: { code: "REQUEST_REJECTED" } }, 400);
         }

@@ -40,6 +40,15 @@ function openChat() {
 }
 
 describe("CustomerChat", () => {
+  it("stops polling and gives a sign-in action when chat identity is unavailable", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: { code: "WEBSITE_CHAT_IDENTITY_UNAVAILABLE" } }), { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat pathname="/" market="NZ" />);
+    openChat();
+    expect(await screen.findByRole("link", { name: "Sign in again" })).toHaveAttribute("href", "/account/sign-in");
+    expect(screen.queryByRole("button", { name: "Retry conversation history" })).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
     analytics.emitAnalyticsEvent.mockReset();
     analytics.emitAnalyticsEvent.mockReturnValue(true);

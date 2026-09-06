@@ -1,3 +1,4 @@
+import { WebsiteChatIdentityUnavailableError } from "@/server/rnr-ai/website/chat-auth";
 import { assertTrustedMutationRequest, MutationRequestError, parseBoundedJson } from "@/server/http/mutation-request";
 import { websiteChannelAdapter } from "@/server/customer-service/adapters/website";
 import type { CustomerServiceRepository } from "@/server/customer-service/repositories/customer-service-repository";
@@ -19,7 +20,7 @@ import {
 } from "@/server/customer-service/website/rate-limit";
 import {
   resolveWebsiteAnalyticsBehavioralContext,
-} from "@/server/analytics/website-analytics-v2-business-recorder";
+} from "@/server/analytics/website-analytics-behavioral-context";
 import type { WebsiteAnalyticsRuntimeConfig } from "@/server/analytics/website-analytics-config";
 import { resolveWebsiteInboxIdentity } from "@/server/customer-service/identity/customer-identity";
 
@@ -210,6 +211,7 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
         }, 202);
         return response;
       } catch (error) {
+        if (error instanceof WebsiteChatIdentityUnavailableError) return Response.json({ error: { code: error.code } }, { status: 503, headers: noStoreHeaders });
         if (error instanceof MutationRequestError) return rejected(error.status);
         return json({ error: { code: "INTERNAL_ERROR" } }, 500);
       }

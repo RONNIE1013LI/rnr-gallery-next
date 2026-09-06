@@ -1,12 +1,9 @@
 import { after } from "next/server";
 import { parseAuthConfig } from "@/server/auth/config";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
-import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
-import { resolveCurrentSafeProductContext } from "@/server/customer-service/website/product-context";
-import { getAllCustomerNotificationRuntime } from "@/server/notifications/customer-notification-runtime";
+import { createWebsitePublicRouteRuntime } from "@/server/rnr-ai/website/public-route-runtime";
 import { createCustomerChatMessagesHandler } from "./route-handler";
 import { readWebsiteAnalyticsBusinessConfig } from "@/server/analytics/website-analytics-config";
-import { getOptionalSession } from "@/server/auth/get-optional-session";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -20,7 +17,7 @@ export async function POST(request: Request) {
         { status: 503, headers: { "Cache-Control": "no-store" } },
       );
     }
-    const customerService = createCustomerServiceRuntime();
+    const customerService = await createWebsitePublicRouteRuntime();
     return createCustomerChatMessagesHandler({
       enabled: config.websiteEnabled,
       trustedOrigin: parseAuthConfig().origin,
@@ -30,11 +27,11 @@ export async function POST(request: Request) {
       debounceMs: config.conversationDebounceMs,
       generationMode: customerService.websiteGenerationMode,
       repository: customerService.repository,
-      getOptionalSession,
-      resolveProductContext: resolveCurrentSafeProductContext,
+      getOptionalSession: customerService.getOptionalSession,
+      resolveProductContext: customerService.resolveProductContext,
       processTurn: (turnId, generationMode) => customerService.processWebsiteTurn(turnId, generationMode),
-      processReviewAlert: () => customerService.reviewAlertService?.deliverNext() ?? Promise.resolve({ result: "not_configured" }),
-      processCustomerNotifications: () => getAllCustomerNotificationRuntime().deliverPending(20),
+      processReviewAlert: customerService.processReviewAlert,
+      processCustomerNotifications: customerService.processCustomerNotifications,
       scheduleAfter: (task) => after(task),
       analyticsConfig: readWebsiteAnalyticsBusinessConfig(),
     }).POST(request);
