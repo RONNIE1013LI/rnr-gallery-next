@@ -178,6 +178,43 @@ describe("ProductConfigurator", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens the canvas size guide from the format step and closes it with Escape", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "View canvas size guide" });
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "Canvas size guide" });
+    expect(within(dialog).getByRole("img", { name: "Canvas sizes compared with a 170 cm person" }))
+      .toHaveAttribute("src", "/images/canvas-size-reference.webp");
+    expect(within(dialog).getByRole("button", { name: "Close canvas size guide" })).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Canvas size guide" })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("does not show the canvas size guide for a non-canvas product", () => {
+    const rollUp = getProductBySlug("roll-up-banner")!;
+    const rollUpSchema = getConfigurationSchema(rollUp.key)!;
+    render(
+      <ProductConfigurator
+        product={rollUp}
+        schema={rollUpSchema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "View canvas size guide" }))
+      .not.toBeInTheDocument();
+  });
+
   it("presents delivery as two radio choices and persists the selected option", () => {
     render(
       <ProductConfigurator

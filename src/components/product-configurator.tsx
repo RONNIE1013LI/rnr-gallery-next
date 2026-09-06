@@ -139,10 +139,15 @@ export function ProductConfigurator({
   const [uploading, setUploading] = useState(false);
   const [added, setAdded] = useState(false);
   const [isPreviewZoomOpen, setIsPreviewZoomOpen] = useState(false);
+  const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
   const previewZoomTriggerRef = useRef<HTMLButtonElement>(null);
   const previewZoomDialogRef = useRef<HTMLDivElement>(null);
   const previewZoomCloseRef = useRef<HTMLButtonElement>(null);
+  const sizeGuideTriggerRef = useRef<HTMLButtonElement>(null);
+  const sizeGuideDialogRef = useRef<HTMLDivElement>(null);
+  const sizeGuideCloseRef = useRef<HTMLButtonElement>(null);
   const closePreviewZoom = useCallback(() => setIsPreviewZoomOpen(false), []);
+  const closeSizeGuide = useCallback(() => setIsSizeGuideOpen(false), []);
   const {
     photoSubmissionMethod,
     designText,
@@ -159,6 +164,15 @@ export function ProductConfigurator({
     isolationRootRef: previewZoomDialogRef,
     returnFocusRef: previewZoomTriggerRef,
     onClose: closePreviewZoom,
+  });
+
+  useContainedDialog({
+    active: isSizeGuideOpen,
+    dialogRef: sizeGuideDialogRef,
+    initialFocusRef: sizeGuideCloseRef,
+    isolationRootRef: sizeGuideDialogRef,
+    returnFocusRef: sizeGuideTriggerRef,
+    onClose: closeSizeGuide,
   });
 
   const size = schema.sizes.find((option) => option.key === sizeKey)!;
@@ -395,6 +409,41 @@ export function ProductConfigurator({
           </div>
         ) : null}
 
+        {isSizeGuideOpen ? (
+          <div
+            ref={sizeGuideDialogRef}
+            className={styles.sizeGuideOverlay}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Canvas size guide"
+            onClick={closeSizeGuide}
+            tabIndex={-1}
+          >
+            <div className={styles.sizeGuideDialog} onClick={(event) => event.stopPropagation()}>
+              <button
+                ref={sizeGuideCloseRef}
+                type="button"
+                className={styles.imageZoomClose}
+                onClick={closeSizeGuide}
+                aria-label="Close canvas size guide"
+              >
+                ×
+              </button>
+              <div className={styles.sizeGuideFrame}>
+                {/* Keep the compressed reference asset at its exact aspect ratio. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/images/canvas-size-reference.webp"
+                  alt="Canvas sizes compared with a 170 cm person"
+                  width="1774"
+                  height="887"
+                  className={styles.sizeGuideImage}
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <aside className={styles.priceSummary} aria-label="Order summary">
           <p className={styles.eyebrow}>Estimated price</p>
           <h2>Order summary</h2>
@@ -468,6 +517,17 @@ export function ProductConfigurator({
             {schema.sizes.length > 1 && (
               <fieldset className={styles.sizePicker} role="radiogroup">
                 <legend>Size</legend>
+                {product.category === "canvas" ? (
+                  <button
+                    ref={sizeGuideTriggerRef}
+                    type="button"
+                    className={styles.sizeGuideLink}
+                    aria-label="View canvas size guide"
+                    onClick={() => setIsSizeGuideOpen(true)}
+                  >
+                    Not sure which size? View canvas size guide
+                  </button>
+                ) : null}
                 <div className={styles.sizeOptions}>
                   {sizeChoices.map((option) => {
                     const priceLabel = `From ${formatMarketMoney(option.minimumPriceInclTaxCents, currency)}`;
