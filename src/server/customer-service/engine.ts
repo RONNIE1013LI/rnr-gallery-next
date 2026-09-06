@@ -307,6 +307,9 @@ export class CustomerServiceEngine {
         sharedBrainDecision: decision,
         ...(ready ? { draftText: decision.replyText! } : {}),
         validatorCodes: ready || silent ? [] : ["shared_brain_review_required"],
+        ...(status === "output_blocked" ? {
+          rejectedOutputHash: createHash("sha256").update(generated.text).digest("hex"),
+        } : {}),
         inputTokens: generated.usage.inputTokens, cachedInputTokens: generated.usage.cachedInputTokens,
         outputTokens: generated.usage.outputTokens, estimatedCostMicrousd: generated.estimatedCostMicrousd,
         latencyMs: generated.latencyMs, dailyScopeKey,

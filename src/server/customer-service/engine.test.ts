@@ -259,7 +259,7 @@ describe("CustomerServiceEngine", () => {
     await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" })).resolves.toMatchObject({ status: "output_blocked" });
     expect(current.policyGate).not.toHaveBeenCalled();
     expect(current.outputValidator).not.toHaveBeenCalled();
-    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({ sharedBrainDecision: decision, status: "output_blocked" }));
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({ sharedBrainDecision: decision, status: "output_blocked", rejectedOutputHash: expect.stringMatching(/^[a-f0-9]{64}$/) }));
     expect(current.repository.completeProviderAttempt.mock.calls[0][0].draftText).toBeUndefined();
   });
 

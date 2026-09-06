@@ -5429,7 +5429,9 @@ export function createDrizzleCustomerServiceRepository(
           websiteResponseTemplateVersion: keepWebsiteRendererProof && !invalidSharedProof
             ? sharedProof ? SHARED_REPLY_PROOF_VERSION : input.websiteResponseTemplateVersion ?? null
             : null,
-          rejectedOutputHash: humanReplyReceived ? null : input.rejectedOutputHash ?? null,
+          rejectedOutputHash: humanReplyReceived ? null : invalidSharedProof
+            ? createHash("sha256").update(input.draftText ?? "").digest("hex")
+            : input.rejectedOutputHash ?? null,
           validatorCodes: invalidSharedProof ? ["shared_brain_proof_invalid"] : input.validatorCodes,
           inputTokens: input.inputTokens,
           cachedInputTokens: input.cachedInputTokens,
