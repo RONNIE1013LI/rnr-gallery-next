@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { betterAuth } from "better-auth";
-import { memoryAdapter } from "better-auth/adapters/memory";
+import { memoryAdapter, type MemoryDB } from "better-auth/adapters/memory";
 import { getCookies } from "better-auth/cookies";
 import { Redis } from "@upstash/redis";
 import {
@@ -20,6 +20,19 @@ function localRedis() {
 }
 const storageModes = ["memory", ...(process.env.RNR_CHAT_AUTH_TEST_REDIS_URL ? ["redis"] : [])];
 
+function memorySessionLoader(db: MemoryDB) {
+  return {
+    async list(userId: string) {
+      return db.session.filter((session) => session.userId === userId).map(({ token, expiresAt }) => ({ token, expiresAt }));
+    },
+    async get(token: string) {
+      const session = db.session.find((session) => session.token === token);
+      const user = session && db.user.find((user) => user.id === session.userId);
+      return session && user ? { session, user } : null;
+    },
+  };
+}
+
 function fixture(redisOverride?: Redis) {
   const values = new Map<string, string>();
   let clockOffset = 0;
@@ -33,6 +46,7 @@ function fixture(redisOverride?: Redis) {
       if (offline) throw new Error("offline");
       if (script.includes("EXISTS")) {
         if (values.has(keys[1])) return 0;
+        if (args[2] && Number(args[2]) <= Number(values.get(keys[2]) ?? 0)) return 0;
         values.set(keys[0], args[0]);
         return 1;
       }
@@ -44,8 +58,9 @@ function fixture(redisOverride?: Redis) {
       return Number(values.delete(keys[0]));
     },
   };
-  const candidate = createWebsiteChatAuthCandidate({ redis: redisOverride ?? redis, namespace: `test:auth:${crypto.randomUUID()}`, encryptionKey: "test-only-encryption-key-0123456789", secret, baseURL, now: () => Date.now() + clockOffset });
-  const db = { user: [], session: [], account: [], verification: [] };
+  const db: MemoryDB = { user: [], session: [], account: [], verification: [] };
+  const nativeSessions = memorySessionLoader(db);
+  const candidate = createWebsiteChatAuthCandidate({ nativeSessions, redis: redisOverride ?? redis, namespace: `test:auth:${crypto.randomUUID()}`, encryptionKey: "test-only-encryption-key-0123456789", secret, baseURL, now: () => Date.now() + clockOffset });
   const auth = betterAuth({ baseURL, secret, database: memoryAdapter(db), emailAndPassword: { enabled: true, revokeSessionsOnPasswordReset: true, sendResetPassword: async ({ token }) => { resetToken = token; } }, ...candidate.authOptions });
   async function signup(email = "person@example.test") {
     const response = await auth.api.signUpEmail({ body: { email, password: "test-Password-1234", name: "Test" }, asResponse: true });
@@ -55,7 +70,7 @@ function fixture(redisOverride?: Redis) {
     const user = (await response.json()).user;
     return { headers: new Headers({ cookie, origin: baseURL }), user, cookie };
   }
-  return { ...candidate, auth, db, signup, values, resetToken: () => resetToken, offline: () => { offline = true; }, advance: () => { clockOffset += 8 * 86400_000; } };
+  return { ...candidate, auth, db, nativeSessions, signup, values, resetToken: () => resetToken, offline: () => { offline = true; }, advance: () => { clockOffset += 8 * 86400_000; } };
 }
 
 describe("inactive website chat auth candidate", () => {
@@ -150,8 +165,8 @@ it.runIf(Boolean(process.env.RNR_CHAT_AUTH_TEST_REDIS_URL))("real isolated Redis
   const url = process.env.RNR_CHAT_AUTH_TEST_REDIS_URL!;
   if (new URL(url).hostname !== "127.0.0.1") throw new Error("Only loopback Redis is allowed");
   const redis = new Redis({ url, token: "synthetic-local-redis-test", responseEncoding: false, automaticDeserialization: false });
-  const candidate = createWebsiteChatAuthCandidate({ redis, namespace: `auth-test:${crypto.randomUUID()}`, encryptionKey: "test-only-encryption-key-0123456789", secret, baseURL });
-  const db = { user: [], session: [], account: [], verification: [] };
+  const db: MemoryDB = { user: [], session: [], account: [], verification: [] };
+  const candidate = createWebsiteChatAuthCandidate({ nativeSessions: memorySessionLoader(db), redis, namespace: `auth-test:${crypto.randomUUID()}`, encryptionKey: "test-only-encryption-key-0123456789", secret, baseURL });
   const auth = betterAuth({ baseURL, secret, database: memoryAdapter(db), emailAndPassword: { enabled: true }, ...candidate.authOptions });
   const response = await auth.api.signUpEmail({ body: { email: "redis@example.test", password: "test-Password-1234", name: "Synthetic" }, asResponse: true });
   expect(response.status).toBe(200);
@@ -174,7 +189,7 @@ it.runIf(Boolean(process.env.RNR_CHAT_AUTH_TEST_REDIS_URL))("real isolated Redis
   await expect(candidate.getIdentitySession(headers)).rejects.toBeInstanceOf(WebsiteChatIdentityUnavailableError);
 });
 
-it.each(storageModes.flatMap((mode) => [ [mode, "revoke-all"], [mode, "password-reset"] ]))("%s: native concurrent login followed by %s must invalidate every signed cookie", async (mode, operation) => {
+it.each(storageModes.flatMap((mode) => [ [mode, "revoke-all"], [mode, "password-reset"], [mode, "revoke-other"] ]))("%s: native concurrent login followed by %s invalidates the targeted sessions", async (mode, operation) => {
   const f = fixture(mode === "redis" ? localRedis() : undefined);
   const a = await f.signup();
   const storage = f.authOptions.secondaryStorage;
@@ -201,10 +216,13 @@ it.each(storageModes.flatMap((mode) => [ [mode, "revoke-all"], [mode, "password-
   if (operation === "password-reset") {
     await f.auth.api.requestPasswordReset({ body: { email: "person@example.test", redirectTo: baseURL } });
     await f.auth.api.resetPassword({ body: { token: f.resetToken(), newPassword: "changed-Password-1234" } });
+  } else if (operation === "revoke-other") {
+    await f.auth.api.revokeOtherSessions({ headers: a.headers });
   } else {
     await f.auth.api.revokeSessions({ headers: a.headers });
   }
-  expect(f.db.session).toHaveLength(0);
+  expect(f.db.session).toHaveLength(operation === "revoke-other" ? 1 : 0);
+  if (operation === "revoke-other") expect(await f.getIdentitySession(a.headers)).toEqual({ user: { id: a.user.id } });
   for (const headers of logins) {
     await expect(f.getIdentitySession(headers)).rejects.toBeInstanceOf(WebsiteChatIdentityUnavailableError);
     expect(await f.auth.api.getSession({ headers })).toBeNull();
@@ -299,4 +317,72 @@ it.each(storageModes)("%s: native user deletion invalidates cached identity with
   await expect(f.getIdentitySession(a.headers)).rejects.toBeInstanceOf(WebsiteChatIdentityUnavailableError);
   expect(await f.auth.api.getSession({ headers: a.headers })).toBeNull();
   expect(await f.getIdentitySession(b.headers)).toEqual({ user: { id: b.user.id } });
+});
+
+it.each(storageModes)("%s: native management sees and revokes cold sessions without warming chat", async (mode) => {
+  const f = fixture(mode === "redis" ? localRedis() : undefined);
+  const legacy = betterAuth({ baseURL, secret, database: memoryAdapter(f.db), emailAndPassword: { enabled: true } });
+  const coldResponse = await legacy.api.signUpEmail({ body: { email: "cold@example.test", password: "test-Password-1234", name: "Synthetic" }, asResponse: true });
+  const name = getCookies({ baseURL }).sessionToken.name;
+  const coldCookie = coldResponse.headers.getSetCookie().find((line) => line.startsWith(`${name}=`))!.split(";")[0];
+  const coldHeaders = new Headers({ cookie: coldCookie, origin: baseURL });
+  let nativeReads = 0;
+  const nativeGet = f.nativeSessions.get.bind(f.nativeSessions);
+  f.nativeSessions.get = async (token) => { nativeReads++; return nativeGet(token); };
+  await expect(f.getIdentitySession(coldHeaders)).rejects.toBeInstanceOf(WebsiteChatIdentityUnavailableError);
+  expect(nativeReads).toBe(0);
+  const coldSession = await f.auth.api.getSession({ headers: coldHeaders });
+  expect(coldSession?.user.id).toBeTruthy();
+  await expect(f.getIdentitySession(coldHeaders)).rejects.toBeInstanceOf(WebsiteChatIdentityUnavailableError);
+  const response = await f.auth.api.signInEmail({ body: { email: "cold@example.test", password: "test-Password-1234" }, asResponse: true });
+  const cookie = response.headers.getSetCookie().find((line) => line.startsWith(`${name}=`))!.split(";")[0];
+  const headers = new Headers({ cookie, origin: baseURL });
+  expect(await f.auth.api.listSessions({ headers })).toHaveLength(2);
+  await f.auth.api.revokeOtherSessions({ headers });
+  expect(f.db.session).toHaveLength(1);
+  expect(await f.auth.api.getSession({ headers: coldHeaders })).toBeNull();
+  expect(await f.getIdentitySession(headers)).toEqual({ user: { id: coldSession!.user.id } });
+});
+
+it.each(storageModes)("%s: native enumeration failure aborts revocation before deleting sessions", async (mode) => {
+  const f = fixture(mode === "redis" ? localRedis() : undefined);
+  const a = await f.signup();
+  f.nativeSessions.list = async () => { throw new Error("synthetic native loader outage"); };
+  await expect(f.auth.api.revokeSessions({ headers: a.headers })).rejects.toThrow();
+  expect(f.db.session).toHaveLength(1);
+  expect(await f.getIdentitySession(a.headers)).toEqual({ user: { id: a.user.id } });
+});
+
+it.each(storageModes)("%s: a login created after bulk enumeration is still revoked", async (mode) => {
+  const f = fixture(mode === "redis" ? localRedis() : undefined);
+  const a = await f.signup();
+  const originalList = f.nativeSessions.list.bind(f.nativeSessions);
+  let reached!: () => void;
+  let resume!: () => void;
+  const paused = new Promise<void>((resolve) => { reached = resolve; });
+  const resumed = new Promise<void>((resolve) => { resume = resolve; });
+  let gate = true;
+  f.nativeSessions.list = async (userId) => {
+    const sessions = await originalList(userId);
+    if (gate) { gate = false; reached(); await resumed; }
+    return sessions;
+  };
+  const revocation = f.auth.api.revokeSessions({ headers: a.headers });
+  await paused;
+  const response = await f.auth.api.signInEmail({ body: { email: "person@example.test", password: "test-Password-1234" }, asResponse: true });
+  const name = getCookies({ baseURL }).sessionToken.name;
+  const cookie = response.headers.getSetCookie().find((line) => line.startsWith(`${name}=`))!.split(";")[0];
+  const headers = new Headers({ cookie, origin: baseURL });
+  expect(await f.getIdentitySession(headers)).toEqual({ user: { id: a.user.id } });
+  const context = await f.auth.$context;
+  const findMany = context.adapter.findMany.bind(context.adapter);
+  context.adapter.findMany = async (input) => {
+    if (input.model === "session") throw new Error("synthetic hook enumeration failure");
+    return findMany(input);
+  };
+  resume();
+  await revocation;
+  expect(f.db.session).toHaveLength(0);
+  expect(await f.auth.api.getSession({ headers })).toBeNull();
+  await expect(f.getIdentitySession(headers)).rejects.toBeInstanceOf(WebsiteChatIdentityUnavailableError);
 });

@@ -11,6 +11,16 @@ type RedisClient = {
   del(key: string): Promise<unknown>;
   eval(script: string, keys: string[], args: string[]): Promise<unknown>;
 };
+export type WebsiteChatNativeSessions = {
+  // Auth management only: enumerate every DB session, without the native
+  // adapter's default 100-row limit. These functions must never seed Redis.
+  list(userId: string): Promise<Array<{ token: string; expiresAt: Date | string }>>;
+  get(token: string): Promise<{
+    session: { token: string; userId: string; createdAt: Date | string; expiresAt: Date | string } & Record<string, unknown>;
+    user: { id: string } & Record<string, unknown>;
+  } | null>;
+};
+
 type CandidateOptions = {
   redis: RedisClient;
   namespace: string;
@@ -18,6 +28,7 @@ type CandidateOptions = {
   secret: string;
   baseURL: Parameters<typeof getCookies>[0]["baseURL"];
   now?: () => number;
+  nativeSessions?: WebsiteChatNativeSessions;
 };
 
 export class WebsiteChatIdentityUnavailableError extends Error {
@@ -45,7 +56,14 @@ export function createWebsiteChatAuthCandidate(options: CandidateOptions) {
       return redis.call('DEL', KEYS[1])
     `, [redisKey(`active-sessions-${userId}`), userWatermarkKey(userId)], [String(now()), String(30 * 86400)]);
   }
-  const secondaryStorage = {
+  async function passesRevocationFences(token: string, userId: string, createdAt: string | Date) {
+    if (await options.redis.get(`${redisKey(token)}:revoked`)) return false;
+    const revokedAt = await options.redis.get(userWatermarkKey(userId));
+    if (revokedAt === null || revokedAt === undefined) return true;
+    const issuedAt = new Date(createdAt).getTime();
+    return Number.isFinite(issuedAt) && Number.isFinite(Number(revokedAt)) && issuedAt > Number(revokedAt);
+  }
+  const cacheStorage = {
     async get(key: string): Promise<string | null> {
       const address = redisKey(key);
       if (await options.redis.get(`${address}:revoked`)) return null;
@@ -60,16 +78,13 @@ export function createWebsiteChatAuthCandidate(options: CandidateOptions) {
       const data = JSON.parse(Buffer.concat([decipher.update(packed.subarray(28)), decipher.final()]).toString("utf8")) as { value: string; expiresAt: number | null };
       if (typeof data.value !== "string" || (data.expiresAt !== null && (!Number.isFinite(data.expiresAt) || data.expiresAt <= now()))) return null;
       const cached = JSON.parse(data.value) as { session?: { createdAt?: string }; user?: { id?: string } };
-      if (cached?.session && cached?.user?.id) {
-        const revokedAt = await options.redis.get(userWatermarkKey(cached.user.id));
-        if (revokedAt !== null && revokedAt !== undefined) {
-          const issuedAt = Date.parse(cached.session.createdAt ?? "");
-          if (!Number.isFinite(issuedAt) || !Number.isFinite(Number(revokedAt)) || issuedAt <= Number(revokedAt)) return null;
-        }
-      }
+      if (cached?.session && cached?.user?.id && !await passesRevocationFences(key, cached.user.id, cached.session.createdAt ?? "")) return null;
       return data.value;
     },
     async set(key: string, value: string, ttl?: number) {
+      // The native read/modify/write list loses concurrent logins. Auth session
+      // management instead enumerates the authoritative database via its loader.
+      if (key.startsWith("active-sessions-")) return;
       if (ttl !== undefined && (!Number.isFinite(ttl) || ttl <= 0)) {
         await options.redis.del(redisKey(key));
         return;
@@ -80,18 +95,45 @@ export function createWebsiteChatAuthCandidate(options: CandidateOptions) {
       cipher.setAAD(Buffer.from(address));
       const encrypted = Buffer.concat([cipher.update(JSON.stringify({ value, expiresAt: ttl === undefined ? null : now() + ttl * 1000 })), cipher.final()]);
       const packed = Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString("base64url");
+      const record = JSON.parse(value) as { session?: { createdAt?: string }; user?: { id?: string } };
+      const issuedAt = record.session && record.user?.id ? Date.parse(record.session.createdAt ?? "") : null;
+      if (issuedAt !== null && !Number.isFinite(issuedAt)) throw new Error("Invalid native session creation time");
       // A cache refresh that started before revocation must not resurrect its
       // token. The check and write are one Redis operation, across all workers.
       await options.redis.eval(`
         if redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+        if ARGV[3] ~= '' and tonumber(ARGV[3]) <= tonumber(redis.call('GET', KEYS[3]) or '0') then return 0 end
         if ARGV[2] == '' then redis.call('SET', KEYS[1], ARGV[1])
         else redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2]) end
         return 1
-      `, [address, `${address}:revoked`], [packed, ttl === undefined ? "" : String(Math.ceil(ttl))]);
+      `, [address, `${address}:revoked`, record.user?.id ? userWatermarkKey(record.user.id) : `${address}:unused`], [packed, ttl === undefined ? "" : String(Math.ceil(ttl)), issuedAt === null ? "" : String(issuedAt)]);
     },
     async delete(key: string) {
       if (key.startsWith("active-sessions-")) await revokeUser(key.slice("active-sessions-".length));
-      else await options.redis.del(redisKey(key));
+      else if (key.startsWith("verification:")) await options.redis.del(redisKey(key));
+      else await options.redis.eval(`
+        redis.call('SET', KEYS[2], '1', 'EX', ARGV[1])
+        return redis.call('DEL', KEYS[1])
+      `, [redisKey(key), `${redisKey(key)}:revoked`], [String(30 * 86400)]);
+    },
+  };
+  const secondaryStorage = {
+    ...cacheStorage,
+    async get(key: string): Promise<string | null> {
+      const loader = options.nativeSessions;
+      if (!loader) throw new Error("Native auth session loaders are required for auth activation");
+      if (key.startsWith("active-sessions-")) {
+        const sessions = await loader.list(key.slice("active-sessions-".length));
+        return JSON.stringify(sessions.map(({ token, expiresAt }) => ({ token, expiresAt: new Date(expiresAt).getTime() })));
+      }
+      const cached = await cacheStorage.get(key);
+      if (cached || key.startsWith("verification:")) return cached;
+      // An existing pre-activation login stays usable by global authentication.
+      // No cache write occurs here; chat remains unavailable until native login.
+      const record = await loader.get(key);
+      if (!record) return null;
+      if (record.session.token !== key || record.session.userId !== record.user.id || !await passesRevocationFences(key, record.user.id, record.session.createdAt)) return null;
+      return JSON.stringify(record);
     },
   };
   const cookieName = getCookies({ baseURL: options.baseURL }).sessionToken.name;
@@ -115,7 +157,7 @@ export function createWebsiteChatAuthCandidate(options: CandidateOptions) {
       const actual = Buffer.from(signature, "base64");
       const expected = createHmac("sha256", options.secret).update(token).digest();
       if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new Error("Invalid session signature");
-      const raw = await secondaryStorage.get(token);
+      const raw = await cacheStorage.get(token);
       if (!raw) throw new Error("Session cache unavailable");
       const cached = JSON.parse(raw) as { session?: { token?: string; userId?: string; expiresAt?: string }; user?: { id?: string } };
       const id = cached.user?.id;
@@ -155,14 +197,14 @@ export function createWebsiteChatAuthCandidate(options: CandidateOptions) {
   };
 }
 
-export function createWebsiteChatAuthCandidateFromEnvironment(env: NodeJS.ProcessEnv = process.env) {
+export function createWebsiteChatAuthCandidateFromEnvironment(env: NodeJS.ProcessEnv = process.env, nativeSessions?: WebsiteChatNativeSessions) {
   const config = parseAuthConfig(env);
   const url = env.RNR_AI_REDIS_REST_URL?.trim();
   const token = env.RNR_AI_REDIS_REST_TOKEN?.trim();
   const namespace = env.RNR_AI_REDIS_NAMESPACE?.trim();
   const encryptionKey = env.RNR_AI_REVIEW_ENCRYPTION_KEY?.trim();
   if (!url || !token || !namespace || !encryptionKey) throw new Error("Website chat authentication configuration is unavailable");
-  return createWebsiteChatAuthCandidate({ redis: new Redis({ url, token, automaticDeserialization: false }), namespace, encryptionKey, secret: config.secret, baseURL: getBetterAuthBaseURL(config, env) });
+  return createWebsiteChatAuthCandidate({ redis: new Redis({ url, token, automaticDeserialization: false }), namespace, encryptionKey, secret: config.secret, baseURL: getBetterAuthBaseURL(config, env), nativeSessions });
 }
 
 export async function getWebsiteChatIdentitySession(headers: Headers) {
