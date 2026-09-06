@@ -132,7 +132,43 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
     const wy=THREE.MathUtils.smoothstep(Math.abs(y),h/2-.006,h/2-.002);
     uv.setXY(i,(x-Math.sign(x)*inward*wx)/aw+.5,(y-Math.sign(y)*inward*wy)/ah+.5);
   }
-  // Retain all rounded side/front surfaces; omit the rear face so the stretcher remains visible.
+  // Keep the rear shoulder, trimming only the open centre. Deleting the whole rear
+  // material group also deleted half of the rounded edge and left a visible slit.
+  const rearGroup=shellGeometry.groups.find(group=>group.materialIndex===5)!;
+  const bridgeVertices:number[]=[];
+  function clipPolygon(polygon:THREE.Vector3[],axis:"x"|"y",limit:number,greater:boolean){
+    const result:THREE.Vector3[]=[];
+    for(let i=0;i<polygon.length;i++){
+      const a=polygon[i],b=polygon[(i+1)%polygon.length];
+      const insideA=greater?a[axis]>=limit:a[axis]<=limit;
+      const insideB=greater?b[axis]>=limit:b[axis]<=limit;
+      if(insideA)result.push(a);
+      if(insideA!==insideB)result.push(a.clone().lerp(b,(limit-a[axis])/(b[axis]-a[axis])));
+    }
+    return result;
+  }
+  const innerX=w/2-.018,innerY=h/2-.018;
+  for(let i=rearGroup.start;i<rearGroup.start+rearGroup.count;i+=3){
+    const triangle=[0,1,2].map(j=>new THREE.Vector3().fromBufferAttribute(positions,i+j));
+    const middle=clipPolygon(clipPolygon(triangle,"y",-innerY,true),"y",innerY,false);
+    const strips=[clipPolygon(triangle,"y",innerY,true),clipPolygon(triangle,"y",-innerY,false),clipPolygon(middle,"x",innerX,true),clipPolygon(middle,"x",-innerX,false)];
+    for(const polygon of strips)for(let j=1;j<polygon.length-1;j++){
+      for(const point of [polygon[0],polygon[j],polygon[j+1]])bridgeVertices.push(point.x,point.y,point.z);
+    }
+  }
+  const bridgeGeometry=new THREE.BufferGeometry();
+  bridgeGeometry.setAttribute("position",new THREE.Float32BufferAttribute(bridgeVertices,3));
+  const bridgeUV:number[]=[],bridgeNormals:number[]=[];
+  for(let i=0;i<bridgeVertices.length;i+=3){
+    const [x,y,z]=bridgeVertices.slice(i,i+3);
+    const inward=Math.max(0,d/2-z);
+    bridgeUV.push((x-Math.sign(x)*inward*THREE.MathUtils.smoothstep(Math.abs(x),w/2-.006,w/2-.002))/aw+.5,(y-Math.sign(y)*inward*THREE.MathUtils.smoothstep(Math.abs(y),h/2-.006,h/2-.002))/ah+.5);
+    const normal=new THREE.Vector3(x-THREE.MathUtils.clamp(x,-w/2+.002,w/2-.002),y-THREE.MathUtils.clamp(y,-h/2+.002,h/2-.002),z-THREE.MathUtils.clamp(z,-d/2+.002,d/2-.002)).normalize();
+    bridgeNormals.push(normal.x,normal.y,normal.z);
+  }
+  bridgeGeometry.setAttribute("uv",new THREE.Float32BufferAttribute(bridgeUV,2));
+  bridgeGeometry.setAttribute("normal",new THREE.Float32BufferAttribute(bridgeNormals,3));
+  const bridge=new THREE.Mesh(bridgeGeometry,picture);bridge.name="Continuous rear wrap shoulder";bridge.castShadow=true;bridge.receiveShadow=true;root.add(bridge);
   shellGeometry.groups=shellGeometry.groups.filter(group=>group.materialIndex!==5);
   const shell=new THREE.Mesh(shellGeometry,[picture,picture,picture,picture,picture,white]);
   shell.name="Wrapped canvas shell";shell.castShadow=true;shell.receiveShadow=true;root.add(shell);

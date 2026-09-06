@@ -25,6 +25,26 @@ describe("wrapped canvas geometry",()=>{
     const normals=shell.geometry.attributes.normal;
     expect(Array.from({length:normals.count},(_,i)=>Math.abs(normals.getX(i))>.1&&Math.abs(normals.getZ(i))>.1).some(Boolean)).toBe(true);
   });
+  it("seals every exposed rear shoulder edge while keeping the back centre open",()=>{
+    const {root}=createCanvasModel(getCanvasProfile("a0")!,new THREE.Texture({width:1190,height:840} as HTMLImageElement),new THREE.Texture());
+    const shell=(root.getObjectByName("Wrapped canvas shell") as THREE.Mesh).geometry;
+    const bridge=(root.getObjectByName("Continuous rear wrap shoulder") as THREE.Mesh).geometry;
+    const key=(p:THREE.BufferAttribute|THREE.InterleavedBufferAttribute,i:number)=>[p.getX(i),p.getY(i),p.getZ(i)].map(v=>v.toFixed(6)).join(":");
+    const edges=new Map<string,{count:number;ends:string[]}>();
+    const p=shell.attributes.position,b=bridge.attributes.position;
+    for(const group of shell.groups)for(let i=group.start;i<group.start+group.count;i+=3)for(const [a,c] of [[0,1],[1,2],[2,0]]){
+      const ends=[key(p,i+a),key(p,i+c)].sort(),id=ends.join("|");
+      const current=edges.get(id);edges.set(id,{count:(current?.count??0)+1,ends});
+    }
+    const vertices=new Set(Array.from({length:b.count},(_,i)=>key(b,i)));
+    const boundary=[...edges.values()].filter(edge=>edge.count===1);
+    expect(boundary.length).toBeGreaterThan(0);
+    for(const edge of boundary)for(const point of edge.ends)expect(vertices.has(point)).toBe(true);
+    for(let i=0;i<b.count;i+=3){
+      const cx=(b.getX(i)+b.getX(i+1)+b.getX(i+2))/3,cy=(b.getY(i)+b.getY(i+1)+b.getY(i+2))/3;
+      expect(Math.abs(cx)>=1.19/2-.018-.000001||Math.abs(cy)>=.84/2-.018-.000001).toBe(true);
+    }
+  });
   it.each(["a0","a1"])("seats %s brace ends inside the rail opening",size=>{
     for(const orientation of ["landscape","portrait"] as const){
       const profile=getCanvasProfile(size,orientation)!;
