@@ -242,3 +242,17 @@ it('requires complete bindings for calculated prices and fees without weakening 
     const rate = { ...fee, kind: 'unit_rate', amountMinor: 2500, numericPath: 'sixPlusPerPersonMinor', calculation: [] };
     expect(schema.safeParse({ ...audit, claims: [rate] }).success).toBe(true);
 });
+
+
+it.each(['price', 'additional_fee', 'unit_rate', 'shipping_cost'] as const)('requires direct monetary bindings for %s instead of accepting the ordinary branch', kind => {
+    const schema = auditSchemaForSources([source], ['c1']);
+    const direct = { ...audit.claims[0], kind };
+    expect(schema.safeParse({ ...audit, claims: [direct] }).success).toBe(true);
+    for (const missing of [{ numericPath: null }, { numericPath: '' }, { amountMinor: null }, { currency: null }]) {
+        expect(schema.safeParse({ ...audit, claims: [{ ...direct, ...missing }] }).success).toBe(false);
+    }
+    // A structurally bound citation still cannot attest an invented amount.
+    const invented = { ...direct, amountMinor: 22999, span: 'AUD229.99' };
+    expect(schema.safeParse({ ...audit, claims: [invented] }).success).toBe(true);
+    expect(check({ ...audit, claims: [invented] }, { ...candidate, reply: invented.span }).risk).toBe('RED');
+});

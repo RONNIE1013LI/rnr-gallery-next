@@ -12,12 +12,14 @@ export function auditSchemaForSources(sources: EvidenceSource[], customerTurnIds
     const customerTurnId = turnIds.length ? z.enum(turnIds as [string, ...string[]]) : null;
     const operand = z.object({ sourceId, numericPath: z.string() }).strict();
     const claim = auditSchema.shape.claims.element.extend({ sources: z.array(sourceId) });
+    const monetaryKinds = ['price', 'additional_fee', 'unit_rate', 'shipping_cost'] as const;
     const calculatedMoney = { amountMinor: z.number(), currency: z.enum(['NZD', 'AUD']), numericPath: z.null() };
     return auditSchema.extend({
         marketEvidenceTurn: customerTurnId ? customerTurnId.nullable() : z.null(),
         relevantCustomerTurnIds: customerTurnId ? z.array(customerTurnId) : z.array(z.string()).max(0),
         claims: z.array(z.union([
-            claim.extend({ calculation: z.array(operand).max(0) }),
+            claim.extend({ kind: claim.shape.kind.exclude(monetaryKinds), calculation: z.array(operand).max(0) }),
+            claim.extend({ ...calculatedMoney, kind: z.enum(monetaryKinds), numericPath: z.string().min(1), calculation: z.array(operand).max(0) }),
             claim.extend({ ...calculatedMoney, kind: z.literal('price'), quantity: z.number().int().positive(), size: z.string(), calculation: z.array(operand).length(2) }),
             claim.extend({ ...calculatedMoney, kind: z.literal('additional_fee'), quantity: z.number().int().min(6), calculation: z.array(operand).length(1) }),
         ])),
