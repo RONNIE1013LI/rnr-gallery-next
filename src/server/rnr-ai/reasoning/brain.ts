@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { logReasoningDiagnostic, type DiagnosticReason, type DiagnosticStage, type ProviderDiagnostic } from '../diagnostics';
-import { candidateSchema, auditSchemaForSources, checkSafetyContract, type Candidate, type EvidenceSource, type Turn } from './claim-contract';
+import { candidateSchema, auditSchemaForSources, auditCoverageFeedback, checkSafetyContract, type Candidate, type EvidenceSource, type Turn } from './claim-contract';
 import { generator, verifier, toolInstructions } from './instructions';
 import { reasoningContext, reasoningEvidence } from './evidence';
 import { SolProviderError, toolRequestSchema, type OpenAiSolProvider } from '../providers/openai-sol';
@@ -138,11 +138,16 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
         if ((contract.risk === 'RED' || needsQualityRepair()) && deadlineAt - Date.now() >= REPAIR_ADMISSION_MS) {
             const original = { candidate, audit, contract };
             try {
-                stage = 'repair';
+                const repairAuditOnly = audit.safe && !needsQualityRepair() && contract.failures.length > 0
+                    && contract.failures.every(failure => failure === 'uncovered_money_claim' || failure === 'claim_span_not_in_candidate');
+                const contractFeedback = repairAuditOnly ? { failures: contract.failures, ...auditCoverageFeedback(candidate, audit) } : null;
                 verificationSuccess = false;
-                candidate = await modelCall(generator, { ...data(), previousCandidate: candidate, verificationFeedback: contract.failures, qualityFeedback: { helpful: audit.helpful, unnecessaryQuestion: audit.unnecessaryQuestion }, issues: audit.issues }, candidateSchema, 1200);
+                if (!repairAuditOnly) {
+                    stage = 'repair';
+                    candidate = await modelCall(generator, { ...data(), previousCandidate: candidate, verificationFeedback: contract.failures, qualityFeedback: { helpful: audit.helpful, unnecessaryQuestion: audit.unnecessaryQuestion }, issues: audit.issues }, candidateSchema, 1200);
+                }
                 stage = 'repair_verification';
-                audit = await modelCall(verifier, { ...data(), candidate }, auditSchemaForSources(evidence, customerTurnIds), 2400);
+                audit = await modelCall(verifier, { ...data(), candidate, ...(contractFeedback ? { contractFeedback } : {}) }, auditSchemaForSources(evidence, customerTurnIds), 2400);
                 verificationSuccess = true;
                 stage = 'contract';
                 contract = checkSafetyContract(candidate, audit, evidence, turns);

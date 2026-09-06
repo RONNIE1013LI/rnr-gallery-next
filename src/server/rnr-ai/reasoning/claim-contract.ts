@@ -104,6 +104,12 @@ function liveSourceSupports(claim: ClaimAudit['claims'][number], source: Evidenc
     // A generic order read or courier-price result must not become such an attestation.
     return false;
 }
+export function auditCoverageFeedback(candidate: Candidate, audit: ClaimAudit) {
+    return {
+        uncoveredText: candidate.reply.split('').map((char, index) => audit.claims.some(c => { const start = candidate.reply.indexOf(c.span); return start >= 0 && index >= start && index < start + c.span.length; }) ? ' ' : char).join(''),
+        invalidClaimSpans: audit.claims.filter(claim => !claim.span || !candidate.reply.includes(claim.span)).map(claim => claim.span),
+    };
+}
 export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sources: EvidenceSource[], turns: Turn[]): {
     risk: 'GREEN' | 'YELLOW' | 'RED';
     failures: ContractFailureCode[];
@@ -117,7 +123,7 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
     // Helpfulness is not factual risk. A question with no asserted entitlement may be sent even when policy is missing.
     if (!audit.safe && !genuineClarification)
         failures.push('semantic_verification_failed');
-    const uncovered = candidate.reply.split('').map((char, index) => audit.claims.some(c => { const start = candidate.reply.indexOf(c.span); return start >= 0 && index >= start && index < start + c.span.length; }) ? ' ' : char).join('');
+    const { uncoveredText: uncovered } = auditCoverageFeedback(candidate, audit);
     if (/(?:[$]\s*\d|(?:NZD|AUD)\s*\d|\d[\d,.]*\s*(?:NZD|AUD))/i.test(uncovered))
         failures.push('uncovered_money_claim');
     if (audit.internalErrorLanguage)

@@ -269,3 +269,37 @@ describe('production structured Brain with mocked Responses transport (no paid m
     });
 
 });
+
+
+describe('audit coverage repair', () => {
+    const c: Candidate = { mode: 'ANSWER', market: 'AU', marketEvidenceTurn: 't1', reply: 'A2 photo canvas costs AUD109.99.\nFinal total: AUD109.99.' };
+    const price: ClaimAudit['claims'][number] = { ...fact, span: 'A2 photo canvas costs AUD109.99.', kind: 'price', product: 'photo-print-canvas', sources: ['au-photo-canvas-prices'], amountMinor: 10999, currency: 'AUD', size: 'A2', numericPath: 'pricesMinor.A2', marketDependent: true };
+    const omitted = audit(c, [price]);
+    const complete = audit(c, [price, { ...price, span: 'Final total: AUD109.99.' }]);
+    it.each(['complete', 'repeated omission', 'unsupported new claim'] as const)('re-audits the unchanged candidate once for %s', async outcome => {
+        const next = outcome === 'complete' ? complete : outcome === 'repeated omission' ? omitted : { ...complete, claims: [...complete.claims, { ...fact, span: 'A2 photo canvas', kind: 'delivery_promise' as const, sources: ['production-standard-target'], liveRequired: true }] };
+        const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+        try {
+            const h = harness([plan(c), omitted, next]);
+            const result = await h.brain.generate(request([['customer', 'What does A2 photo canvas cost in Australia?']]));
+            expect(result).toMatchObject({ risk: outcome === 'complete' ? 'GREEN' : 'RED', replyText: c.reply, nextAction: outcome === 'complete' ? 'AUTO_REPLY_ELIGIBLE' : 'HUMAN_REVIEW' });
+            expect(h.fetchImpl).toHaveBeenCalledTimes(3);
+            const sent = JSON.parse(String(h.fetchImpl.mock.calls[2][1]?.body));
+            expect(sent.text.format.schema.properties.claims).toBeDefined();
+            const payload = JSON.parse(sent.input[1].content[0].text);
+            expect(payload.candidate).toMatchObject(c);
+            expect(payload.contractFeedback).toMatchObject({ failures: ['uncovered_money_claim'], invalidClaimSpans: [] });
+            expect(payload.contractFeedback.uncoveredText).toContain('Final total: AUD109.99.');
+            expect(JSON.stringify(spy.mock.calls)).not.toContain('AUD109.99');
+            if (outcome === 'repeated omission') expect(result.reasons).toContain('uncovered_money_claim');
+            if (outcome === 'unsupported new claim') expect(result.reasons).toContain('authenticated_live_evidence_required');
+        } finally { spy.mockRestore(); }
+    });
+    it('includes invalid claim spans in fresh verifier feedback', async () => {
+        const invalid = audit(base, [{ ...fact, span: 'This span does not exist.' }]);
+        const h = harness([plan(), invalid, audit()]);
+        expect(await h.brain.generate(request())).toMatchObject({ risk: 'GREEN', replyText: base.reply });
+        const payload = JSON.parse(JSON.parse(String(h.fetchImpl.mock.calls[2][1]?.body)).input[1].content[0].text);
+        expect(payload.contractFeedback).toMatchObject({ failures: ['claim_span_not_in_candidate'], invalidClaimSpans: ['This span does not exist.'] });
+    });
+});
