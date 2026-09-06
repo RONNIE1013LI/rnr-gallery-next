@@ -53,7 +53,7 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
     const failures: ContractFailureCode[] = [];
     const byId = new Map(sources.map(s => [s.id, s]));
     const customerIds = new Set(turns.filter(t => t.role === 'customer').map(t => t.id));
-    const genuineClarification = candidate.mode === 'CLARIFICATION' && audit.mode === 'CLARIFICATION' && audit.clarificationOnly && audit.claims.length === 0 && candidate.reply.includes('?');
+    const genuineClarification = candidate.mode === 'CLARIFICATION' && audit.mode === 'CLARIFICATION' && audit.clarificationOnly && audit.claims.length === 0 && /[?？]/.test(candidate.reply);
     // Helpfulness is not factual risk. A question with no asserted entitlement may be sent even when policy is missing.
     if (!audit.safe && !genuineClarification)
         failures.push('semantic_verification_failed');
@@ -62,19 +62,22 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
         failures.push('uncovered_money_claim');
     if (audit.internalErrorLanguage)
         failures.push('internal_error_language');
-    if (candidate.mode !== audit.mode)
+    const verifiedMixedReply = audit.safe && candidate.mode !== 'HANDOFF' && audit.mode !== 'HANDOFF' && audit.claims.length > 0 && /[?？]/.test(candidate.reply);
+    if (candidate.mode !== audit.mode && !verifiedMixedReply)
         failures.push('response_mode_disagreement');
-    if (candidate.market !== audit.market || candidate.marketEvidenceTurn !== audit.marketEvidenceTurn)
+    if (candidate.market !== audit.market)
         failures.push('market_disagreement');
-    if (candidate.market !== 'UNKNOWN' && (!candidate.marketEvidenceTurn || !customerIds.has(candidate.marketEvidenceTurn)))
+    if (candidate.market !== 'UNKNOWN' && (!candidate.marketEvidenceTurn || !customerIds.has(candidate.marketEvidenceTurn) || !audit.marketEvidenceTurn || !customerIds.has(audit.marketEvidenceTurn)))
         failures.push('market_source_not_customer');
     if (audit.relevantCustomerTurnIds.some(id => !customerIds.has(id)))
         failures.push('invalid_active_context_source');
-    if (audit.openIssue !== 'NONE' && audit.openIssue !== 'ORDER_STATE' && candidate.mode === 'ANSWER')
+    if (audit.openIssue !== 'NONE' && audit.openIssue !== 'ORDER_STATE' && (candidate.mode === 'ANSWER' || (candidate.mode === 'CLARIFICATION' && audit.claims.some(claim => !['product', 'capability', 'process'].includes(claim.kind)))))
         failures.push('unresolved_issue_requires_clarification_or_review');
     if (audit.openIssue === 'ORDER_STATE' && candidate.mode === 'ANSWER' && !audit.claims.some(c => ['order_status', 'payment_status', 'delivery_promise'].includes(c.kind) && c.sources.some(id => { const s = byId.get(id); return !!s && liveSourceSupports(c,s); })))
         failures.push('order_answer_without_verified_state');
-    if (candidate.mode === 'CLARIFICATION' && (!audit.clarificationOnly || audit.claims.length > 0 || !candidate.reply.includes('?')))
+    // Supported facts may precede a needed question. Only a genuinely claim-free
+    // clarification receives the existing safe=false exception above.
+    if (candidate.mode === 'CLARIFICATION' && (!/[?？]/.test(candidate.reply) || (!audit.clarificationOnly && audit.claims.length === 0)))
         failures.push('not_claim_free_clarification');
     for (const claim of audit.claims) {
         if (!claim.span || !candidate.reply.includes(claim.span))

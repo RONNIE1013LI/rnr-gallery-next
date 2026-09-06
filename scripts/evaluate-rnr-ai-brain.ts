@@ -55,7 +55,7 @@ function providerResult(fixture: Fixture): SolProviderResult {
     requestedTools: [],
   };
   return {
-    model: "gpt-5.6-sol",
+    model: "gpt-5.6-luna",
     usage: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 },
     decision,
   };
@@ -122,7 +122,7 @@ async function main() {
   }
 
   if (failures.length) throw new Error(`R&R AI evaluation failed:\n${failures.join("\n")}`);
-  process.stdout.write(`R&R AI evaluation PASS: ${fixtures.length} cases; ${currencyChecks}/${currencyChecks} currency checks correct\n`);
+  process.stdout.write(`R&R AI legacy contract fixtures PASS (mock provider, not model quality): ${fixtures.length} cases; ${currencyChecks}/${currencyChecks} currency checks correct\n`);
 }
 
 void main();

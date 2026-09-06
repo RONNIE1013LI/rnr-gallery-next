@@ -52,4 +52,53 @@ describe('local claim-level safety contract', () => {
         expect(check(a,c,[quote,price]).risk).toBe('RED');
     });
 
+    it('allows a supported answer followed by a necessary clarification', () => {
+        const c: Candidate = { mode: 'CLARIFICATION', reply: 'A2 is 59.4 x 42 cm. Where will it be delivered?', market: 'UNKNOWN', marketEvidenceTurn: null };
+        const a: ClaimAudit = { ...audit, mode: 'CLARIFICATION', market: 'UNKNOWN', marketEvidenceTurn: null, clarificationOnly: false,
+            claims: [{ ...audit.claims[0], span: 'A2 is 59.4 x 42 cm.', kind: 'product', sources: ['sizes'], marketDependent: false, amountMinor: null, currency: null, size: null, numericPath: null }] };
+        expect(check(a, c, [{ ...source, id: 'sizes', market: 'GLOBAL', category: 'product' }]).risk).toBe('GREEN');
+        expect(check({ ...a, safe: false }, c, [{ ...source, id: 'sizes', market: 'GLOBAL', category: 'product' }]).risk).toBe('RED');
+        expect(check(a, c, [{ ...source, id: 'sizes', status: 'REVIEW' }]).risk).toBe('RED');
+    });
+    it('accepts different customer citations for an independently agreed market', () => {
+        const customerTurns = [...turns, { id: 'c2', role: 'customer' as const, text: 'Yes, Australia.' }];
+        expect(checkSafetyContract(candidate, { ...audit, marketEvidenceTurn: 'c2' }, [source], customerTurns).risk).toBe('GREEN');
+        expect(checkSafetyContract(candidate, { ...audit, marketEvidenceTurn: 'p1' }, [source], customerTurns).risk).toBe('RED');
+        expect(checkSafetyContract(candidate, { ...audit, market: 'NZ', marketEvidenceTurn: 'c2' }, [source], customerTurns).risk).toBe('RED');
+    });
+
+    it('cannot turn unresolved personal entitlement into an affirmative policy answer by adding a question', () => {
+        const c: Candidate = { ...candidate, mode: 'CLARIFICATION', reply: 'You are entitled to a refund. What is your order reference?' };
+        const a: ClaimAudit = { ...audit, mode: 'CLARIFICATION', openIssue: 'POLICY_ENTITLEMENT', clarificationOnly: false,
+            claims: [{ ...audit.claims[0], span: 'You are entitled to a refund.', kind: 'policy', sources: ['refund-policy'], amountMinor: null, currency: null, numericPath: null, size: null }] };
+        expect(check(a, c, [{ ...source, id: 'refund-policy', category: 'policy' }]).risk).toBe('RED');
+    });
+
+    it('accepts a natural Chinese clarification with full-width punctuation', () => {
+        expect(check({ ...audit, mode: 'CLARIFICATION', claims: [], clarificationOnly: true }, { ...candidate, mode: 'CLARIFICATION', reply: '请问寄到新西兰还是澳洲？' }).risk).toBe('GREEN');
+    });
+    it('rejects an independently disproved market citation even when both declared markets match', () => {
+        const history = [{ id: 'c1', role: 'customer' as const, text: 'Deliver to New Zealand.' }, { id: 'c2', role: 'customer' as const, text: 'Correction: Sydney, Australia.' }];
+        expect(checkSafetyContract(candidate, { ...audit, marketEvidenceTurn: 'c2', safe: false, issues: ['Candidate cites an obsolete NZ destination to support AU.'] }, [source], history).risk).toBe('RED');
+    });
+
+    it('does not block a verified mixed answer merely because ordinary mode labels differ', () => {
+        const c: Candidate = { ...candidate, mode: 'ANSWER', reply: 'A2 is AUD109.99. Which orientation would you like?' };
+        expect(check({ ...audit, mode: 'CLARIFICATION', clarificationOnly: false }, c).risk).toBe('GREEN');
+        expect(check({ ...audit, mode: 'HANDOFF' }, c).risk).toBe('RED');
+        expect(check({ ...audit, mode: 'CLARIFICATION', safe: false }, c).risk).toBe('RED');
+        expect(check({ ...audit, mode: 'CLARIFICATION' }, c, [{ ...source, status: 'REVIEW' }]).risk).toBe('RED');
+    });
+
+    it('answers an unrelated supported dimension while clarifying an unresolved refund stage', () => {
+        const c: Candidate = { mode: 'CLARIFICATION', reply: 'A2 is 59.4 x 42 cm. Has printing already started?', market: 'UNKNOWN', marketEvidenceTurn: null };
+        const a: ClaimAudit = { ...audit, mode: 'CLARIFICATION', market: 'UNKNOWN', marketEvidenceTurn: null, openIssue: 'POLICY_ENTITLEMENT', clarificationOnly: false,
+            claims: [{ ...audit.claims[0], span: 'A2 is 59.4 x 42 cm.', kind: 'product', sources: ['sizes'], marketDependent: false, amountMinor: null, currency: null, size: null, numericPath: null }] };
+        const sources: EvidenceSource[] = [{ ...source, id: 'sizes', market: 'GLOBAL', category: 'product' }];
+        expect(check(a, c, sources).risk).toBe('GREEN');
+        for (const kind of ['policy', 'price', 'order_status', 'payment_status'] as const) {
+            expect(check({ ...a, claims: [{ ...a.claims[0], kind }] }, c, sources).failures).toContain('unresolved_issue_requires_clarification_or_review');
+        }
+    });
+
 });
