@@ -52,7 +52,7 @@ describe("website shared runtime", () => {
 });
 
 describe("website provider admission gates", () => {
-  it("does not claim or generate when master gate is off", async () => {
+  it("opens a manually answerable review without generation when master gate is off", async () => {
     const f = fixture(),
       generate = vi.fn(),
       runtime = createWebsiteReplyRuntime({
@@ -63,10 +63,23 @@ describe("website provider admission gates", () => {
     const turn = await f.repository.ingestConversationEvent(f.event());
     if (turn.status !== "turn_pending") throw Error();
     expect(await runtime.processTurn(turn.turnId, "shared_brain")).toEqual({
-      status: "disabled",
+      status: "review",
     });
     expect(generate).not.toHaveBeenCalled();
-    expect(await f.repository.pendingTurnIds()).toEqual([turn.turnId]);
+    expect(await f.repository.pendingTurnIds()).toEqual([]);
+    const item = (await f.repository.listQueue(5)).items[0];
+    expect(item.websiteReview?.reason).toBe("unresolved");
+    expect(
+      await f.repository.answerWebsiteReview({
+        reviewSelector: item.websiteReview!.selector!,
+        text: "Our team can help.",
+        actorUserId: "synthetic-staff",
+        now: new Date(f.now()),
+      }),
+    ).toEqual({ status: "sent" });
+    expect(
+      (await f.repository.listQueue(5)).items[0].timeline.at(-1)?.role,
+    ).toBe("staff");
   });
 });
 

@@ -40,8 +40,7 @@ export function createWebsiteReplyRuntime(input: {
     turnId: string,
     generationMode: "legacy" | "shared_brain" = "shared_brain",
   ) => {
-    if (input.enabled && !input.enabled())
-      return { status: "disabled" as const };
+    const aiEnabled = input.enabled?.() ?? true;
     const lease = await input.repository.claimTurn(turnId);
     if (!lease) return { status: "not_claimed" as const };
     let decision: RnrAiDecision | null = null;
@@ -51,6 +50,7 @@ export function createWebsiteReplyRuntime(input: {
       totalHardStopMicrousd: 2000000,
     };
     const admitted =
+      aiEnabled &&
       generationMode === "shared_brain" &&
       !lease.takeover &&
       lease.attempts <= 3 &&
@@ -93,7 +93,7 @@ export function createWebsiteReplyRuntime(input: {
       await input.repository.settleProviderBudget(lease, cost);
     if (input.enabled && !input.enabled()) decision = null;
     const reviewReason = !admitted
-      ? current.reviewRequired || lease.takeover
+      ? !aiEnabled || current.reviewRequired || lease.takeover
         ? ("unresolved" as const)
         : generationMode !== "shared_brain"
           ? ("system_failure" as const)
