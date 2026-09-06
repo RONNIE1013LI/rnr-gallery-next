@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadBusinessBrain } from '../business-brain/loader';
 import { reasoningEvidence } from './evidence';
-import { checkSafetyContract, type Candidate, type ClaimAudit, type EvidenceSource } from './claim-contract';
+import { auditSchemaForSources, checkSafetyContract, type Candidate, type ClaimAudit, type EvidenceSource } from './claim-contract';
 const candidate: Candidate = { mode: 'ANSWER', reply: 'A2 is AUD109.99.', market: 'AU', marketEvidenceTurn: 'c1' };
 const turns = [{ id: 'c1', role: 'customer' as const, text: 'Sydney' }, { id: 'p1', role: 'staff' as const, text: 'New Zealand' }];
 const source: EvidenceSource = { id: 'au-photo-canvas-prices', market: 'AU', status: 'CONFIRMED', category: 'pricing', kind: 'knowledge', statement: 'A2 photo canvas is AUD109.99.', facts: { pricesMinor: { A2: 10999 }, productKeys: ['photo-print-canvas'] }, authenticated: false };
@@ -204,4 +204,13 @@ it('allows an explicit six-plus per-person rate without treating it as a fee tot
     const rate = { ...audit.claims[0], span: c.reply, kind: 'unit_rate' as const, product: 'digital-oil-painting-canvas', amountMinor: 2500, quantity: 6, numericPath: 'sixPlusPerPersonMinor', sources: ['au-people-pets-fees'] };
     expect(check({ ...audit, claims: [rate] }, c, sources).risk).toBe('GREEN');
     expect(check({ ...audit, claims: [{ ...rate, quantity: 3 }] }, c, sources).risk).toBe('RED');
+});
+
+it('restricts audit references to available sources, including current live evidence', () => {
+    const schema = auditSchemaForSources([source]);
+    expect(schema.safeParse(audit).success).toBe(true);
+    expect(schema.safeParse({ ...audit, claims: [{ ...audit.claims[0], sources: ['au-photo-print-canvas-prices'] }] }).success).toBe(false);
+    expect(schema.safeParse({ ...audit, claims: [{ ...audit.claims[0], calculation: [{ sourceId: 'invented', numericPath: 'priceMinor' }] }] }).success).toBe(false);
+    const toolSource = { ...source, id: 'tool-1', kind: 'tool' as const };
+    expect(auditSchemaForSources([source, toolSource]).safeParse({ ...audit, claims: [{ ...audit.claims[0], sources: ['tool-1'] }] }).success).toBe(true);
 });

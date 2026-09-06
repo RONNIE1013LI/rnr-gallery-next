@@ -43,6 +43,10 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect(JSON.stringify(data)).not.toContain('private-hash');
         const checked = JSON.parse(String(h.fetchImpl.mock.calls[1][1]?.body));
         expect(JSON.parse(checked.input[1].content[0].text).candidate.reply).toBe(base.reply);
+        const allowedSources = checked.text.format.schema.properties.claims.items.properties.sources.items.enum;
+        expect(allowedSources).toContain('au-photo-canvas-prices');
+        expect(allowedSources).not.toContain('au-photo-print-canvas-prices');
+        expect(checked.text.format.schema.properties.claims.items.properties.calculation.items.properties.sourceId.enum).toEqual(allowedSources);
     });
     it('keeps a safe but repeatedly unhelpful clarification for review after one quality repair', async () => {
         const c: Candidate = { ...base, mode: 'CLARIFICATION', reply: 'Has the design been approved or printed?' };

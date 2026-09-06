@@ -4,6 +4,16 @@ export const candidateSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION
 export type Candidate = z.infer<typeof candidateSchema>;
 export const auditSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable(), openIssue: z.enum(['NONE', 'POLICY_ENTITLEMENT', 'DISPUTE', 'EXCEPTION', 'ORDER_STATE']), relevantCustomerTurnIds: z.array(z.string()), claims: z.array(z.object({ span: z.string(), product: z.string().nullable(), orderReference: z.string().nullable(), destination: z.string().nullable(), kind: z.enum(['product', 'capability', 'price', 'pricing_rule', 'tax', 'shipping_cost', 'shipping_rule', 'delivery_promise', 'process', 'policy', 'additional_fee', 'unit_rate', 'order_status', 'payment_status']), sources: z.array(z.string()), marketDependent: z.boolean(), amountMinor: z.number().nullable(), currency: z.enum(['NZD', 'AUD']).nullable(), size: z.string().nullable(), quantity: z.number().int().positive().nullable(), numericPath: z.string().nullable(), calculation: z.array(z.object({ sourceId: z.string(), numericPath: z.string() }).strict()).max(2), liveRequired: z.boolean() }).strict()), safe: z.boolean(), helpful: z.boolean(), clarificationOnly: z.boolean(), customerInputRequest: z.string().nullable(), internalErrorLanguage: z.boolean(), unnecessaryQuestion: z.boolean(), issues: z.array(z.string()) }).strict();
 export type ClaimAudit = z.infer<typeof auditSchema>;
+export function auditSchemaForSources(sources: EvidenceSource[]) {
+    const ids = [...new Set(sources.map(source => source.id))];
+    if (!ids.length) throw new Error('missing_audit_evidence');
+    const sourceId = z.enum(ids as [string, ...string[]]);
+    return auditSchema.extend({ claims: z.array(auditSchema.shape.claims.element.extend({
+        sources: z.array(sourceId),
+        calculation: z.array(z.object({ sourceId, numericPath: z.string() }).strict()).max(2),
+    })) });
+}
+
 export type EvidenceSource = {
     id: string;
     market: string;
