@@ -51,7 +51,7 @@ describe('reasoning stage budgets', () => {
       await vi.advanceTimersByTimeAsync(30_000);
 
       await expect(pending).resolves.toMatchObject({ risk: 'GREEN', nextAction: 'AUTO_REPLY_ELIGIBLE', replyText: repaired.reply });
-      expect(current.requests.map(item => item.deadlineAt)).toEqual([12_000, 14_705, 18_495, 26_156]);
+      expect(current.requests.map(item => item.deadlineAt)).toEqual([12_000, 40_000, 18_495, 26_156]);
       expect(current.requests.map(item => item.retryMinimumMs)).toEqual([3_500, 8_000, 3_500, 8_000]);
       const contracts = spy.mock.calls.map(call => call[1]).filter(entry => entry?.stage === 'contract');
       expect(contracts).toEqual(expect.arrayContaining([
@@ -102,9 +102,9 @@ describe('reasoning stage budgets', () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     try {
-      const current = delayedProvider([plan(), audit(true)], [1_000, 12_000]);
+      const current = delayedProvider([plan(), audit(true)], [1_000, 40_000]);
       const pending = generateReasonedReply(request(), current.provider, { execute: vi.fn() }, { deadlineAt: BRAIN_BUDGET_MS });
-      await vi.advanceTimersByTimeAsync(12_001);
+      await vi.advanceTimersByTimeAsync(40_001);
       await expect(pending).resolves.toMatchObject({ risk: 'RED', replyText: null, nextAction: 'HUMAN_REVIEW' });
       expect(current.requests).toHaveLength(2);
     } finally { vi.useRealTimers(); }
@@ -139,7 +139,7 @@ describe('reasoning stage budgets', () => {
   });
 
   it('keeps the approved stage and total budget constants exact', () => {
-    expect(STAGE_BUDGET_MS).toEqual({ generation: 12_000, verification: 11_000, repair: 7_000, repair_verification: 11_000 });
+    expect(STAGE_BUDGET_MS).toEqual({ generation: 12_000, verification: 40_000, repair: 7_000, repair_verification: 11_000 });
     expect(BRAIN_BUDGET_MS).toBe(40_000);
     expect(REPAIR_ADMISSION_MS).toBe(19_000);
     expect(STAGE_RETRY_MINIMUM_MS).toEqual({ generation: 3_500, verification: 8_000 });
@@ -161,6 +161,17 @@ describe('reasoning stage budgets', () => {
       await vi.advanceTimersByTimeAsync(10_001);
       await expect(pending).resolves.toMatchObject({ risk: 'YELLOW', replyText: candidate.reply, reasons: ['reply_quality_requires_review'], nextAction: 'HUMAN_REVIEW' });
       expect(current.requests).toHaveLength(2);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('uses remaining request time for first verification instead of rejecting it at eleven seconds', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(0);
+    try {
+      const current = delayedProvider([plan(), audit(true)], [5_632, 15_000]);
+      const pending = generateReasonedReply(request(), current.provider, { execute: vi.fn() }, { deadlineAt: BRAIN_BUDGET_MS });
+      await vi.advanceTimersByTimeAsync(20_633);
+      await expect(pending).resolves.toMatchObject({ risk: 'GREEN', nextAction: 'AUTO_REPLY_ELIGIBLE', replyText: candidate.reply });
+      expect(current.requests[1].deadlineAt).toBe(40_000);
     } finally { vi.useRealTimers(); }
   });
 

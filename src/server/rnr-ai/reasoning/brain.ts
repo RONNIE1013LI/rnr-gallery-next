@@ -12,7 +12,8 @@ type Plan = z.infer<typeof planSchema>;
 export type StructuredProvider = Pick<OpenAiSolProvider, 'structured'>;
 export const BRAIN_BUDGET_MS = 40_000;
 const DEFAULT_EXECUTION_BUDGET_MS = 24_000;
-export const STAGE_BUDGET_MS = Object.freeze({ generation: 12_000, verification: 11_000, repair: 7_000, repair_verification: 11_000 });
+// First verification may use the remaining outer budget; optional repair must not starve it.
+export const STAGE_BUDGET_MS = Object.freeze({ generation: 12_000, verification: BRAIN_BUDGET_MS, repair: 7_000, repair_verification: 11_000 });
 export const REPAIR_ADMISSION_MS = STAGE_BUDGET_MS.repair + STAGE_BUDGET_MS.repair_verification + 1_000;
 export const STAGE_RETRY_MINIMUM_MS = Object.freeze({ generation: 3_500, verification: 8_000 });
 export type ReasoningExecutionOptions = Readonly<{ deadlineAt?: number }>;
