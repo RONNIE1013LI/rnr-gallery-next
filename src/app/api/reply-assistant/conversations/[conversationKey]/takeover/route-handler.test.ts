@@ -33,6 +33,22 @@ function setup() {
 }
 
 describe("conversation takeover API", () => {
+  it("updates website takeover through its atomic repository without a separate Meta store", async () => {
+    const store = vi.fn();
+    const setWebsiteTakeover = vi.fn(async () => true);
+    const api = createConversationTakeoverHandler({
+      store, resolveInbox: async () => ({ identityKeyHash, channel: "website" }),
+      requirePermission: async () => ({ user: { id: "staff" } }),
+      trustedOrigin: origin, now: () => now,
+      readWebsiteTakeover: async () => ({ active: true }), setWebsiteTakeover,
+    });
+    const context = { params: Promise.resolve({ conversationKey: selector }) };
+    expect((await api.GET(new Request(`${origin}/takeover`), context)).status).toBe(200);
+    expect((await api.POST(request({ active: true }), context)).status).toBe(200);
+    expect(setWebsiteTakeover).toHaveBeenCalledWith(selector, true, now);
+    expect(store).not.toHaveBeenCalled();
+  });
+
   it("authorizes and returns only safe takeover state", async () => {
     const current = setup();
     const response = await current.api.GET(new Request(`${origin}/takeover`), { params: Promise.resolve({ conversationKey: selector }) });

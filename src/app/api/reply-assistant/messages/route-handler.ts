@@ -1,7 +1,7 @@
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import { customerServiceApiError, noStoreJson } from "@/server/customer-service/api-response";
-import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
+import { createProductionInbox } from "@/server/rnr-ai/inbox/production-inbox";
 import type { SafeQueuePage } from "@/server/customer-service/repositories/customer-service-repository";
 
 export function createMessagesHandler(dependencies: Readonly<{
@@ -26,5 +26,5 @@ const config = parseCustomerServiceConfig();
 export const { GET } = createMessagesHandler({
   enabled: config.enabled || config.websiteEnabled,
   requirePermission: requireAdminPermission,
-  list: () => createCustomerServiceRuntime().repository.listQueue(100),
+  list: () => createProductionInbox().listQueue(100),
 });

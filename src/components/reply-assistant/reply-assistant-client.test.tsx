@@ -31,6 +31,16 @@ describe("ReplyAssistantClient", () => {
     Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => undefined) } });
   });
 
+  it("shared Meta offers a real external send handoff without legacy draft actions", () => {
+    render(<ReplyAssistantClient initialItems={[{ ...item, source: "shared_meta", draftText: null, latestAttemptId: null, status: "page_replied", timeline: [{ ...item.timeline[1], pageOutbound: true }] }]} />);
+    expect(screen.getByRole("link", { name: "Meta Business Suite" })).toHaveAttribute("href", "https://business.facebook.com/latest/inbox");
+    expect(screen.getByText("Page reply")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Generate AI Reply" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send to Facebook" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check AI handling" })).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("formats received times in a fixed timezone for stable hydration", () => {
     expect(formatReplyReceivedAt("2026-08-17T00:00:00.000Z")).toBe("17/08/2026, 12:00:00 pm");
   });

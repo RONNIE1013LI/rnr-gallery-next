@@ -4,7 +4,7 @@ import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import type {
   CustomerServiceRepository,
 } from "@/server/customer-service/repositories/customer-service-repository";
-import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
+import { createProductionInbox } from "@/server/rnr-ai/inbox/production-inbox";
 
 type PermissionResult = Readonly<{
   user: Readonly<{ id: string }>;
@@ -28,7 +28,7 @@ export function createReplyAssistantTimelineHandler(dependencies: Readonly<{
         if (!dependencies.enabled) return noStoreJson({ error: { code: "FEATURE_DISABLED" } }, 503);
         const inboxId = (await context.params).inboxId;
         const cursor = new URL(request.url).searchParams.get("cursor");
-        if (!inboxIdPattern.test(inboxId) || !cursor || !timelineCursorPattern.test(cursor)) {
+        if (!inboxIdPattern.test(inboxId) || !cursor || !(timelineCursorPattern.test(cursor) || /^meta:[a-f0-9]{64}$/.test(cursor))) {
           return noStoreJson({ error: { code: "INVALID_TIMELINE_CURSOR" } }, 400);
         }
         return noStoreJson(await dependencies.loadTimeline({ inboxId, cursor, limit: 50 }));
@@ -49,5 +49,5 @@ const config = parseCustomerServiceConfig();
 export const { GET } = createReplyAssistantTimelineHandler({
   enabled: config.enabled || config.websiteEnabled,
   requirePermission: requireAdminPermission,
-  loadTimeline: (input) => createCustomerServiceRuntime().repository.loadEarlierInboxTimeline(input),
+  loadTimeline: (input) => createProductionInbox().loadEarlierInboxTimeline(input),
 });

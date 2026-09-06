@@ -1,3 +1,4 @@
+import { createProductionInbox } from "@/server/rnr-ai/inbox/production-inbox";
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import type { SafeQueuePage } from "@/server/customer-service/repositories/customer-service-repository";
@@ -32,7 +33,7 @@ export default async function ReplyAssistantPage({
   let selectedReviewItem: SafeQueuePage["items"][number] | null = null;
   if (runtime && config.websiteEnabled && typeof requestedReview === "string") {
     try {
-      const resolved = await runtime.repository.resolveWebsiteReviewDeepLink({
+      const resolved = await createProductionInbox().resolveWebsiteReviewDeepLink({
         tokenHash: hashReviewAlertToken(requestedReview),
         now: new Date(),
       });
@@ -48,7 +49,7 @@ export default async function ReplyAssistantPage({
     : encodeReplyAssistantCursor(0);
   const [queue, rawMetrics, learningCandidates, caseMemories] = runtime
     ? await Promise.all([
-      runtime.repository.listQueue(100),
+      createProductionInbox().listQueue(100),
       runtime.repository.metricCounts(),
       runtime.repository.listLearningCandidates(20),
       runtime.repository.listCaseMemoryCandidates(20),
@@ -106,6 +107,7 @@ export default async function ReplyAssistantPage({
           sourceChecksum: compiledKnowledge.metadata.sourceChecksum,
         }}
       />
+      <p>Metrics and learning below cover historical legacy processing. Shared website and Meta inbox activity is shown in the conversation list.</p>
       <ReplyAssistantLiveDashboard
         initialCursor={initialCursor}
         initialItems={initialItems}

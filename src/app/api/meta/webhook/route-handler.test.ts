@@ -46,7 +46,9 @@ function setup(input: Readonly<{
   const sharedRuntime = { orchestrator: { handle: vi.fn(async () => ({ acknowledged: true as const, status: "off" as const })) } };
   const createLegacyRuntime = vi.fn(() => legacyRuntime);
   const createSharedRuntime = vi.fn(() => sharedRuntime);
+  const indexEvent = vi.fn(async () => {});
   const handlers = createMetaWebhookRouteHandlers({
+    indexEvent,
     customerConfig,
     rnrConfig: {
       ...input,
@@ -61,15 +63,24 @@ function setup(input: Readonly<{
     createSharedRuntime,
     scheduleAfter(task) { tasks.push(task); },
   });
-  return { handlers, tasks, legacyRuntime, sharedRuntime, createLegacyRuntime, createSharedRuntime };
+  return { indexEvent, handlers, tasks, legacyRuntime, sharedRuntime, createLegacyRuntime, createSharedRuntime };
 }
 
 describe("Meta webhook route wiring", () => {
+  it("indexes verified events while the master control is OFF without constructing a model runtime", async () => {
+    const current = setup({ engineMode: "shared_active", masterEnabled: false });
+    await current.handlers.POST(request());
+    await current.tasks[0]();
+    expect(current.indexEvent).toHaveBeenCalledOnce();
+    expect(current.createSharedRuntime).not.toHaveBeenCalled();
+    expect(current.createLegacyRuntime).not.toHaveBeenCalled();
+  });
   it("does not construct either runtime before signature and Page security pass", async () => {
     const current = setup({ engineMode: "shared_draft", masterEnabled: true });
     expect((await current.handlers.POST(request(false))).status).toBe(401);
     expect(current.createLegacyRuntime).not.toHaveBeenCalled();
     expect(current.createSharedRuntime).not.toHaveBeenCalled();
+    expect(current.indexEvent).not.toHaveBeenCalled();
   });
 
   it("keeps invalid/default engine mode on the unchanged legacy runtime", async () => {

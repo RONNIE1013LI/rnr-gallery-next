@@ -69,6 +69,7 @@ vi.mock("@/server/customer-service/config", () => ({
     humanReplyGroupMs: 90_000,
   }),
 }));
+vi.mock("@/server/rnr-ai/inbox/production-inbox", () => ({ createProductionInbox: () => ({ listQueue: mocks.listQueue, resolveWebsiteReviewDeepLink: mocks.resolveDeepLink }) }));
 vi.mock("@/server/customer-service/runtime", () => ({
   createCustomerServiceRuntime: () => ({
     repository: {

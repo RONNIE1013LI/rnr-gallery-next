@@ -22,6 +22,7 @@ describe("GraphMetaContextProvider", () => {
       channel: "facebook",
       externalConversationKey: "customer-1",
       pageId: "page-1",
+      updatedAt: "2026-09-04T00:30:00.000Z",
     }]);
     expect(fetchImpl).toHaveBeenCalledWith(
       expect.stringContaining("platform=messenger"),

@@ -402,7 +402,7 @@ export function ReplyAssistantClient({
   }
 
   async function loadEarlierTimeline(item: ReplyQueueItem, current: EarlierTimelineState | undefined) {
-    const cursor = current?.cursor ?? item.timeline[0]?.eventId ?? null;
+    const cursor = current?.cursor ?? item.timeline[0]?.eventId ?? (item.source === "shared_meta" ? `meta:${item.inboxId}` : null);
     if (!cursor || current?.status === "loading") return;
     setEarlierTimelines((states) => ({
       ...states,
@@ -527,7 +527,7 @@ export function ReplyAssistantClient({
                 {item.websiteReview ? <span className={styles.alertBadge} data-alert={item.websiteReview.alertStatus}>Alert {item.websiteReview.alertStatus.replaceAll("_", " ")}</span> : null}
               </div>
             </header>
-            {item.channel === "facebook" && /^[a-f0-9]{64}$/.test(item.inboxId) ? (
+            {(item.channel === "facebook" || item.source === "redis_website") && /^[a-f0-9]{64}$/.test(item.inboxId) ? (
               <div className={styles.takeoverBar}>
                 <span>
                   {takeovers[item.inboxId]?.status === "error"
@@ -558,7 +558,7 @@ export function ReplyAssistantClient({
                     <ol>
                       {timeline.map((event) => (
                         <li key={event.eventId} data-role={event.role}>
-                          <span>{event.role === "staff" ? "R&R" : event.role === "assistant" ? "Assistant" : "Customer"}</span>
+                          <span>{event.pageOutbound ? "Page reply" : event.role === "staff" ? "R&R" : event.role === "assistant" ? "Assistant" : "Customer"}</span>
                           <p>{event.text}</p>
                         </li>
                       ))}
@@ -577,6 +577,7 @@ export function ReplyAssistantClient({
                     ) : null}
                   </section>
                 ) : null}
+                {item.historyIncompleteReason ? <p>{item.historyIncompleteReason}</p> : null}
                 {item.attachmentCount > 0 ? (
                   <section className={styles.imageAssessment}>
                     <strong>Image assessment</strong>
@@ -626,6 +627,8 @@ export function ReplyAssistantClient({
               ) : (
                 <div className={styles.blocked}>No open website review.</div>
               )
+            ) : item.source === "shared_meta" ? (
+              <div className={styles.blocked}>Reply in <a href="https://business.facebook.com/latest/inbox" target="_blank" rel="noopener noreferrer">Meta Business Suite</a>. Use human takeover here to pause AI replies. Page replies are shown from the actual Meta transcript.</div>
             ) : item.humanReplyReceived && !locallyEditing ? (
               <div className={styles.blocked}>Human reply sent in Meta. AI draft closed.</div>
             ) : gateBlocked ? (

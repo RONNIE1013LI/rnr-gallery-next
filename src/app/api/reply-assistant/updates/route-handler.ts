@@ -2,7 +2,7 @@ import { requireAdminPermission } from "@/server/auth/require-admin";
 import { customerServiceApiError, noStoreJson } from "@/server/customer-service/api-response";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import type { ReplyAssistantUpdatePage } from "@/server/customer-service/repositories/customer-service-repository";
-import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
+import { createProductionInbox } from "@/server/rnr-ai/inbox/production-inbox";
 
 type PermissionResult = Readonly<{
   user: Readonly<{ id: string }>;
@@ -38,5 +38,5 @@ const config = parseCustomerServiceConfig();
 export const { GET } = createReplyAssistantUpdatesHandler({
   enabled: config.enabled || config.websiteEnabled,
   requirePermission: requireAdminPermission,
-  listUpdates: (cursor) => createCustomerServiceRuntime().repository.listReplyAssistantUpdates(cursor, 250),
+  listUpdates: (cursor) => createProductionInbox().listReplyAssistantUpdates(cursor, 250),
 });

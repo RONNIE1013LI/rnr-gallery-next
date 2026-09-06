@@ -90,6 +90,7 @@ export class GraphMetaContextProvider implements MetaContextProvider {
     channel: "facebook";
     externalConversationKey: string;
     pageId: string;
+    updatedAt?: string;
   }>[]> {
     const from = Date.parse(input.window.from);
     const to = Date.parse(input.window.to);
@@ -108,9 +109,12 @@ export class GraphMetaContextProvider implements MetaContextProvider {
       channel: "facebook";
       externalConversationKey: string;
       pageId: string;
+      updatedAt?: string;
     }>> = [];
     const seen = new Set<string>();
-    while (url && conversations.length < input.window.maxConversations) {
+    let pagesRead = 0;
+    while (url && conversations.length < input.window.maxConversations && pagesRead < 5) {
+      pagesRead += 1;
       let response: Response;
       try {
         response = await this.fetchImpl(url, {
@@ -148,6 +152,7 @@ export class GraphMetaContextProvider implements MetaContextProvider {
             channel: "facebook",
             externalConversationKey,
             pageId: input.pageId,
+            updatedAt: new Date(updatedAt).toISOString(),
           }));
         }
       }
@@ -158,10 +163,11 @@ export class GraphMetaContextProvider implements MetaContextProvider {
     return Object.freeze(conversations);
   }
 
-  async loadConversation(locator: MetaConversationLocator): Promise<MetaConversationSnapshot> {
+  async loadConversation(locator: MetaConversationLocator, options?: { maxTurns: number }): Promise<MetaConversationSnapshot> {
     if (!this.accessToken || !locator.pageId.trim() || !locator.externalConversationKey.trim()) {
       return this.incomplete(locator, [], "provider_unavailable");
     }
+    const maxTurns = options?.maxTurns === 50 ? 50 : MAX_TURNS;
     const fields = "messages.limit(100){id,created_time,from,message,reply_to,attachments{id,mime_type}}";
     let url: string | null = `${GRAPH_ORIGIN}/v23.0/${encodeURIComponent(locator.pageId)}/conversations?user_id=${encodeURIComponent(locator.externalConversationKey)}&fields=${encodeURIComponent(fields)}`;
     const events: MetaHistoryEvent[] = [];
@@ -169,7 +175,10 @@ export class GraphMetaContextProvider implements MetaContextProvider {
     let first = true;
     let ceilingReached = false;
 
+    let messagePagesRead = 0;
     while (url) {
+      if (messagePagesRead >= 6) { ceilingReached = true; break; }
+      messagePagesRead += 1;
       let response: Response;
       try {
         response = await this.fetchImpl(url, {
@@ -197,7 +206,7 @@ export class GraphMetaContextProvider implements MetaContextProvider {
         const event = historyEvent(raw, locator);
         if (!event || seen.has(event.externalMessageKey)) continue;
         seen.add(event.externalMessageKey);
-        if (events.length >= MAX_TURNS) {
+        if (events.length >= maxTurns) {
           ceilingReached = true;
           break;
         }

@@ -211,6 +211,7 @@ export type SafeWebsiteReview = Readonly<{
 }>;
 
 export type SafeTimelineEvent = Readonly<{
+  pageOutbound?: boolean;
   eventId: string;
   role: "customer" | "assistant" | "staff";
   text: string;
@@ -218,6 +219,8 @@ export type SafeTimelineEvent = Readonly<{
 }>;
 
 export type SafeInboxItem = Readonly<{
+  source?: "shared_meta" | "redis_website" | "legacy";
+  historyIncompleteReason?: string | null;
   inboxId: string;
   channel: CustomerServiceChannel;
   latestMessageId: string;

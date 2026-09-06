@@ -9,8 +9,10 @@ type RouteContext = Readonly<{ params: Promise<Readonly<{ conversationKey: strin
 
 export function createConversationTakeoverHandler(dependencies: Readonly<{
   store: () => ReplyRuntimeStore;
-  resolveInbox: (inboxId: string) => Promise<Readonly<{ identityKeyHash: string }> | null>;
+  resolveInbox: (inboxId: string) => Promise<Readonly<{ identityKeyHash: string; channel?: string }> | null>;
   requirePermission: (permission: "use_reply_assistant") => Promise<{ user: { id: string } }>;
+  readWebsiteTakeover?: (inboxId: string) => Promise<{ active: boolean } | null>;
+  setWebsiteTakeover?: (inboxId: string, active: boolean, now: Date) => Promise<boolean>;
   trustedOrigin?: string;
   now?: () => Date;
 }>) {
@@ -19,9 +21,11 @@ export function createConversationTakeoverHandler(dependencies: Readonly<{
     async GET(_request: Request, context: RouteContext) {
       try {
         await dependencies.requirePermission("use_reply_assistant");
-        const identity = await dependencies.resolveInbox(await readSelector(context));
+        const inboxId = await readSelector(context);
+        const identity = await dependencies.resolveInbox(inboxId);
         if (!identity) return noStoreJson({ error: { code: "CONVERSATION_UNAVAILABLE" } }, 404);
-        const state = await dependencies.store().readTakeover(identity.identityKeyHash);
+        const websiteState = identity.channel === "website" ? await dependencies.readWebsiteTakeover?.(inboxId) : null;
+        const state = websiteState ?? await dependencies.store().readTakeover(identity.identityKeyHash);
         return noStoreJson(state ?? { active: false, source: null, changedAt: null });
       } catch (error) {
         return customerServiceApiError(error);
@@ -31,7 +35,8 @@ export function createConversationTakeoverHandler(dependencies: Readonly<{
       try {
         await dependencies.requirePermission("use_reply_assistant");
         assertTrustedMutationRequest(request, dependencies.trustedOrigin);
-        const identity = await dependencies.resolveInbox(await readSelector(context));
+        const inboxId = await readSelector(context);
+        const identity = await dependencies.resolveInbox(inboxId);
         if (!identity) return noStoreJson({ error: { code: "CONVERSATION_UNAVAILABLE" } }, 404);
         const input = mutationSchema.parse(await parseBoundedJson(request, 1_024));
         const state = {
@@ -40,7 +45,10 @@ export function createConversationTakeoverHandler(dependencies: Readonly<{
           source: "admin" as const,
           changedAt: (dependencies.now?.() ?? new Date()).toISOString(),
         };
-        await dependencies.store().setTakeover(state);
+        const websiteHandled = identity.channel === "website"
+          ? await dependencies.setWebsiteTakeover?.(inboxId, input.active, new Date(state.changedAt))
+          : false;
+        if (!websiteHandled) await dependencies.store().setTakeover(state);
         return noStoreJson({ active: state.active, source: state.source, changedAt: state.changedAt });
       } catch (error) {
         return customerServiceApiError(error);

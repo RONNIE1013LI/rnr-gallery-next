@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { createProductionMetaInbox } from "@/server/rnr-ai/inbox/production-meta-inbox";
 import { after } from "next/server";
 import { parseCustomerServiceConfig, type CustomerServiceConfig } from "@/server/customer-service/config";
 import { createMetaWebhookHandlers } from "@/server/customer-service/meta/webhook-handler";
@@ -63,6 +64,7 @@ export function createMetaWebhookRouteHandlers(dependencies: Readonly<{
   createLegacyRuntime(): LegacyRuntime;
   createSharedRuntime(): SharedRuntime;
   scheduleAfter(task: () => Promise<void>): void;
+  indexEvent?: (message: AcceptedEvent) => Promise<void>;
 }>) {
   const common = {
     config: dependencies.customerConfig,
@@ -90,6 +92,7 @@ export function createMetaWebhookRouteHandlers(dependencies: Readonly<{
   return createMetaWebhookHandlers({
     ...common,
     onAcceptedEvent: async (message, execution) => {
+      await dependencies.indexEvent?.(message);
       if (!dependencies.rnrConfig.masterEnabled) return;
       if (message.providerTimestampValid !== true) return;
       if (!isActivatedRecipient(message, dependencies.customerConfig, dependencies.rnrConfig)) return;
@@ -104,6 +107,7 @@ const config = parseCustomerServiceConfig();
 const handlers = createMetaWebhookRouteHandlers({
   customerConfig: config,
   rnrConfig: parseRnrAiMetaConfig(),
+  indexEvent: (message) => createProductionMetaInbox().index(message.externalConversationKey, message.receivedAt),
   createLegacyRuntime: () => createCustomerServiceRuntime(),
   createSharedRuntime: () => createProductionMetaReplyRuntime(),
   scheduleAfter: (task) => after(task),
