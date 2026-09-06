@@ -4,6 +4,9 @@ on:
     branches: [codex/reply-quality-20260906]
 permissions:
   contents: read
+concurrency:
+  group: reply-quality-release-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   isolated-tests:
     runs-on: macos-15
@@ -37,9 +40,9 @@ jobs:
       - name: Verify local optimized build with a disposable Test database
         run: |
           createdb -h 127.0.0.1 -U postgres rnr_gallery_test_reply_quality_build
-          export DATABASE_URL=postgresql://postgres@127.0.0.1:5432/rnr_gallery_test_reply_quality_build
-          export TEST_DATABASE_URL="$DATABASE_URL"
+          export TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/rnr_gallery_test_reply_quality_build
           npm run db:migrate -- --environment test
+          export DATABASE_URL="$TEST_DATABASE_URL"
           export BETTER_AUTH_URL=http://localhost:3000
           export BETTER_AUTH_SECRET=$(openssl rand -hex 32)
           npm run build
