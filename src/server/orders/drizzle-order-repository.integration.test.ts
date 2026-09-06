@@ -14,7 +14,6 @@ import {
   orderItems,
   orders,
   paymentAttempts,
-  productionJobItems,
   productionJobs,
   shippingQuotes,
   user,
@@ -234,7 +233,7 @@ describe("Drizzle atomic order repository", () => {
     await pool.end();
   });
 
-  it("creates immutable Pickup snapshots, two addresses and consumes a guest checkout", async () => {
+  it("creates a payment-stage order without admitting it to production", async () => {
     const state = await checkout();
     const input = pickupInput(state);
     const order = await repository.createAtomicOrder(input);
@@ -253,26 +252,15 @@ describe("Drizzle atomic order repository", () => {
     });
     expect(await database.select().from(orderAddresses)
       .where(eq(orderAddresses.orderId, order.id))).toHaveLength(2);
-    const [productionJob] = await database.select().from(productionJobs)
-      .where(eq(productionJobs.orderId, order.id));
-    expect(productionJob).toMatchObject({
-      jobNumber: order.orderNumber,
-      source: "web",
-      urgent: false,
-      neededDate: "2026-08-10",
-      customerName: "Aroha Ngata",
-      customerSource: "web",
-      deliveryAddress: "Aroha Ngata\n12 Queen Street\nAuckland Central\nAuckland\n1010\nNZ",
-    });
-    expect(await database.select().from(productionJobItems)
-      .where(eq(productionJobItems.jobId, productionJob.id))).toHaveLength(1);
+    expect(await database.select().from(productionJobs)
+      .where(eq(productionJobs.orderId, order.id))).toHaveLength(0);
     expect((await repository.getCheckoutState(state.id))?.completedAt).toEqual(now);
     expect(await repository.findSessionByTokenDigest(state.tokenDigest, now))
       .toMatchObject({ id: state.id, customerId: null });
 
     await expect(repository.createAtomicOrder(input)).resolves.toMatchObject({ id: order.id });
     expect(await database.select().from(productionJobs)
-      .where(eq(productionJobs.orderId, order.id))).toHaveLength(1);
+      .where(eq(productionJobs.orderId, order.id))).toHaveLength(0);
     await expect(repository.createAtomicOrder({
       ...input, idempotencyKey: randomUUID(),
     })).rejects.toBeInstanceOf(OrderConflictError);

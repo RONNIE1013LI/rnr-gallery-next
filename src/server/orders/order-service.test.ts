@@ -161,6 +161,7 @@ describe("atomic order service", () => {
           deliveryMethod: input.deliveryMethod,
           orderItemIds: ["50000000-0000-4000-8000-000000000001"],
           now: input.now,
+          paymentStatus: "paid",
         });
         return existingOrder;
       }),
