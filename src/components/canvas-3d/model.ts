@@ -115,7 +115,7 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
     const mapChunk=THREE.ShaderChunk.map_fragment.replace(
       "vec4 sampledDiffuseColor = texture2D( map, vMapUv );",
       matches
-        ? "vec2 canvasUV = 1.0 - abs(1.0 - mod(vMapUv, 2.0)); vec4 sampledDiffuseColor = texture2D(map, canvasUV);"
+        ? "vec2 canvasUV = clamp(vMapUv, 0.0, 1.0); vec4 sampledDiffuseColor = texture2D(map, canvasUV);"
         : "vec4 sampledDiffuseColor = texture2D( map, vMapUv ); if (vMapUv.x < 0.0 || vMapUv.x > 1.0 || vMapUv.y < 0.0 || vMapUv.y > 1.0) sampledDiffuseColor = vec4(1.0);",
     );
     shader.fragmentShader=shader.fragmentShader.replace("#include <map_fragment>",mapChunk);
@@ -144,10 +144,8 @@ export function createCanvasModel(profile: CanvasProfile, artwork: THREE.Texture
   // Separate per-face mappings introduce a visible jump across the rounded shoulder.
   for(let i=0;i<positions.count;i++){
     const x=positions.getX(i),y=positions.getY(i);
-    const inward=Math.max(0,d/2-positions.getZ(i));
-    const wx=THREE.MathUtils.smoothstep(Math.abs(x),w/2-.006,w/2-.002);
-    const wy=THREE.MathUtils.smoothstep(Math.abs(y),h/2-.006,h/2-.002);
-    uv.setXY(i,(x-Math.sign(x)*inward*wx)/aw+.5,(y-Math.sign(y)*inward*wy)/ah+.5);
+    // Hold the outer image edge through the thickness instead of folding interior text onto the sides.
+    uv.setXY(i,x/aw+.5,y/ah+.5);
   }
   // Keep the rear shoulder, trimming only the open centre. Deleting the whole rear
   // material group also deleted half of the rounded edge and left a visible slit.

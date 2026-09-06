@@ -4,6 +4,22 @@ import { createCanvasModel } from "./model";
 import { getCanvasProfile } from "./profiles";
 
 describe("wrapped canvas geometry",()=>{
+  it.each(["a0","a4"])("extends only the outer artwork edge across %s side depth",size=>{
+    for(const orientation of ["landscape","portrait"] as const){
+      const profile=getCanvasProfile(size,orientation)!;
+      const art=new THREE.Texture({width:profile.width*10000,height:profile.height*10000} as HTMLImageElement);
+      const {root}=createCanvasModel(profile,art,new THREE.Texture());
+      const shell=root.getObjectByName("Wrapped canvas shell") as THREE.Mesh;
+      const {normal,uv}=shell.geometry.attributes;
+      let checked=0;
+      for(let i=0;i<normal.count;i++){
+        if(Math.abs(normal.getX(i))>.99999){expect(uv.getX(i)).toBeCloseTo(normal.getX(i)>0?1:0,5);checked++;}
+        if(Math.abs(normal.getY(i))>.99999){expect(uv.getY(i)).toBeCloseTo(normal.getY(i)>0?1:0,5);checked++;}
+      }
+      expect(checked).toBeGreaterThan(0);
+    }
+  });
+
   it("uses edge-only sampling for every rear printed surface",()=>{
     const art=new THREE.Texture({width:1190,height:840} as HTMLImageElement);
     const {root}=createCanvasModel(getCanvasProfile("a0")!,art,new THREE.Texture());

@@ -45,6 +45,13 @@ import {
   type SourcePhotoCustomisationValue,
 } from "./source-photo-customisation";
 
+// Raw artwork is used only by 3D; product cards and the 2D preview keep their room photographs.
+const canvas3DExamples: Readonly<Record<string, { src: string; width: number; height: number }>> = {
+  "photo-print-canvas": { src: "/canvas-3d/photo-print-artwork.avif", width: 1600, height: 1102 },
+  "digital-oil-painting-canvas": { src: "/canvas-3d/digital-oil-artwork.avif", width: 1600, height: 1134 },
+  "custom-themed-canvas": { src: "/canvas-3d/custom-themed-artwork.avif", width: 1600, height: 1134 },
+};
+
 export type ProductConfiguratorRelatedDesign = Readonly<{
   id: string;
   title: string;
@@ -87,12 +94,15 @@ export function ProductConfigurator({
       : schema.defaultSizeKey,
   );
   const previewImage = designInspiration?.imageUrl ?? product.image.src;
+  const canvasExample = product.category === "canvas" ? canvas3DExamples[product.key] : undefined;
+  const canvas3DImage = designInspiration?.imageUrl ?? canvasExample?.src ?? previewImage;
+  const artwork = designInspiration ?? canvasExample;
   const [orientationSelection, setOrientationSelection] = useState<{ imageSrc: string; value: Orientation }>();
   const [loadedArtwork, setLoadedArtwork] = useState<{ imageSrc: string; width: number; height: number }>();
   const detectOrientation = product.category === "canvas" && schema.orientationMode === "choice";
-  const hasDesignDimensions = !!designInspiration && designInspiration.width > 0 && designInspiration.height > 0;
+  const hasDesignDimensions = !!artwork && artwork.width > 0 && artwork.height > 0;
   const artworkDimensions = hasDesignDimensions
-    ? designInspiration
+    ? artwork
     : loadedArtwork?.imageSrc === previewImage ? loadedArtwork : undefined;
   const orientation = orientationSelection?.imageSrc === previewImage
     ? orientationSelection.value
@@ -110,9 +120,9 @@ export function ProductConfigurator({
         setLoadedArtwork({ imageSrc: previewImage, width: image.naturalWidth, height: image.naturalHeight });
       }
     };
-    image.src = previewImage;
+    image.src = canvas3DImage;
     return () => { active = false; image.onload = null; };
-  }, [detectOrientation, hasDesignDimensions, previewImage]);
+  }, [detectOrientation, hasDesignDimensions, previewImage, canvas3DImage]);
   const [peoplePets, setPeoplePets] = useState(schema.defaultPeoplePets);
   const [sourcePhotoCustomisation, setSourcePhotoCustomisation] =
     useState<SourcePhotoCustomisationValue>({
@@ -320,7 +330,7 @@ export function ProductConfigurator({
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
         <section className={styles.artworkPreview} aria-label="Artwork preview">
-        <CanvasProductPreview imageSrc={previewImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
+        <CanvasProductPreview imageSrc={canvas3DImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
         <div className={styles.artworkPreviewMedia}>
           <Image
             src={previewImage}

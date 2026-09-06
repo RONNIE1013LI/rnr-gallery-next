@@ -7,6 +7,16 @@ vi.mock("./canvas-product-scene",()=>({default:(props:{imageSrc:string;sizeKey:s
 vi.mock("@/domain/analytics/client",()=>({emitAnalyticsEvent:vi.fn()}));
 describe("canvas preview integration",()=>{
   afterEach(()=>vi.unstubAllGlobals());
+  it.each([["photo-print-canvas","photo-print"],["digital-oil-painting-canvas","digital-oil"],["custom-themed-canvas","custom-themed"]])("uses the supplied artwork only in %s 3D",async(slug,asset)=>{
+    const product=getProductBySlug(slug)!;
+    render(<ProductConfigurator product={product} schema={getConfigurationSchema(product.key)!} orderDate="2026-09-06"/>);
+    const original=within(screen.getByRole("region",{name:"Artwork preview"})).getByRole("img");
+    expect(original.getAttribute("src")).toContain(encodeURIComponent(product.image.src));
+    fireEvent.click(screen.getByRole("button",{name:"3D View"}));
+    expect(await screen.findByTitle("Interactive canvas preview")).toHaveAttribute("data-image",`/canvas-3d/${asset}-artwork.avif`);
+    fireEvent.click(screen.getByRole("button",{name:"Close 3D view"}));
+    expect(within(screen.getByRole("region",{name:"Artwork preview"})).getByRole("img").getAttribute("src")).toContain(encodeURIComponent(product.image.src));
+  });
   it.each([[840,1190,"portrait","21 × 29.7"],[1190,840,"landscape","29.7 × 21"]] as const)("defaults the product page and 3D to a %s × %s design",async(width,height,orientation,dimensions)=>{
     const product=getProductBySlug("digital-oil-painting-canvas")!;
     render(<ProductConfigurator product={product} schema={getConfigurationSchema(product.key)!} orderDate="2026-09-06" selectedDesign={{id:"a".repeat(64),title:"Chosen",altText:"Chosen",imageUrl:"/gallery-images/chosen",contentHash:"original",productSlug:"digital-oil-painting-canvas",width,height}}/>);
@@ -19,8 +29,9 @@ describe("canvas preview integration",()=>{
     const pending:{onload:(()=>void)|null;naturalWidth:number;naturalHeight:number}={onload:null,naturalWidth:840,naturalHeight:1190};
     const loadImage=vi.fn(function(){return pending;});
     vi.stubGlobal("Image",loadImage);
-    const product=getProductBySlug("digital-oil-painting-canvas")!;
-    render(<ProductConfigurator product={product} schema={getConfigurationSchema(product.key)!} orderDate="2026-09-06"/>);
+    const baseProduct=getProductBySlug("digital-oil-painting-canvas")!;
+    const product={...baseProduct,key:"canvas-without-a-default-example"};
+    render(<ProductConfigurator product={product} schema={getConfigurationSchema(baseProduct.key)!} orderDate="2026-09-06"/>);
     // Open 3D before the image finishes loading: detection must survive hiding the 2D image.
     fireEvent.click(screen.getByRole("button",{name:"3D View"}));
     await screen.findByTitle("Interactive canvas preview");
