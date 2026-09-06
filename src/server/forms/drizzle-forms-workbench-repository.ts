@@ -31,6 +31,7 @@ import {
 } from "@/server/db/schema";
 import { projectWebOrderFinance } from "@/server/production/production-job-finance";
 import { deriveManualJobFinance } from "@/server/production/production-job-service";
+import { orderSystemAdmissionCondition } from "@/server/production/order-system-admission";
 import type {
   FormOrderRow,
   FormFilterCondition,
@@ -332,7 +333,7 @@ function filterCondition(
 }
 
 export function buildFormWorkbenchConditions(query: FormWorkbenchQuery, access: FormWorkbenchAccess) {
-  const conditions: SQL[] = [];
+  const conditions: SQL[] = [orderSystemAdmissionCondition()];
   if (query.query) {
     const escaped = query.query.replaceAll("%", "\\%").replaceAll("_", "\\_");
     const pattern = `%${escaped}%`;

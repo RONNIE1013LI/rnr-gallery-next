@@ -56,6 +56,7 @@ import {
 } from "./production-job-service";
 import { projectWebOrderFinance } from "./production-job-finance";
 import { productionJobAuditChanges, type ProductionJobAuditChange } from "./production-job-audit";
+import { orderSystemAdmissionCondition } from "./order-system-admission";
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -340,7 +341,7 @@ export async function listProductionJobs(
   filters: ProductionJobFilters,
   permissions: Readonly<{ canViewFinance: boolean }>,
 ): Promise<ProductionJobListResult> {
-  const conditions = listConditions(filters);
+  const conditions = [orderSystemAdmissionCondition(), ...listConditions(filters)];
   const where = conditions.length ? and(...conditions) : undefined;
   const sortColumn = filters.sort === "updated"
     ? productionJobs.updatedAt
@@ -473,7 +474,10 @@ export async function getProductionJobDetail(
     orderPaymentStatus: orders.paymentStatus,
   }).from(productionJobs)
     .leftJoin(orders, eq(orders.id, productionJobs.orderId))
-    .where(eq(productionJobs.id, jobId))
+    .where(and(
+      eq(productionJobs.id, jobId),
+      orderSystemAdmissionCondition(),
+    ))
     .limit(1);
   if (!row) return null;
 

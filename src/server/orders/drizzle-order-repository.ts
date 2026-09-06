@@ -18,8 +18,6 @@ import {
   orderAddresses,
   orderItems,
   orders,
-  productionJobItems,
-  productionJobs,
   shippingQuotes,
 } from "@/server/db/schema";
 import {
@@ -85,8 +83,21 @@ const productionComponentLabels: Readonly<Record<BannerBundleComponentKey, strin
   "wall-banner": "Wall Banner",
 };
 
+type WebProductionSourceItem = Pick<
+  RepricedCheckoutItem,
+  | "productTitle"
+  | "sizeLabel"
+  | "quantity"
+  | "designText"
+  | "notes"
+  | "neededDate"
+  | "urgentServiceConfirmed"
+> & Readonly<{
+  bundleComponents?: RepricedCheckoutItem["bundleComponents"] | null;
+}>;
+
 function productionCustomizationText(
-  item: RepricedCheckoutItem,
+  item: WebProductionSourceItem,
   field: "designText" | "notes",
 ): string {
   if (!item.bundleComponents) return item[field];
@@ -99,25 +110,65 @@ function productionCustomizationText(
   }).filter(Boolean).join("\n\n");
 }
 
-export function buildWebProductionJobSnapshot(input: Readonly<{
+type WebProductionJobBase = Readonly<{
   order: Readonly<{ id: string; orderNumber: string }>;
-  cart: RepricedCheckoutCart;
   billingAddress: NormalizedAddress;
   deliveryAddress: NormalizedAddress;
   deliveryMethod: DeliveryPreference;
   orderItemIds: readonly string[];
   now: Date;
-}>) {
-  if (input.orderItemIds.length !== input.cart.items.length) {
+}>;
+type PaidStatus = "paid" | "refunded";
+type UnpaidStatus = "awaiting_payment" | "processing" | "failed" | "cancelled";
+type PersistedWebProductionJobInput = WebProductionJobBase & Readonly<{
+  items: readonly WebProductionSourceItem[];
+  paymentStatus: PaidStatus | UnpaidStatus;
+}>;
+type CartWebProductionJobInput = WebProductionJobBase & Readonly<{
+  cart: RepricedCheckoutCart;
+  paymentStatus: PaidStatus;
+}>;
+
+export function buildWebProductionJobSnapshot(
+  input: WebProductionJobBase & Readonly<{
+    items: readonly WebProductionSourceItem[];
+    paymentStatus: UnpaidStatus;
+  }>,
+): null;
+export function buildWebProductionJobSnapshot(
+  input: WebProductionJobBase & Readonly<{
+    items: readonly WebProductionSourceItem[];
+    paymentStatus: PaidStatus;
+  }>,
+): NonNullable<ReturnType<typeof buildWebProductionJobSnapshotImplementation>>;
+export function buildWebProductionJobSnapshot(
+  input: CartWebProductionJobInput,
+): NonNullable<ReturnType<typeof buildWebProductionJobSnapshotImplementation>>;
+export function buildWebProductionJobSnapshot(
+  input: PersistedWebProductionJobInput | CartWebProductionJobInput,
+) {
+  return buildWebProductionJobSnapshotImplementation(input);
+}
+
+function buildWebProductionJobSnapshotImplementation(
+  input: PersistedWebProductionJobInput | CartWebProductionJobInput,
+) {
+  if (input.paymentStatus !== "paid" && input.paymentStatus !== "refunded") {
+    return null;
+  }
+  const sourceItems: readonly WebProductionSourceItem[] = "items" in input
+    ? input.items
+    : input.cart.items.map((item) => ({ ...item, bundleComponents: item.bundleComponents ?? null }));
+  if (input.orderItemIds.length !== sourceItems.length) {
     throw new AtomicOrderStateError("Production job item links are incomplete");
   }
-  const neededDate = [...input.cart.items]
+  const neededDate = [...sourceItems]
     .map((item) => item.neededDate)
     .sort()[0];
   if (!neededDate) {
     throw new AtomicOrderStateError("Production job required date is missing");
   }
-  const items = Object.freeze(input.cart.items.map((item, position) => Object.freeze({
+  const items = Object.freeze(sourceItems.map((item, position) => Object.freeze({
     position,
     sourceOrderItemId: input.orderItemIds[position],
     productTitle: item.productTitle,
@@ -144,7 +195,7 @@ export function buildWebProductionJobSnapshot(input: Readonly<{
       customerEmail: input.billingAddress.email,
       customerPhone: input.billingAddress.phone,
       customerSource: "web" as const,
-      urgent: input.cart.items.some((item) => item.urgentServiceConfirmed),
+      urgent: sourceItems.some((item) => item.urgentServiceConfirmed),
       neededDate,
       deliveryMethod: input.deliveryMethod,
       deliveryAddress: productionAddressText(input.deliveryAddress),
@@ -410,7 +461,6 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
             })
             .returning();
 
-          const createdOrderItemIds: string[] = [];
           for (const [position, item] of input.cart.items.entries()) {
             const customizationSnapshot = buildOrderItemCustomizationSnapshot(item);
             const [orderItem] = await transaction
@@ -449,8 +499,6 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
                 lineTotalInclGstCents: item.lineTotalInclGstCents,
               })
               .returning({ id: orderItems.id });
-            createdOrderItemIds.push(orderItem.id);
-
             if (customizationSnapshot.uploadReferences.length > 0) {
               const claimed = await transaction
                 .update(checkoutUploads)
@@ -467,26 +515,6 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
               }
             }
           }
-
-          const productionSnapshot = buildWebProductionJobSnapshot({
-            order,
-            cart: input.cart,
-            billingAddress: input.billingAddress,
-            deliveryAddress: input.deliveryAddress,
-            deliveryMethod: input.deliveryMethod,
-            orderItemIds: createdOrderItemIds,
-            now: input.now,
-          });
-          const [productionJob] = await transaction
-            .insert(productionJobs)
-            .values(productionSnapshot.job)
-            .returning({ id: productionJobs.id });
-          await transaction.insert(productionJobItems).values(
-            productionSnapshot.items.map((item) => ({
-              ...item,
-              jobId: productionJob.id,
-            })),
-          );
 
           await transaction.insert(orderAddresses).values([
             { orderId: order.id, kind: "billing", ...input.billingAddress },

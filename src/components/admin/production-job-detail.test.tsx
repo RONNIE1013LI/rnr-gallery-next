@@ -187,6 +187,7 @@ describe("ProductionJobDetail", () => {
       deliveryMethod: "post",
       orderItemIds: [randomUUID()],
       now,
+      paymentStatus: "paid",
     });
     const detail = {
       job: {

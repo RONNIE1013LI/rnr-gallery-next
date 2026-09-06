@@ -388,23 +388,23 @@ describe("forms workbench repository", () => {
     expect(notAssignedToOperator.items.map((item) => item.id)).toEqual(expect.arrayContaining([
       otherJobId,
       refundedJobId,
-      cancelledJobId,
       legacyJobId,
     ]));
+    expect(notAssignedToOperator.items.map((item) => item.id)).not.toContain(cancelledJobId);
     expect(notGoldCampaign.items.map((item) => item.id)).not.toContain(assignedJobId);
     expect(notGoldCampaign.items.map((item) => item.id)).toEqual(expect.arrayContaining([
       otherJobId,
       refundedJobId,
-      cancelledJobId,
       legacyJobId,
     ]));
+    expect(notGoldCampaign.items.map((item) => item.id)).not.toContain(cancelledJobId);
     expect(notSubmittedByOther.items.map((item) => item.id)).not.toContain(assignedJobId);
     expect(notSubmittedByOther.items.map((item) => item.id)).toEqual(expect.arrayContaining([
       otherJobId,
       refundedJobId,
-      cancelledJobId,
       legacyJobId,
     ]));
+    expect(notSubmittedByOther.items.map((item) => item.id)).not.toContain(cancelledJobId);
   });
 
   it("does not treat a held order as Delivered No", async () => {
@@ -529,7 +529,7 @@ describe("forms workbench repository", () => {
     expect(filtered.items.map((item) => item.id)).toEqual([refundedJobId]);
   });
 
-  it("filters web finance using the same refunded and cancelled projection shown in the list", async () => {
+  it("filters web finance after excluding cancelled web orders from the list", async () => {
     const access = {
       actorUserId: operatorId,
       assignedOnly: false,
@@ -546,6 +546,7 @@ describe("forms workbench repository", () => {
     }), access);
 
     expect(refundedPaid.items.map((item) => item.id)).toContain(refundedJobId);
-    expect(zeroOwing.items.map((item) => item.id)).toEqual(expect.arrayContaining([refundedJobId, cancelledJobId]));
+    expect(zeroOwing.items.map((item) => item.id)).toContain(refundedJobId);
+    expect(zeroOwing.items.map((item) => item.id)).not.toContain(cancelledJobId);
   });
 });
