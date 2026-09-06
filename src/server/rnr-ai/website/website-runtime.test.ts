@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createWebsiteReplyRuntime,
   createBudgetedWebsiteFetch,
+  createWebsiteAiControlGate,
 } from "./website-runtime";
 import { fixture } from "./website-test-helper";
 const decision = {
@@ -330,4 +331,171 @@ describe("website incomplete usage keeps reservation", () => {
       expect(transport).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+describe("website shared AI Control parity", () => {
+  it("awaits the control gate and keeps OFF messages manually answerable", async () => {
+    const f = fixture(),
+      generate = vi.fn();
+    const runtime = createWebsiteReplyRuntime({
+      repository: f.repository,
+      brain: { generate },
+      enabled: async () => false,
+    });
+    const turn = await f.repository.ingestConversationEvent(f.event());
+    if (turn.status !== "turn_pending") throw Error();
+    expect(await runtime.processTurn(turn.turnId)).toEqual({
+      status: "review",
+    });
+    expect(generate).not.toHaveBeenCalled();
+    expect(
+      (await f.repository.listQueue(5)).items[0].websiteReview?.reason,
+    ).toBe("unresolved");
+  });
+  it("does not publish when control turns OFF while generation is running", async () => {
+    const f = fixture();
+    let on = true;
+    const runtime = createWebsiteReplyRuntime({
+      repository: f.repository,
+      brain: {
+        generate: async () => {
+          on = false;
+          return { decision };
+        },
+      },
+      enabled: async () => on,
+    });
+    const turn = await f.repository.ingestConversationEvent(f.event());
+    if (turn.status !== "turn_pending") throw Error();
+    expect(await runtime.processTurn(turn.turnId)).toEqual({
+      status: "review",
+    });
+    expect((await f.repository.listQueue(5)).items[0].timeline).toHaveLength(1);
+  });
+});
+
+describe("website shared control evaluator", () => {
+  const now = new Date("2026-09-06T20:00:00.000Z"),
+    env = {
+      RNR_AI_MASTER_ENABLED: "true",
+      RNR_WEBSITE_SHARED_BRAIN_ENABLED: "true",
+    };
+  it.each([
+    { mode: "ON", override: null, periods: [], expected: true },
+    { mode: "OFF", override: null, periods: [], expected: false },
+    {
+      mode: "ON",
+      override: {
+        state: "OFF",
+        actorUserId: "synthetic-admin",
+        expiresAt: "2026-09-07T00:00:00.000Z",
+      },
+      periods: [],
+      expected: false,
+    },
+    {
+      mode: "OFF",
+      override: {
+        state: "ON",
+        actorUserId: "synthetic-admin",
+        expiresAt: "2026-09-07T00:00:00.000Z",
+      },
+      periods: [],
+      expected: true,
+    },
+    {
+      mode: "SCHEDULE",
+      override: null,
+      periods: [{ day: 1, start: "07:00", end: "09:00" }],
+      expected: true,
+    },
+    {
+      mode: "SCHEDULE",
+      override: null,
+      periods: [{ day: 1, start: "09:00", end: "17:00" }],
+      expected: false,
+    },
+  ] as const)(
+    "uses the shared mode schedule and override",
+    async ({ expected, ...config }) => {
+      const gate = createWebsiteAiControlGate({
+        env,
+        websiteEnabled: true,
+        now: () => now,
+        store: {
+          readControl: async () => ({
+            config: { revision: 1, timezone: "Pacific/Auckland", ...config },
+            readAt: now.toISOString(),
+          }),
+        },
+      });
+      expect(await gate()).toBe(expected);
+    },
+  );
+  it("fails closed if Redis control cannot be read", async () => {
+    const gate = createWebsiteAiControlGate({
+      env,
+      websiteEnabled: true,
+      store: {
+        readControl: async () => {
+          throw Error("synthetic outage");
+        },
+      },
+    });
+    expect(await gate()).toBe(false);
+  });
+  it("checks async control before each HTTP attempt", async () => {
+    const f = fixture(),
+      turn = await f.repository.ingestConversationEvent(f.event());
+    if (turn.status !== "turn_pending") throw Error();
+    const lease = (await f.repository.claimTurn(turn.turnId))!,
+      transport = vi.fn();
+    const budgeted = createBudgetedWebsiteFetch({
+      repository: f.repository,
+      lease,
+      limits: { dailyHardStopMicrousd: 5000, totalHardStopMicrousd: 5000 },
+      enabled: async () => false,
+      fetchImpl: transport,
+    });
+    await expect(
+      budgeted("https://api.openai.com/v1/responses", {
+        body: JSON.stringify({
+          model: "gpt-5.6-luna",
+          max_output_tokens: 1200,
+        }),
+      }),
+    ).rejects.toThrow();
+    expect(transport).not.toHaveBeenCalled();
+  });
+});
+
+it("refunds a reservation when control turns OFF before HTTP starts", async () => {
+  const f = fixture(),
+    turn = await f.repository.ingestConversationEvent(f.event());
+  if (turn.status !== "turn_pending") throw Error();
+  const lease = (await f.repository.claimTurn(turn.turnId))!,
+    transport = vi.fn(),
+    enabled = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
+  const limits = { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+    budgeted = createBudgetedWebsiteFetch({
+      repository: f.repository,
+      lease,
+      limits,
+      enabled,
+      fetchImpl: transport,
+    });
+  await expect(
+    budgeted("https://api.openai.com/v1/responses", {
+      body: JSON.stringify({ model: "gpt-5.6-luna", max_output_tokens: 1200 }),
+    }),
+  ).rejects.toThrow();
+  expect(transport).not.toHaveBeenCalled();
+  expect(
+    await f.repository.reserveProviderBudget(
+      lease,
+      limits,
+      3000,
+      "remaining-after-kill",
+    ),
+  ).toBe(true);
 });

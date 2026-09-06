@@ -1,3 +1,7 @@
+import { Redis } from "@upstash/redis";
+import { RedisReplyRuntimeStore } from "../runtime-store/redis-reply-runtime-store";
+import type { ReplyRuntimeStore } from "../runtime-store/reply-runtime-store";
+import { evaluateAiControl } from "../control/schedule";
 import { BRAIN_BUDGET_MS } from "../reasoning/brain";
 import { randomUUID } from "node:crypto";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
@@ -31,16 +35,23 @@ type Brain = {
 export function createWebsiteReplyRuntime(input: {
   repository: RedisWebsiteRepository;
   brain: Brain;
-  enabled?: () => boolean;
+  enabled?: () => boolean | Promise<boolean>;
   perCallBudget?: boolean;
   budget?: WebsiteProviderBudget;
   reviewAlerts?: { deliverNext(): Promise<unknown> };
 }) {
+  const isEnabled = async () => {
+    try {
+      return (await input.enabled?.()) ?? true;
+    } catch {
+      return false;
+    }
+  };
   const processTurn = async (
     turnId: string,
     generationMode: "legacy" | "shared_brain" = "shared_brain",
   ) => {
-    const aiEnabled = input.enabled?.() ?? true;
+    const aiEnabled = await isEnabled();
     const lease = await input.repository.claimTurn(turnId);
     if (!lease) return { status: "not_claimed" as const };
     let decision: RnrAiDecision | null = null;
@@ -91,16 +102,19 @@ export function createWebsiteReplyRuntime(input: {
     }
     if (!input.perCallBudget)
       await input.repository.settleProviderBudget(lease, cost);
-    if (input.enabled && !input.enabled()) decision = null;
-    const reviewReason = !admitted
-      ? !aiEnabled || current.reviewRequired || lease.takeover
-        ? ("unresolved" as const)
-        : generationMode !== "shared_brain"
-          ? ("system_failure" as const)
-          : lease.attempts > 3
-            ? ("provider_error" as const)
-            : ("budget_blocked" as const)
-      : undefined;
+    const publicationEnabled = await isEnabled();
+    if (!publicationEnabled) decision = null;
+    const reviewReason = !publicationEnabled
+      ? ("unresolved" as const)
+      : !admitted
+        ? !aiEnabled || current.reviewRequired || lease.takeover
+          ? ("unresolved" as const)
+          : generationMode !== "shared_brain"
+            ? ("system_failure" as const)
+            : lease.attempts > 3
+              ? ("provider_error" as const)
+              : ("budget_blocked" as const)
+        : undefined;
     const status = await input.repository.settleTurn(
       lease,
       decision,
@@ -146,14 +160,20 @@ export function createProductionWebsiteReplyRuntime(
 ) {
   const repository = RedisWebsiteRepository.fromEnvironment(env);
   const config = parseCustomerServiceConfig(env);
-  const enabled = () => {
-    const rnr = parseRnrAiMetaConfig(env);
-    return (
-      config.websiteEnabled &&
-      rnr.masterEnabled &&
-      rnr.websiteSharedBrainEnabled
-    );
-  };
+  const controlStore = new RedisReplyRuntimeStore({
+    namespace: env.RNR_AI_REDIS_NAMESPACE!.trim(),
+    redis: new Redis({
+      url: env.RNR_AI_REDIS_REST_URL!.trim(),
+      token: env.RNR_AI_REDIS_REST_TOKEN!.trim(),
+      responseEncoding: false,
+    }),
+  });
+  const enabled = createWebsiteAiControlGate({
+    store: controlStore,
+    env,
+    websiteEnabled: config.websiteEnabled,
+  });
+
   const limits = {
     dailyHardStopMicrousd: Math.min(
       config.dailyHardStopMicrousd,
@@ -167,7 +187,7 @@ export function createProductionWebsiteReplyRuntime(
   const brain: Brain = {
     async generate(request, lease) {
       if (!lease) throw Error("website_provider_lease_missing");
-      if (!enabled()) throw Error("website_shared_brain_disabled");
+      if (!(await enabled())) throw Error("website_shared_brain_disabled");
       const businessBrain = loadBusinessBrain();
       const unavailable = async () => ({
         status: "unavailable_review_required" as const,
@@ -228,12 +248,12 @@ export function createBudgetedWebsiteFetch(input: {
   repository: RedisWebsiteRepository;
   lease: WebsiteTurnLease;
   limits: WebsiteProviderBudget;
-  enabled: () => boolean;
+  enabled: () => boolean | Promise<boolean>;
   fetchImpl?: typeof fetch;
 }): typeof fetch {
   return async (url, init) => {
     if (
-      !input.enabled() ||
+      !(await input.enabled()) ||
       url !== "https://api.openai.com/v1/responses" ||
       typeof init?.body !== "string"
     )
@@ -261,8 +281,19 @@ export function createBudgetedWebsiteFetch(input: {
       allowance,
       chargeId,
     );
-    if (!reserved || !input.enabled())
+    if (!reserved) throw new SolProviderError("configuration");
+    if (!(await input.enabled())) {
+      try {
+        await input.repository.settleProviderCallBudget(
+          input.lease,
+          chargeId,
+          0,
+        );
+      } catch {
+        /* Keep allowance if Redis cannot confirm the refund. */
+      }
       throw new SolProviderError("configuration");
+    }
     const response = await (input.fetchImpl ?? fetch)(url, init);
     if (response.ok) {
       try {
@@ -331,4 +362,32 @@ function completeResponseUsageCost(body: unknown): number | null {
     cacheWriteTokens,
     outputTokens,
   });
+}
+
+export function createWebsiteAiControlGate(input: {
+  store: Pick<ReplyRuntimeStore, "readControl">;
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  websiteEnabled: boolean;
+  now?: () => Date;
+}) {
+  return async () => {
+    const config = parseRnrAiMetaConfig(input.env);
+    if (
+      !input.websiteEnabled ||
+      !config.masterEnabled ||
+      !config.websiteSharedBrainEnabled
+    )
+      return false;
+    try {
+      return (
+        evaluateAiControl(
+          await input.store.readControl(),
+          input.now?.() ?? new Date(),
+          config.masterEnabled,
+        ).effectiveState === "ON"
+      );
+    } catch {
+      return false;
+    }
+  };
 }

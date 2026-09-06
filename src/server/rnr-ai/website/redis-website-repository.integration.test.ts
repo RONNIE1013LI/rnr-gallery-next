@@ -1,3 +1,5 @@
+import { RedisReplyRuntimeStore } from "../runtime-store/redis-reply-runtime-store";
+import { createWebsiteAiControlGate } from "./website-runtime";
 import { Redis } from "@upstash/redis";
 import { randomUUID, createHash } from "node:crypto";
 import { describe, it, expect } from "vitest";
@@ -220,5 +222,41 @@ describe.runIf(Boolean(url))("real Redis website Lua", () => {
     expect(
       await repository.reserveProviderBudget(lease, limits, 1, "overflow-call"),
     ).toBe(false);
+  });
+  it("reads the same Redis AI Control source used by Meta", async () => {
+    if (!url || !/^http:\/\/127\.0\.0\.1:\d+$/.test(url))
+      throw Error("isolated Redis required");
+    const namespace = `test-website-control-${randomUUID()}`,
+      redis = new Redis({
+        url,
+        token: "synthetic-local-redis-test",
+        responseEncoding: false,
+      });
+    const store = new RedisReplyRuntimeStore({ namespace, redis });
+    const gate = createWebsiteAiControlGate({
+      store,
+      env: {
+        RNR_AI_MASTER_ENABLED: "true",
+        RNR_WEBSITE_SHARED_BRAIN_ENABLED: "true",
+      },
+      websiteEnabled: true,
+    });
+    expect(await gate()).toBe(false);
+    await redis.set(`${namespace}:control`, {
+      revision: 1,
+      mode: "ON",
+      timezone: "Pacific/Auckland",
+      periods: [],
+      override: null,
+    });
+    expect(await gate()).toBe(true);
+    await redis.set(`${namespace}:control`, {
+      revision: 2,
+      mode: "OFF",
+      timezone: "Pacific/Auckland",
+      periods: [],
+      override: null,
+    });
+    expect(await gate()).toBe(false);
   });
 });

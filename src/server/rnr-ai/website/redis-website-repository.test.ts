@@ -1,3 +1,4 @@
+import { localDateScopeKey } from "@/server/customer-service/usage-cost";
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { fixture } from "./website-test-helper";
@@ -306,6 +307,62 @@ describe("atomic website charge reconciliation", () => {
     ).toBe(true);
     expect(
       await f.repository.reserveProviderBudget(next, limits, 1, "call3"),
+    ).toBe(false);
+  });
+});
+
+describe("website budget Auckland midnight", () => {
+  it("refunds the reserved day without crediting the new daily ledger", async () => {
+    const f = fixture(),
+      initialDay = localDateScopeKey(new Date(f.now()));
+    let boundary = Math.floor(f.now() / 60000) * 60000;
+    while (localDateScopeKey(new Date(boundary)) === initialDay)
+      boundary += 60000;
+    f.advance(boundary - f.now() - 1000);
+    const first = await f.repository.ingestConversationEvent(
+      f.event("before-midnight"),
+    );
+    if (first.status !== "turn_pending") throw Error();
+    const oldLease = (await f.repository.claimTurn(first.turnId))!;
+    const limits = { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 6000 };
+    expect(
+      await f.repository.reserveProviderBudget(
+        oldLease,
+        limits,
+        2500,
+        "old-call",
+      ),
+    ).toBe(true);
+    f.advance(2000);
+    const second = await f.repository.ingestConversationEvent(
+      f.event("after-midnight"),
+    );
+    if (second.status !== "turn_pending") throw Error();
+    const newLease = (await f.repository.claimTurn(second.turnId))!;
+    expect(
+      await f.repository.reserveProviderBudget(
+        newLease,
+        limits,
+        2500,
+        "new-call",
+      ),
+    ).toBe(true);
+    await f.repository.settleProviderCallBudget(oldLease, "old-call", 500);
+    expect(
+      await f.repository.reserveProviderBudget(
+        newLease,
+        limits,
+        500,
+        "daily-remainder",
+      ),
+    ).toBe(true);
+    expect(
+      await f.repository.reserveProviderBudget(
+        newLease,
+        limits,
+        1,
+        "daily-overflow",
+      ),
     ).toBe(false);
   });
 });
