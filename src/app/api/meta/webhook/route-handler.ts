@@ -4,7 +4,7 @@ import { parseCustomerServiceConfig, type CustomerServiceConfig } from "@/server
 import { createMetaWebhookHandlers } from "@/server/customer-service/meta/webhook-handler";
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
 import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
-import { parseRnrAiMetaConfig, type RnrAiMetaConfig } from "@/server/rnr-ai/meta/config";
+import { metaActivationCutoff, metaRecipientAllowed, parseRnrAiMetaConfig, type RnrAiMetaConfig } from "@/server/rnr-ai/meta/config";
 import type { MetaConversationEvent } from "@/server/rnr-ai/meta/types";
 import { createProductionMetaReplyRuntime } from "@/server/rnr-ai/meta/runtime";
 
@@ -41,19 +41,19 @@ function asMetaEvent(message: AcceptedEvent): MetaConversationEvent {
   });
 }
 
-function isStageAAllowedRecipient(
+function isActivatedRecipient(
   message: AcceptedEvent,
   customerConfig: CustomerServiceConfig,
   rnrConfig: RnrAiMetaConfig,
 ) {
+  const cutoff = metaActivationCutoff(rnrConfig);
   return Boolean(
-    rnrConfig.stageAAllowedRecipientHash
-    && rnrConfig.stageAActivatedAt
+    cutoff
     && customerConfig.idHashSecret
-    && message.receivedAt.getTime() >= rnrConfig.stageAActivatedAt.getTime()
-    && createHmac("sha256", customerConfig.idHashSecret)
+    && message.receivedAt.getTime() >= cutoff.getTime()
+    && metaRecipientAllowed(rnrConfig, createHmac("sha256", customerConfig.idHashSecret)
       .update(message.externalConversationKey)
-      .digest("hex") === rnrConfig.stageAAllowedRecipientHash,
+      .digest("hex")),
   );
 }
 
@@ -92,7 +92,7 @@ export function createMetaWebhookRouteHandlers(dependencies: Readonly<{
     onAcceptedEvent: async (message, execution) => {
       if (!dependencies.rnrConfig.masterEnabled) return;
       if (message.providerTimestampValid !== true) return;
-      if (!isStageAAllowedRecipient(message, dependencies.customerConfig, dependencies.rnrConfig)) return;
+      if (!isActivatedRecipient(message, dependencies.customerConfig, dependencies.rnrConfig)) return;
       await dependencies.createSharedRuntime().orchestrator.handle(asMetaEvent(message), {
         deadlineAt: execution.invocationStartedAtMs + META_WEBHOOK_INVOCATION_MS - META_REPLY_TAIL_RESERVE_MS,
       });

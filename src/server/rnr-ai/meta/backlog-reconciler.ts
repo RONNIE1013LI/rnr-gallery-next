@@ -1,3 +1,4 @@
+import { metaActivationCutoff, metaRecipientAllowed, metaActivationConfigured } from "./config";
 import type { BacklogLease, ReplyRuntimeStore } from "../runtime-store/reply-runtime-store";
 import type { MetaConversationLocator } from "./context-provider";
 import type { MetaConversationEvent, MetaConversationSnapshot, MetaHistoryEvent } from "./types";
@@ -11,6 +12,7 @@ type Dependencies = Readonly<{
   loadConversation(locator: MetaConversationLocator): Promise<MetaConversationSnapshot>;
   processEvent(event: MetaConversationEvent): Promise<ProcessResult>;
   hashExternalKey(value: string): string;
+  allCustomersActivatedAt?: Date | null;
   stageAAllowedRecipientHash: string | null;
   stageAActivatedAt: Date | null;
   now?: () => Date;
@@ -70,10 +72,10 @@ export function createBacklogReconciler(dependencies: Dependencies) {
       let processed = 0;
       let skipped = 0;
       let stoppedBecauseOff = false;
-      const stageAActivatedAt = dependencies.stageAActivatedAt;
+      const activationCutoff = metaActivationCutoff(dependencies);
       try {
         if (!validLease(lease)) throw new Error("invalid_backlog_window");
-        if (!dependencies.stageAAllowedRecipientHash || !stageAActivatedAt) {
+        if (!metaActivationConfigured(dependencies) || !activationCutoff) {
           stoppedBecauseOff = true;
         } else if (!await dependencies.controlIsOn()) {
           stoppedBecauseOff = true;
@@ -85,7 +87,7 @@ export function createBacklogReconciler(dependencies: Dependencies) {
               break;
             }
             const conversationHash = dependencies.hashExternalKey(locator.externalConversationKey);
-            if (conversationHash !== dependencies.stageAAllowedRecipientHash) {
+            if (!metaRecipientAllowed(dependencies, conversationHash)) {
               skipped += 1;
               continue;
             }
@@ -95,13 +97,13 @@ export function createBacklogReconciler(dependencies: Dependencies) {
             }
             const snapshot = await dependencies.loadConversation(locator);
             const events = sortedEvents(snapshot)
-              .filter((event) => event.receivedAt.getTime() >= stageAActivatedAt.getTime());
+              .filter((event) => event.receivedAt.getTime() >= activationCutoff.getTime());
             const run = latestCustomerRun(events);
             const latest = run?.at(-1);
             if (
               !run
               || !latest
-              || latest.receivedAt.getTime() < stageAActivatedAt.getTime()
+              || latest.receivedAt.getTime() < activationCutoff.getTime()
               || latest.receivedAt.getTime() < Date.parse(lease.window.from)
               || latest.receivedAt.getTime() > Date.parse(lease.window.to)
             ) {

@@ -17,6 +17,7 @@ describe("parseRnrAiMetaConfig", () => {
       engineMode: "shared_active",
       metaAutoSendEnabled: true,
       websiteSharedBrainEnabled: true,
+      allCustomersActivatedAt: null,
       stageAAllowedRecipientHash: allowedRecipientHash,
       stageAActivatedAt: new Date(activatedAt),
     });
@@ -29,6 +30,7 @@ describe("parseRnrAiMetaConfig", () => {
       engineMode: "legacy",
       metaAutoSendEnabled: false,
       websiteSharedBrainEnabled: false,
+      allCustomersActivatedAt: null,
       stageAAllowedRecipientHash: null,
       stageAActivatedAt: null,
     });
@@ -75,4 +77,12 @@ describe("parseRnrAiMetaConfig", () => {
       RNR_META_STAGE_A_ACTIVATED_AT: value,
     }).stageAActivatedAt).toBeNull();
   });
+});
+
+it("parses only an exact all-customer activation timestamp", () => {
+  const timestamp = "2026-09-06T00:00:00.000Z";
+  expect(parseRnrAiMetaConfig({ RNR_META_ALL_CUSTOMERS_ACTIVATED_AT: timestamp }).allCustomersActivatedAt).toEqual(new Date(timestamp));
+  for (const invalid of [undefined, "", "true", "2026-09-06", "2026-02-30T00:00:00.000Z", " 2026-09-06T00:00:00.000Z"]) {
+    expect(parseRnrAiMetaConfig({ RNR_META_ALL_CUSTOMERS_ACTIVATED_AT: invalid }).allCustomersActivatedAt).toBeNull();
+  }
 });

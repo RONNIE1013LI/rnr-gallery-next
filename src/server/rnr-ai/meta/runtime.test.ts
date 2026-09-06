@@ -67,3 +67,13 @@ describe("Meta reply runtime selection", () => {
     expect(resolveMetaConversationMarket(snapshot)).toBe(expected);
   });
 });
+
+it("selects the active sender for explicit full activation while preserving master and send gates", () => {
+  const active = { sendEligibleReply: vi.fn() };
+  const createActive = vi.fn(() => active);
+  const config = { ...baseConfig, stageAAllowedRecipientHash: null, stageAActivatedAt: null, allCustomersActivatedAt: new Date("2026-09-06T00:00:00.000Z") };
+  expect(selectMetaReplySender({ config, createActive })).toBe(active);
+  for (const override of [{ masterEnabled: false }, { metaAutoSendEnabled: false }, { engineMode: "shared_draft" as const }, { allCustomersActivatedAt: new Date("invalid") }]) {
+    expect(selectMetaReplySender({ config: { ...config, ...override }, createActive })).toBeInstanceOf(DisabledMetaReplySender);
+  }
+});

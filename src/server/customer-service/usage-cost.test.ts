@@ -19,3 +19,7 @@ describe("customer service usage cost", () => {
     expect(localDateScopeKey(new Date("2026-08-16T13:00:00.000Z"))).toBe("daily:2026-08-17");
   });
 });
+
+it('includes the Luna cache-write surcharge without charging those tokens twice', () => {
+  expect(estimateCostMicrousd({ model: 'gpt-5.6-luna', inputTokens: 1000, cachedInputTokens: 200, cacheWriteTokens: 500, outputTokens: 100 })).toBe(309);
+});

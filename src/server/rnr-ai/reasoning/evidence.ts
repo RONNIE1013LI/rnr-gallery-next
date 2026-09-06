@@ -7,7 +7,7 @@ export function reasoningEvidence(request: RnrAiRequest): EvidenceSource[] {
     const sources: EvidenceSource[] = request.businessBrain.rules.map(rule => ({
         id: rule.id, market: rule.market, status: rule.status === 'CONFIRMED' && rule.autonomous ? 'CONFIRMED' : 'REVIEW',
         category: rule.category, kind: 'knowledge', statement: rule.statement,
-        facts: { ...rule.facts, productKeys: [...new Set(Object.values(priceRuleByProduct).flatMap(table => Object.entries(table).filter(([, id]) => id === rule.id).map(([product]) => product.replaceAll('_', '-'))))] }, authenticated: false,
+        facts: { ...rule.facts, productKeys: rule.id === 'au-people-pets-fees' || rule.id === 'nz-digital-painting-people-fees' ? ['digital-oil-painting-canvas', 'oil-painting-banner'] : [...new Set(Object.values(priceRuleByProduct).flatMap(table => Object.entries(table).filter(([, id]) => id === rule.id).map(([product]) => product.replaceAll('_', '-'))))] }, authenticated: false,
     }));
     sources.push({ id: 'product-config', market: 'GLOBAL', status: 'CONFIRMED', category: 'product', kind: 'knowledge',
         statement: 'Canonical product sizes and photo constraints only; not prices or guarantees of image quality.',
@@ -23,7 +23,18 @@ export function reasoningEvidence(request: RnrAiRequest): EvidenceSource[] {
         ] => typeof entry[1] === 'number' && Number.isSafeInteger(entry[1]) && entry[1] >= 0);
         sources.push({ id: 'derived-nz-canvas-including-gst', market: 'NZ', status: 'CONFIRMED', category: 'pricing', kind: 'knowledge',
             statement: 'NZ canvas base amounts including GST, calculated from nz-canvas-base-prices and nz-gst. Editing fees and shipping are separate dependencies.',
-            facts: { pricesMinor: Object.fromEntries(amounts.map(([size, amount]) => [size, Math.round(amount * (10000 + rate) / 10000)])), operandSources: [base!.id, gst!.id], productKeys: base!.facts.productKeys }, authenticated: false });
+            facts: { pricesMinor: Object.fromEntries(amounts.map(([size, amount]) => [size, Math.round(amount * (10000 + rate) / 10000)])), taxPresentation: 'including_gst', operandSources: [base!.id, gst!.id], productKeys: base!.facts.productKeys }, authenticated: false });
+    }
+    const people = sources.find(s => s.id === 'nz-digital-painting-people-fees' && s.status === 'CONFIRMED');
+    const fees = people?.facts.feesMinor;
+    const perPerson = people?.facts.sixPlusPerPersonMinor;
+    if (typeof rate === 'number' && Number.isSafeInteger(rate) && rate >= 0 && fees && typeof fees === 'object' && !Array.isArray(fees)
+        && typeof perPerson === 'number' && Number.isSafeInteger(perPerson) && perPerson >= 0) {
+        const entries = Object.entries(fees).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && Number.isSafeInteger(entry[1]) && entry[1] >= 0);
+        sources.push({ id: 'derived-nz-people-fees-including-gst', market: 'NZ', status: 'CONFIRMED', category: 'pricing', kind: 'knowledge',
+            statement: 'NZ digital-painting people or pets fees including GST, calculated from nz-digital-painting-people-fees and nz-gst. For six or more subjects multiply the per-person rate by the total count.',
+            facts: { feesMinor: Object.fromEntries(entries.map(([count, amount]) => [count, Math.round(amount * (10000 + rate) / 10000)])),
+                sixPlusPerPersonMinor: Math.round(perPerson * (10000 + rate) / 10000), taxPresentation: 'including_gst', operandSources: [people!.id, gst!.id], productKeys: people!.facts.productKeys }, authenticated: false });
     }
     return sources;
 }

@@ -5,10 +5,15 @@ import { loadBusinessBrain } from '../src/server/rnr-ai/business-brain/loader';
 import { OpenAiSolProvider } from '../src/server/rnr-ai/providers/openai-sol';
 import { BusinessToolRegistry } from '../src/server/rnr-ai/tools/tool-registry';
 import { createWebsiteBrainAdapter } from '../src/server/rnr-ai/website/website-brain-adapter';
+import { estimateCostMicrousd } from '../src/server/customer-service/usage-cost';
+import type { ProviderDiagnostic } from '../src/server/rnr-ai/diagnostics';
 import type { StructuredProvider } from '../src/server/rnr-ai/reasoning/brain';
 
 // Synthetic held-out scenarios, not customer transcripts or fixed expected wording.
-const cases: { id: string; turns: ['customer' | 'staff', string][]; assess: string }[] = [
+const cases: { id: string; turns: ['customer' | 'staff', string][]; assess: string; followups?: string[] }[] = [
+  { id: 'oil-quote-sequence', turns: [['customer', 'I want a Digital Oil Painting Canvas.'], ['staff', 'What size would you like?'], ['customer', 'How much is an A3 canvas?']], followups: ['Australia', 'Three people. What would that cost?', 'Actually make it two people. How much now?'], assess: 'Carry actual generated answers into subsequent turns. First ask country; then quote AUD79.99 BASE price and clarify people/pets count; then use AUD85 for three subjects without repeating known inputs. Never present base as full painting price or invent shipping.' },
+  { id: 'nz-oil-gst', turns: [['customer', 'I am in Auckland. What is the price of an A3 Digital Oil Painting Canvas with three people, including GST?']], assess: 'NZ A3 base78 + people85, GST15%, product subtotal NZD187.45. Cite/calculates approved GST operands, never mix before/after GST or quote AU price.' },
+  { id: 'au-six-subjects', turns: [['customer', 'How much is an A3 Digital Oil Painting Canvas with six people for Australia?']], assess: 'AU A3 base79.99 + 6x25 subject fee150 = AUD229.99 product subtotal. Do not apply 5-person tier or invent shipping.' },
   { id: 'memorial-edits', turns: [['customer', "This is for me, my son and his late mum. Please make my coat the colour of his school top, leave my cousin out, and show our old school with the sign RIVERSIDE. It means a lot to us."]], assess: 'Brief sincere empathy; address coat colour, excluded cousin, three people and school/sign. Acknowledge requested edits without promising unverified exact feasibility. No irrelevant country/price question or assistant preamble.' },
   { id: 'sizes-and-quote', turns: [['customer', 'What dimensions is A2 photo canvas, and what does it cost?']], assess: 'Give 59.4 x 42 cm now, then ask delivery country once for pricing; do not withhold dimensions or invent currency.' },
   { id: 'long-reference', turns: [['customer', 'I am in Sydney and want A2 Photo Print Canvas.'], ['staff', 'Understood.'], ['customer', 'Will there be a proof?'], ['staff', 'Yes, before printing.'], ['customer', 'Can I choose landscape?'], ['staff', 'Yes.'], ['customer', 'How much is that?']], assess: 'Retain Sydney, A2 and product. Quote AUD109.99 from approved source. No repeated size or country question.' },
@@ -33,8 +38,13 @@ async function main() {
   const unavailable = async () => ({ status: 'unavailable_review_required' as const, source: 'evaluation_no_live_business_access', facts: {} });
   const provider = new OpenAiSolProvider({ apiKey: process.env.OPENAI_API_KEY });
   const modelOutputs: unknown[] = [];
+  const calls: ProviderDiagnostic[] = [];
   const structured: StructuredProvider['structured'] = async (...args) => {
-    const result = await provider.structured(...args);
+    const [request, schema, max] = args;
+    const result = await provider.structured({ ...request, onDiagnostic: entry => {
+      request.onDiagnostic?.(entry);
+      if (entry.phase === 'finish') calls.push(entry);
+    } }, schema, max);
     // This runner accepts only its synthetic fixtures, never real conversations.
     modelOutputs.push(result.decision);
     return result;
@@ -44,20 +54,29 @@ async function main() {
   const results = [];
   evaluation: for (const item of selected) {
    for (const channel of ['meta', 'website'] as const) {
+    const turns = [...item.turns];
+    for (let step = 0; step <= (item.followups?.length ?? 0); step++) {
+    if (step > 0) turns.push(['customer', item.followups![step - 1]]);
     const started = Date.now();
     modelOutputs.length = 0;
+    calls.length = 0;
     const decision = channel === 'website' ? (await website.generate({
-      current: { id: `synthetic-${item.id}`, text: item.turns.at(-1)![1] },
-      context: item.turns.map(([role, text], i) => ({ role, text, receivedAt: new Date(Date.UTC(2026, 8, 6, 0, i)).toISOString() })),
+      current: { id: `synthetic-${item.id}-${step}`, text: turns.at(-1)![1] },
+      context: turns.map(([role, text], i) => ({ role, text, receivedAt: new Date(Date.UTC(2026, 8, 6, 0, i)).toISOString() })),
       expectedIntent: 'unknown',
     })).decision : await brain.generate({ channel: 'meta', market: 'UNKNOWN', businessBrain, attachments: [], toolContext: { conversationKeyHash: `synthetic-${item.id}` },
-      conversation: item.turns.map(([role, text], i) => ({ role, text, providerMessageKey: `synthetic-${item.id}-${i}`, sentAt: new Date(Date.UTC(2026, 8, 6, 0, i)).toISOString(), channel: 'meta', attachmentOrdinals: [] })),
+      conversation: turns.map(([role, text], i) => ({ role, text, providerMessageKey: `synthetic-${item.id}-${i}`, sentAt: new Date(Date.UTC(2026, 8, 6, 0, i)).toISOString(), channel: 'meta', attachmentOrdinals: [] })),
     }, { deadlineAt: Date.now() + 40_000 });
-    const result = { id: item.id, channel, assess: item.assess, elapsedMs: Date.now() - started, decision, modelOutputs: [...modelOutputs] };
+    const completeUsage = calls.length > 0 && calls.every(c => c.usage && [c.usage.inputTokens, c.usage.cachedInputTokens, c.usage.cacheWriteTokens, c.usage.outputTokens].every(n => n !== null));
+    const estimatedCostMicrousd = completeUsage ? calls.reduce((sum, c) => sum + estimateCostMicrousd({ model: provider.model, inputTokens: c.usage!.inputTokens!, cachedInputTokens: c.usage!.cachedInputTokens!, cacheWriteTokens: c.usage!.cacheWriteTokens!, outputTokens: c.usage!.outputTokens! }), 0) : null;
+    const result = { id: item.id, channel, step, input: turns.at(-1)![1], calls: [...calls], estimatedCostMicrousd, assess: item.assess, elapsedMs: Date.now() - started, decision, modelOutputs: [...modelOutputs] };
     results.push(result);
     process.stdout.write(`SYNTHETIC_REPLY_RESULT ${JSON.stringify(result)}\n`);
     // Infrastructure failure is not a model-quality score. Stop, do not burn more calls.
     if (decision.reasons.some(r => /provider_|model_not_available|verification_timeout/.test(r))) break evaluation;
+    if (!decision.replyText || decision.nextAction !== 'AUTO_REPLY_ELIGIBLE') break;
+    turns.push(['staff', decision.replyText]);
+    }
    }
   }
   const dir = resolve('output/reply-quality');

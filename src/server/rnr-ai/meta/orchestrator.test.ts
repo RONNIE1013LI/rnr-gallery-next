@@ -54,6 +54,7 @@ async function setup(options: Readonly<{
   masterEnabled?: boolean;
   stageAAllowedRecipientHash?: string | null;
   stageAActivatedAt?: Date | null;
+  allCustomersActivatedAt?: Date | null;
   decision?: RnrAiDecision;
   snapshots?: readonly MetaConversationSnapshot[];
   senderStatus?: "disabled" | "sent";
@@ -85,6 +86,7 @@ async function setup(options: Readonly<{
       ? hash("conversation-raw")
       : options.stageAAllowedRecipientHash,
     stageAActivatedAt: options.stageAActivatedAt === undefined ? new Date(0) : options.stageAActivatedAt,
+    allCustomersActivatedAt: options.allCustomersActivatedAt,
     sender,
     now: () => now,
   });
@@ -307,4 +309,26 @@ describe("MetaReplyOrchestrator", () => {
       .join("\n");
     expect(source).not.toMatch(/getDatabase|drizzle|customer_service_|product-registry|graph\.facebook\.com|\/messages/i);
   });
+});
+
+it("allows a non-tester at full activation, but rejects old tester and non-tester events before any work", async () => {
+  const activation = event().receivedAt;
+  for (const recipientHash of [hash("other-tester"), hash("conversation-raw")]) {
+    const stale = await setup({ stageAAllowedRecipientHash: recipientHash, allCustomersActivatedAt: new Date(activation.getTime() + 1) });
+    expect((await stale.orchestrator.handle(event())).status).toBe("stage_a_not_active");
+    expect(stale.brain.generate).not.toHaveBeenCalled();
+    expect(stale.context.loadConversation).not.toHaveBeenCalled();
+    expect(stale.store.exportStateForTest().events).toHaveLength(0);
+  }
+  const current = await setup({ stageAAllowedRecipientHash: null, stageAActivatedAt: null, allCustomersActivatedAt: activation });
+  await current.orchestrator.handle(event());
+  expect(current.brain.generate).toHaveBeenCalledOnce();
+});
+
+it.each(["2026-09-03T00:10:00.000Z", "2026-09-04T00:10:00.001Z"])("rejects expired or future events before model work: %s", async receivedAt => {
+  const current = await setup({ allCustomersActivatedAt: new Date(0) });
+  expect((await current.orchestrator.handle(event({ receivedAt: new Date(receivedAt) }))).status).toBe("stage_a_not_active");
+  expect(current.brain.generate).not.toHaveBeenCalled();
+  expect(current.context.loadConversation).not.toHaveBeenCalled();
+  expect(current.store.exportStateForTest().events).toHaveLength(0);
 });

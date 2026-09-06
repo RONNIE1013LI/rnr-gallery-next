@@ -2,6 +2,7 @@ export type ModelPricing = Readonly<{
   inputUsdPerMillion: number;
   cachedInputUsdPerMillion: number;
   outputUsdPerMillion: number;
+  cacheWriteUsdPerMillion?: number;
 }>;
 
 const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
@@ -9,6 +10,7 @@ const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
     inputUsdPerMillion: 0.2,
     cachedInputUsdPerMillion: 0.02,
     outputUsdPerMillion: 1.2,
+    cacheWriteUsdPerMillion: 0.25,
   },
 };
 
@@ -32,14 +34,17 @@ export function estimateCostMicrousd(input: Readonly<{
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
+  cacheWriteTokens?: number;
   pricing?: ModelPricing;
 }>) {
   const pricing = input.pricing ?? pricingForModel(input.model);
   const cached = Math.min(Math.max(0, input.inputTokens), Math.max(0, input.cachedInputTokens));
-  const uncached = Math.max(0, input.inputTokens - cached);
+  const writes = Math.min(Math.max(0, input.inputTokens - cached), Math.max(0, input.cacheWriteTokens ?? 0));
+  const uncached = Math.max(0, input.inputTokens - cached - writes);
   const usd = (
     uncached * pricing.inputUsdPerMillion
     + cached * pricing.cachedInputUsdPerMillion
+    + writes * (pricing.cacheWriteUsdPerMillion ?? pricing.inputUsdPerMillion)
     + Math.max(0, input.outputTokens) * pricing.outputUsdPerMillion
   ) / 1_000_000;
   return Math.round(usd * 1_000_000);

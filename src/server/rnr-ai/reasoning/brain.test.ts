@@ -6,7 +6,7 @@ import { reasoningContext, reasoningEvidence } from './evidence';
 import type { RnrAiRequest, ConversationTurn, ToolEvidence } from '../types';
 import type { Candidate, ClaimAudit } from './claim-contract';
 const base: Candidate = { mode: 'ANSWER', reply: 'A2 is 59.4 × 42 cm.', market: 'UNKNOWN', marketEvidenceTurn: null };
-const fact: ClaimAudit['claims'][number] = { span: base.reply, product: null, destination: null, orderReference: null, kind: 'product', sources: ['product-config'], marketDependent: false, amountMinor: null, currency: null, size: null, numericPath: null, liveRequired: false };
+const fact: ClaimAudit['claims'][number] = { span: base.reply, product: null, destination: null, orderReference: null, kind: 'product', sources: ['product-config'], marketDependent: false, amountMinor: null, currency: null, size: null, calculation: [], quantity: null, numericPath: null, liveRequired: false };
 function audit(candidate: Candidate = base, claims: ClaimAudit['claims'] = [fact], extra: Partial<ClaimAudit> = {}): ClaimAudit { return { mode: candidate.mode, market: candidate.market, marketEvidenceTurn: candidate.marketEvidenceTurn, openIssue: 'NONE', relevantCustomerTurnIds: ['t1'], claims, safe: true, helpful: true, clarificationOnly: candidate.mode === 'CLARIFICATION', customerInputRequest: candidate.mode === 'CLARIFICATION' ? candidate.reply : null, internalErrorLanguage: false, unnecessaryQuestion: false, issues: [], ...extra }; }
 function request(texts: [
     ConversationTurn['role'],
@@ -32,7 +32,7 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect(first.input[0].role).toBe('developer');
         expect(first.reasoning.effort).toBe('medium');
         expect(first.model).toBe('gpt-5.6-luna');
-        const data = JSON.parse(first.input[1].content[0].text);
+        const data = JSON.parse(first.input[0].content[0].text.split('Business reference data:\n')[1]);
         expect(data.evidence.find((s: {
             id: string;
         }) => s.id === 'au-photo-canvas-prices').facts.pricesMinor.A2).toBe(10999);
@@ -43,6 +43,14 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect(JSON.stringify(data)).not.toContain('private-hash');
         const checked = JSON.parse(String(h.fetchImpl.mock.calls[1][1]?.body));
         expect(JSON.parse(checked.input[1].content[0].text).candidate.reply).toBe(base.reply);
+        const variants = checked.text.format.schema.properties.claims.items.anyOf;
+        const allowedSources = variants[0].properties.sources.items.enum;
+        expect(allowedSources).toContain('au-photo-canvas-prices');
+        expect(allowedSources).not.toContain('au-photo-print-canvas-prices');
+        for (const variant of variants) {
+            expect(variant.properties.sources.items.enum).toEqual(allowedSources);
+            expect(variant.properties.calculation.items.properties.sourceId.enum).toEqual(allowedSources);
+        }
     });
     it('keeps a safe but repeatedly unhelpful clarification for review after one quality repair', async () => {
         const c: Candidate = { ...base, mode: 'CLARIFICATION', reply: 'Has the design been approved or printed?' };
@@ -67,6 +75,9 @@ describe('production structured Brain with mocked Responses transport (no paid m
             role: string;
         }) => t.role)).toEqual(['customer', 'staff', 'customer']);
         expect(sent.activeCustomerTurn.id).toBe('t3');
+        const schema = JSON.parse(String(h.fetchImpl.mock.calls[1][1]?.body)).text.format.schema;
+        expect(schema.properties.relevantCustomerTurnIds.items.enum).toEqual(['t1', 't3']);
+        expect(schema.properties.marketEvidenceTurn.anyOf[0].enum).toEqual(['t1', 't3']);
         expect(sent.resolvedThrough).toBeNull();
     });
     it('only treats adapter-owned automation metadata as an administrative resolution', () => {
@@ -107,6 +118,13 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect((await h.brain.generate(r)).risk).toBe('GREEN');
         expect(h.tools.execute).toHaveBeenCalledWith({ name: 'order_status', input: { customerReference: 'server-authenticated', orderReference: 'EVAL-42' } });
         expect(JSON.stringify(h.fetchImpl.mock.calls)).not.toContain('server-authenticated');
+        const schema = JSON.parse(String(h.fetchImpl.mock.calls[2][1]?.body)).text.format.schema;
+        expect(schema.properties.relevantCustomerTurnIds.items.enum).toEqual(['t1']);
+        expect(schema.properties.marketEvidenceTurn.anyOf[0].enum).toEqual(['t1']);
+        for (const variant of schema.properties.claims.items.anyOf) {
+            expect(variant.properties.sources.items.enum).toContain('tool-1');
+            expect(variant.properties.calculation.items.properties.sourceId.enum).toContain('tool-1');
+        }
     });
     it.each(['shipping_cost', 'delivery_promise', 'order_status', 'payment_status'] as const)('rejects %s supported only by static knowledge', async (kind) => {
         const c = { ...base, reply: 'Confirmed for your order.', market: 'AU' as const, marketEvidenceTurn: 't1' };
