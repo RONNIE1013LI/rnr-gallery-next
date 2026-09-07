@@ -142,6 +142,7 @@ export function ReplyAssistantClient({
   onRefresh,
   selectedReviewSelector = null,
   channelScope = "all",
+  takeoverRefreshRevision = 0,
 }: Readonly<{
   initialItems?: readonly ReplyQueueItem[];
   liveItems?: readonly ReplyQueueItem[];
@@ -149,6 +150,7 @@ export function ReplyAssistantClient({
   onRefresh?: () => void;
   selectedReviewSelector?: string | null;
   channelScope?: "all" | "website" | "facebook";
+  takeoverRefreshRevision?: number;
 }>) {
   const [fetchedItems, setFetchedItems] = useState<readonly ReplyQueueItem[]>(initialItems ?? []);
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
@@ -177,6 +179,11 @@ export function ReplyAssistantClient({
   const facebookReplyKeys = useRef(new Map<string, string>());
   const facebookReplySequence = useRef(0);
   const selectedCardRef = useRef<HTMLElement | null>(null);
+  const takeoverReadVersions = useRef(new Map<string, number>());
+  const takeoverReadControllers = useRef(new Map<string, AbortController>());
+  const observedTakeoverIds = useRef(new Set<string>());
+  const previousTakeoverRefreshRevision = useRef<number | null>(null);
+  const takeoverMutationsInFlight = useRef(new Set<string>());
 
   async function refresh() {
     if (liveItems !== undefined) {
@@ -241,6 +248,56 @@ export function ReplyAssistantClient({
   const visibleCount = visibleCounts[channelScope];
   const visibleItems = items.slice(0, visibleCount);
   const remainingCount = items.length - visibleItems.length;
+  const visibleTakeoverIds = visibleItems
+    .filter((item) => (item.channel === "facebook" || item.source === "redis_website") && /^[a-f0-9]{64}$/.test(item.inboxId))
+    .map((item) => item.inboxId);
+  const visibleTakeoverKey = visibleTakeoverIds.join(":");
+
+  useEffect(() => {
+    if (!visibleTakeoverKey) return;
+    const refreshAll = previousTakeoverRefreshRevision.current !== takeoverRefreshRevision;
+    previousTakeoverRefreshRevision.current = takeoverRefreshRevision;
+    const inboxIds = visibleTakeoverKey
+      .split(":")
+      .filter((inboxId) => !takeoverMutationsInFlight.current.has(inboxId))
+      .filter((inboxId) => refreshAll || !observedTakeoverIds.current.has(inboxId));
+    for (const inboxId of inboxIds) {
+      observedTakeoverIds.current.add(inboxId);
+      takeoverReadControllers.current.get(inboxId)?.abort();
+      const controller = new AbortController();
+      takeoverReadControllers.current.set(inboxId, controller);
+      const version = (takeoverReadVersions.current.get(inboxId) ?? 0) + 1;
+      takeoverReadVersions.current.set(inboxId, version);
+      void fetch(`/api/reply-assistant/conversations/${encodeURIComponent(inboxId)}/takeover`, {
+        cache: "no-store",
+        headers: { accept: "application/json" },
+        signal: controller.signal,
+      }).then(async (response) => {
+        if (!response.ok) throw new Error("takeover_read_failed");
+        const state = await response.json() as Omit<TakeoverUiState, "status">;
+        if (takeoverReadVersions.current.get(inboxId) === version) {
+          setTakeovers((states) => ({ ...states, [inboxId]: { status: "ready", ...state } }));
+        }
+      }).catch(() => {
+        if (!controller.signal.aborted && takeoverReadVersions.current.get(inboxId) === version) setTakeovers((states) => ({
+          ...states,
+          [inboxId]: { status: "error", active: false, source: null, changedAt: null },
+        }));
+      }).finally(() => {
+        if (takeoverReadControllers.current.get(inboxId) === controller) {
+          takeoverReadControllers.current.delete(inboxId);
+        }
+      });
+    }
+  }, [visibleTakeoverKey, takeoverRefreshRevision]);
+
+  useEffect(() => () => {
+    for (const controller of takeoverReadControllers.current.values()) controller.abort();
+    takeoverReadControllers.current.clear();
+    takeoverReadVersions.current.clear();
+    observedTakeoverIds.current.clear();
+    previousTakeoverRefreshRevision.current = null;
+  }, []);
 
   useEffect(() => {
     selectedCardRef.current?.scrollIntoView?.({ block: "nearest" });
@@ -353,7 +410,10 @@ export function ReplyAssistantClient({
   }
 
   async function sendFacebookReply(item: ReplyQueueItem, current: ReviewState) {
-    if (!item.latestAttemptId || !/^[a-f0-9]{64}$/.test(item.inboxId) || facebookReplyInFlight.current.has(item.inboxId)) return;
+    if (!item.latestAttemptId
+      || !/^[a-f0-9]{64}$/.test(item.inboxId)
+      || facebookReplyInFlight.current.has(item.inboxId)
+      || takeoverMutationsInFlight.current.has(item.inboxId)) return;
     const attemptId = item.latestAttemptId;
     const text = current.text.trim();
     if (!text || Array.from(text).length > 2_000) return;
@@ -361,6 +421,10 @@ export function ReplyAssistantClient({
     const idempotencyKey = facebookReplyKeys.current.get(intent) ?? `facebook-send-${++facebookReplySequence.current}`;
     facebookReplyKeys.current.set(intent, idempotencyKey);
     facebookReplyInFlight.current.add(item.inboxId);
+    takeoverMutationsInFlight.current.add(item.inboxId);
+    takeoverReadControllers.current.get(item.inboxId)?.abort();
+    takeoverReadControllers.current.delete(item.inboxId);
+    takeoverReadVersions.current.set(item.inboxId, (takeoverReadVersions.current.get(item.inboxId) ?? 0) + 1);
     setFacebookReplies((states) => ({ ...states, [item.inboxId]: { attemptId, status: "sending" } }));
     try {
       const response = await fetch("/api/reply-assistant/facebook-replies", {
@@ -394,10 +458,19 @@ export function ReplyAssistantClient({
         ? "error"
         : code === "FACEBOOK_REPLY_UNAVAILABLE" ? "unavailable" : "uncertain";
       setFacebookReplies((states) => ({ ...states, [item.inboxId]: { attemptId, status } }));
+      setTakeovers((states) => states[item.inboxId]?.status === "ready" ? states : ({
+        ...states,
+        [item.inboxId]: { status: "error", active: false, source: null, changedAt: null },
+      }));
     } catch {
       setFacebookReplies((states) => ({ ...states, [item.inboxId]: { attemptId, status: "uncertain" } }));
+      setTakeovers((states) => states[item.inboxId]?.status === "ready" ? states : ({
+        ...states,
+        [item.inboxId]: { status: "error", active: false, source: null, changedAt: null },
+      }));
     } finally {
       facebookReplyInFlight.current.delete(item.inboxId);
+      takeoverMutationsInFlight.current.delete(item.inboxId);
     }
   }
 
@@ -445,22 +518,12 @@ export function ReplyAssistantClient({
     }
   }
 
-  async function readTakeover(item: ReplyQueueItem) {
-    setTakeovers((states) => ({ ...states, [item.inboxId]: { status: "loading", active: false, source: null, changedAt: null } }));
-    try {
-      const response = await fetch(`/api/reply-assistant/conversations/${encodeURIComponent(item.inboxId)}/takeover`, {
-        cache: "no-store",
-        headers: { accept: "application/json" },
-      });
-      if (!response.ok) throw new Error("takeover_read_failed");
-      const state = await response.json() as Omit<TakeoverUiState, "status">;
-      setTakeovers((states) => ({ ...states, [item.inboxId]: { status: "ready", ...state } }));
-    } catch {
-      setTakeovers((states) => ({ ...states, [item.inboxId]: { status: "error", active: false, source: null, changedAt: null } }));
-    }
-  }
-
   async function mutateTakeover(item: ReplyQueueItem, active: boolean) {
+    if (takeoverMutationsInFlight.current.has(item.inboxId)) return;
+    takeoverMutationsInFlight.current.add(item.inboxId);
+    takeoverReadControllers.current.get(item.inboxId)?.abort();
+    takeoverReadControllers.current.delete(item.inboxId);
+    takeoverReadVersions.current.set(item.inboxId, (takeoverReadVersions.current.get(item.inboxId) ?? 0) + 1);
     const previous = takeovers[item.inboxId] ?? { status: "unknown", active: false, source: null, changedAt: null };
     setTakeovers((states) => ({ ...states, [item.inboxId]: { ...previous, status: "loading" } }));
     try {
@@ -474,6 +537,8 @@ export function ReplyAssistantClient({
       setTakeovers((states) => ({ ...states, [item.inboxId]: { status: "ready", ...state } }));
     } catch {
       setTakeovers((states) => ({ ...states, [item.inboxId]: { ...previous, status: "error" } }));
+    } finally {
+      takeoverMutationsInFlight.current.delete(item.inboxId);
     }
   }
 
@@ -534,17 +599,15 @@ export function ReplyAssistantClient({
                     ? "AI handling status unavailable"
                     : takeovers[item.inboxId]?.status === "ready"
                       ? takeovers[item.inboxId]?.active ? "Human takeover active" : "AI handling available"
-                      : "AI handling status not checked"}
+                      : "Checking AI handling…"}
                 </span>
                 {takeovers[item.inboxId]?.status === "ready" ? (
                   takeovers[item.inboxId]?.active ? (
-                    <button type="button" disabled={takeovers[item.inboxId]?.status === "loading"} onClick={() => void mutateTakeover(item, false)}>Release conversation to AI</button>
+                    <button type="button" disabled={facebookReply?.status === "sending"} onClick={() => void mutateTakeover(item, false)}>Release conversation to AI</button>
                   ) : (
-                    <button type="button" disabled={takeovers[item.inboxId]?.status === "loading"} onClick={() => void mutateTakeover(item, true)}>Take over conversation</button>
+                    <button type="button" disabled={facebookReply?.status === "sending"} onClick={() => void mutateTakeover(item, true)}>Take over conversation</button>
                   )
-                ) : (
-                  <button type="button" disabled={takeovers[item.inboxId]?.status === "loading"} onClick={() => void readTakeover(item)}>Check AI handling</button>
-                )}
+                ) : null}
               </div>
             ) : null}
             <div className={styles.messageBody}>
@@ -665,7 +728,7 @@ export function ReplyAssistantClient({
                   <button
                     type="button"
                     data-variant="primary"
-                    disabled={!current.text.trim() || Array.from(current.text.trim()).length > 2_000 || !item.latestAttemptId || serverChanged || facebookReply?.status === "sending" || facebookReply?.status === "sent" || facebookReply?.status === "unavailable" || facebookReply?.status === "uncertain"}
+                    disabled={!current.text.trim() || Array.from(current.text.trim()).length > 2_000 || !item.latestAttemptId || serverChanged || takeovers[item.inboxId]?.status === "loading" || facebookReply?.status === "sending" || facebookReply?.status === "sent" || facebookReply?.status === "unavailable" || facebookReply?.status === "uncertain"}
                     onClick={() => void sendFacebookReply(item, current)}
                   >{facebookReply?.status === "sending" ? "Sending…" : "Send to Facebook"}</button>
                   {current.mode === "editing" ? (

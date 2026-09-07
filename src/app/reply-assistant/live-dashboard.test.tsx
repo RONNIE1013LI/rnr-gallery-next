@@ -36,7 +36,7 @@ const channelCounts = (sessions: number, directTemplateReplies: number) => ({
 });
 
 const baseItem = {
-  inboxId: "a".repeat(64),
+  inboxId: "dashboard-test-inbox",
   channel: "facebook" as const,
   latestMessageId: "11111111-1111-4111-8111-111111111111",
   lastActivityAt: "2026-08-20T00:00:00.000Z",
@@ -705,6 +705,30 @@ describe("ReplyAssistantLiveDashboard", () => {
 
     await advance(15_000);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries conversation takeover status after a no-change conversation refresh", async () => {
+    const liveItem = { ...baseItem, inboxId: "a".repeat(64), source: "shared_meta" as const };
+    let takeoverReads = 0;
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith("/takeover")) {
+        takeoverReads += 1;
+        return takeoverReads === 1
+          ? new Response(null, { status: 503 })
+          : response({ active: false, source: null, changedAt: null });
+      }
+      return response(emptyUpdate());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ReplyAssistantLiveDashboard {...props} initialItems={[liveItem]} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("AI handling status unavailable")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh conversations" }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled();
+    expect(takeoverReads).toBe(2);
   });
 });
 

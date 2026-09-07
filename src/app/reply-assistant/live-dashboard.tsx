@@ -205,6 +205,7 @@ export function ReplyAssistantLiveDashboard({
   const [initialHistoryState, setInitialHistoryState] = useState<"loading" | "ready" | "failed">(loadInitialData ? "loading" : "ready");
   const [messageLoadAttempt, setMessageLoadAttempt] = useState(0);
   const [historyLoadAttempt, setHistoryLoadAttempt] = useState(0);
+  const [takeoverRefreshRevision, setTakeoverRefreshRevision] = useState(0);
   const cursorRef = useRef(initialCursor);
   const itemsRef = useRef(initialItems);
   const activeControllerRef = useRef<AbortController | null>(null);
@@ -327,6 +328,7 @@ export function ReplyAssistantLiveDashboard({
       }
       if (update.learningCandidates) setLearningCandidates(update.learningCandidates.items);
       if (update.caseMemories) setCaseMemories(update.caseMemories.items);
+      setTakeoverRefreshRevision((revision) => revision + 1);
       cursorRef.current = update.cursor;
       setLastUpdatedAt(new Date());
       setRefreshState("idle");
@@ -457,6 +459,7 @@ export function ReplyAssistantLiveDashboard({
           onRefresh={() => { void refresh(); }}
           selectedReviewSelector={selectedReviewSelector}
           channelScope={channelScope}
+          takeoverRefreshRevision={takeoverRefreshRevision}
         /> : null}
       </section>
     </div>

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { formatReplyReceivedAt, ReplyAssistantClient, type ReplyQueueItem } from "./reply-assistant-client";
 
@@ -24,6 +25,10 @@ const item = {
   hasEarlierTimeline: false,
 };
 const websiteSelector = `wrs1.m8k6x0.${"A".repeat(43)}`;
+const takeoverAvailable = () => Response.json({ active: false, source: null, changedAt: null });
+const isTakeoverRead = (url: unknown, init?: RequestInit) =>
+  String(url).endsWith("/takeover") && (!init?.method || init.method === "GET");
+const nonTakeoverCalls = () => vi.mocked(fetch).mock.calls.filter(([url, init]) => !isTakeoverRead(url, init));
 
 describe("ReplyAssistantClient", () => {
   beforeEach(() => {
@@ -31,14 +36,14 @@ describe("ReplyAssistantClient", () => {
     Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => undefined) } });
   });
 
-  it("shared Meta offers a real external send handoff without legacy draft actions", () => {
+  it("shared Meta offers a real external send handoff without legacy draft actions", async () => {
     render(<ReplyAssistantClient initialItems={[{ ...item, source: "shared_meta", draftText: null, latestAttemptId: null, status: "page_replied", timeline: [{ ...item.timeline[1], pageOutbound: true }] }]} />);
     expect(screen.getByRole("link", { name: "Meta Business Suite" })).toHaveAttribute("href", "https://business.facebook.com/latest/inbox");
     expect(screen.getByText("Page reply")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Generate AI Reply" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send to Facebook" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Check AI handling" })).toBeInTheDocument();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "Check AI handling" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
   });
 
   it("formats received times in a fixed timezone for stable hydration", () => {
@@ -65,7 +70,8 @@ describe("ReplyAssistantClient", () => {
         takeover: { active: true, source: "admin", changedAt: "2026-09-04T00:00:00.000Z" },
       }), { status: 201 }));
     });
-    vi.stubGlobal("fetch", vi.fn((_url, init) => {
+    vi.stubGlobal("fetch", vi.fn((url, init) => {
+      if (isTakeoverRead(url, init)) return Promise.resolve(takeoverAvailable());
       sentBodies.push(JSON.parse(String(init?.body)));
       return pending;
     }));
@@ -73,12 +79,14 @@ describe("ReplyAssistantClient", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("Reply draft"), { target: { value: "The current human-edited reply" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
     const send = screen.getByRole("button", { name: "Send to Facebook" });
     fireEvent.click(send);
     fireEvent.click(send);
 
     expect(send).toBeDisabled();
     expect(screen.getByRole("button", { name: "Sending…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Take over conversation" })).toBeDisabled();
     expect(sentBodies).toHaveLength(1);
     expect(sentBodies[0]).toMatchObject({
       inboxId: item.inboxId,
@@ -118,6 +126,34 @@ describe("ReplyAssistantClient", () => {
 
     view.rerender(<ReplyAssistantClient initialItems={[item]} liveItems={[sentItem]} />);
     expect(within(screen.getByRole("region", { name: "Conversation timeline" })).getAllByText(sentEvent.text)).toHaveLength(1);
+  });
+
+  it("ignores an automatic takeover read that finishes after a Facebook reply activates takeover", async () => {
+    let finishTakeoverRead!: () => void;
+    const delayedTakeoverRead = new Promise<Response>((resolve) => {
+      finishTakeoverRead = () => resolve(takeoverAvailable());
+    });
+    const sentItem = { ...item, humanReplyReceived: true };
+    const fetchMock = vi.fn((url, init) => {
+      if (isTakeoverRead(url, init)) return delayedTakeoverRead;
+      return Promise.resolve(new Response(JSON.stringify({
+        status: "sent",
+        item: sentItem,
+        takeover: { active: true, source: "admin", changedAt: "2026-09-04T00:00:00.000Z" },
+      }), { status: 201 }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ReplyAssistantClient initialItems={[item]} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Send to Facebook" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Release conversation to AI" })).toBeEnabled());
+    await act(async () => {
+      finishTakeoverRead();
+      await delayedTakeoverRead;
+    });
+
+    expect(screen.getByRole("button", { name: "Release conversation to AI" })).toBeEnabled();
   });
 
   it("lets a newer live item replace sent-cache fields and retires the echoed sent timeline", async () => {
@@ -182,7 +218,7 @@ describe("ReplyAssistantClient", () => {
       new Response(JSON.stringify({ error: { code: "META_SEND_FAILED" } }), { status: 502 }),
       new Response(JSON.stringify({ error: { code: "DELIVERY_UNCERTAIN" } }), { status: 409 }),
     ];
-    vi.stubGlobal("fetch", vi.fn(async () => responses.shift()!));
+    vi.stubGlobal("fetch", vi.fn(async (url, init) => isTakeoverRead(url, init) ? takeoverAvailable() : responses.shift()!));
     render(<ReplyAssistantClient initialItems={[item]} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Send to Facebook" }));
@@ -205,14 +241,14 @@ describe("ReplyAssistantClient", () => {
   it("sends one feedback request when acceptance is double-clicked before the response settles", async () => {
     let release!: () => void;
     const pending = new Promise<Response>((resolve) => { release = () => resolve(new Response(JSON.stringify({ recorded: true }), { status: 201 })); });
-    vi.stubGlobal("fetch", vi.fn(() => pending));
+    vi.stubGlobal("fetch", vi.fn((url, init) => isTakeoverRead(url, init) ? Promise.resolve(takeoverAvailable()) : pending));
     render(<ReplyAssistantClient initialItems={[item]} />);
 
     const accept = screen.getByRole("button", { name: "Accept unchanged" });
     fireEvent.click(accept);
     fireEvent.click(accept);
 
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(nonTakeoverCalls()).toHaveLength(1);
     expect(accept).toBeDisabled();
     release();
     await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
@@ -220,7 +256,8 @@ describe("ReplyAssistantClient", () => {
 
   it("shows failed feedback and reuses its idempotency key on retry", async () => {
     const bodies: unknown[] = [];
-    vi.stubGlobal("fetch", vi.fn(async (_url, init) => {
+    vi.stubGlobal("fetch", vi.fn(async (url, init) => {
+      if (isTakeoverRead(url, init)) return takeoverAvailable();
       bodies.push(JSON.parse(String(init?.body)));
       return new Response(null, { status: 503 });
     }));
@@ -229,7 +266,7 @@ describe("ReplyAssistantClient", () => {
     fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("We could not save this review. Please try again."));
     fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(nonTakeoverCalls()).toHaveLength(2));
 
     expect(bodies).toHaveLength(2);
     expect((bodies[0] as { idempotencyKey: string }).idempotencyKey)
@@ -281,7 +318,7 @@ describe("ReplyAssistantClient", () => {
     await waitFor(() => expect(accept).toBeDisabled());
     fireEvent.click(accept);
 
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(nonTakeoverCalls()).toHaveLength(1);
   });
 
   it("supports an edited human final reply", async () => {
@@ -359,7 +396,7 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
   });
 
-  it("checks, activates, and releases Meta human takeover using only the hashed selector", async () => {
+  it("automatically checks, activates, and releases Meta human takeover using only the hashed selector", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ active: false, source: null, changedAt: null })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ active: true, source: "admin", changedAt: "2026-09-04T00:00:00.000Z" })))
@@ -367,8 +404,8 @@ describe("ReplyAssistantClient", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<ReplyAssistantClient initialItems={[item]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Check AI handling" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
+    expect(screen.queryByRole("button", { name: "Check AI handling" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Take over conversation" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Release conversation to AI" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Release conversation to AI" }));
@@ -376,6 +413,115 @@ describe("ReplyAssistantClient", () => {
 
     expect(fetchMock.mock.calls.every(([url]) => String(url).includes(item.inboxId))).toBe(true);
     expect(JSON.stringify(fetchMock.mock.calls)).not.toMatch(/psid|customer name/i);
+  });
+
+  it("automatically checks website human takeover", async () => {
+    const websiteItem = { ...item, channel: "website" as const, source: "redis_website" as const };
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({
+      active: true,
+      source: "admin",
+      changedAt: "2026-09-04T00:00:00.000Z",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReplyAssistantClient initialItems={[websiteItem]} />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Release conversation to AI" })).toBeEnabled());
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`/api/reply-assistant/conversations/${websiteItem.inboxId}/takeover`);
+  });
+
+  it("automatically retries an unavailable takeover status when the refresh revision changes", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(takeoverAvailable());
+    vi.stubGlobal("fetch", fetchMock);
+    const liveItems = [item];
+    const view = render(<ReplyAssistantClient initialItems={[item]} liveItems={liveItems} takeoverRefreshRevision={0} />);
+    await screen.findByText("AI handling status unavailable");
+
+    view.rerender(<ReplyAssistantClient initialItems={[item]} liveItems={liveItems} takeoverRefreshRevision={1} />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not refetch takeover state for unrelated rerenders", async () => {
+    const fetchMock = vi.fn(async () => takeoverAvailable());
+    vi.stubGlobal("fetch", fetchMock);
+    const view = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} takeoverRefreshRevision={0} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
+
+    view.rerender(<ReplyAssistantClient initialItems={[item]} liveItems={[{ ...item }]} takeoverRefreshRevision={0} />);
+
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an automatic read that finishes after a newer takeover mutation", async () => {
+    let finishRefresh!: () => void;
+    const delayedRefresh = new Promise<Response>((resolve) => {
+      finishRefresh = () => resolve(takeoverAvailable());
+    });
+    let getCount = 0;
+    const fetchMock = vi.fn((url, init) => {
+      if (isTakeoverRead(url, init)) {
+        getCount += 1;
+        return getCount === 1 ? Promise.resolve(takeoverAvailable()) : delayedRefresh;
+      }
+      return Promise.resolve(Response.json({ active: true, source: "admin", changedAt: "2026-09-04T00:01:00.000Z" }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const liveItems = [item];
+    const view = render(<ReplyAssistantClient initialItems={[item]} liveItems={liveItems} takeoverRefreshRevision={0} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
+
+    view.rerender(<ReplyAssistantClient initialItems={[item]} liveItems={liveItems} takeoverRefreshRevision={1} />);
+    fireEvent.click(screen.getByRole("button", { name: "Take over conversation" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Release conversation to AI" })).toBeEnabled());
+    finishRefresh();
+
+    await Promise.resolve();
+    expect(screen.getByRole("button", { name: "Release conversation to AI" })).toBeEnabled();
+  });
+
+  it("does not start a refresh read while a takeover mutation is pending", async () => {
+    let finishMutation!: () => void;
+    const mutation = new Promise<Response>((resolve) => {
+      finishMutation = () => resolve(Response.json({ active: true, source: "admin", changedAt: "2026-09-04T00:01:00.000Z" }));
+    });
+    let getCount = 0;
+    const fetchMock = vi.fn((url, init) => {
+      if (!isTakeoverRead(url, init)) return mutation;
+      getCount += 1;
+      return Promise.resolve(takeoverAvailable());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const liveItems = [item];
+    const view = render(<ReplyAssistantClient initialItems={[item]} liveItems={liveItems} takeoverRefreshRevision={0} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Take over conversation" }));
+    expect(screen.getByRole("button", { name: "Send to Facebook" })).toBeDisabled();
+    view.rerender(<ReplyAssistantClient initialItems={[item]} liveItems={liveItems} takeoverRefreshRevision={1} />);
+    expect(getCount).toBe(1);
+    finishMutation();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Release conversation to AI" })).toBeEnabled());
+  });
+
+  it("restarts the automatic takeover read after a Strict Mode effect cleanup", async () => {
+    const fetchMock = vi.fn<typeof fetch>((_url, init) => new Promise<Response>((resolve, reject) => {
+      if (fetchMock.mock.calls.length === 2) {
+        resolve(takeoverAvailable());
+        return;
+      }
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<StrictMode><ReplyAssistantClient initialItems={[item]} /></StrictMode>);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("pins a deep-linked website review even when 100 newer live items exist", () => {
@@ -664,9 +810,11 @@ describe("ReplyAssistantClient", () => {
 
   it("loads a metadata-only shared Meta conversation using its supported lazy-history cursor", async () => {
     const pending: ReplyQueueItem = { ...item, source: "shared_meta", status: "history_pending", timeline: [], hasEarlierTimeline: true, latestAttemptId: null, draftText: null, gateResult: null };
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ events: [{ eventId: "meta:history", role: "customer", text: "Loaded Meta history", receivedAt: item.lastActivityAt }], cursor: null, hasEarlier: false })));
+    vi.stubGlobal("fetch", vi.fn(async (url, init) => isTakeoverRead(url, init)
+      ? takeoverAvailable()
+      : Response.json({ events: [{ eventId: "meta:history", role: "customer", text: "Loaded Meta history", receivedAt: item.lastActivityAt }], cursor: null, hasEarlier: false })));
     render(<ReplyAssistantClient initialItems={[pending]} />);
-    expect(fetch).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Load earlier conversation history" }));
     expect(await screen.findByText("Loaded Meta history")).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith(`/api/reply-assistant/inbox/${pending.inboxId}/timeline?cursor=meta%3A${pending.inboxId}`, expect.objectContaining({ cache: "no-store" }));
@@ -830,8 +978,8 @@ describe("ReplyAssistantClient", () => {
     const acceptEdit = screen.getByRole("button", { name: "Accept edit" });
     expect(acceptEdit).toBeEnabled();
     fireEvent.click(acceptEdit);
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-    expect(String(vi.mocked(fetch).mock.calls[1]?.[0])).toContain(`/drafts/${replacementAttemptId}/feedback`);
+    await waitFor(() => expect(nonTakeoverCalls()).toHaveLength(2));
+    expect(String(nonTakeoverCalls()[1]?.[0])).toContain(`/drafts/${replacementAttemptId}/feedback`);
   });
 
   it("allows adopting a replacement while prior-attempt feedback is still in flight", async () => {
@@ -843,9 +991,12 @@ describe("ReplyAssistantClient", () => {
     const replacementPending = new Promise<Response>((resolve) => {
       releaseReplacement = () => resolve(new Response(JSON.stringify({ recorded: true }), { status: 201 }));
     });
-    vi.stubGlobal("fetch", vi.fn()
-      .mockImplementationOnce(() => priorPending)
-      .mockImplementationOnce(() => replacementPending));
+    let feedbackCall = 0;
+    vi.stubGlobal("fetch", vi.fn((url, init) => {
+      if (isTakeoverRead(url, init)) return Promise.resolve(takeoverAvailable());
+      feedbackCall += 1;
+      return feedbackCall === 1 ? priorPending : replacementPending;
+    }));
     const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
@@ -860,7 +1011,7 @@ describe("ReplyAssistantClient", () => {
     const acceptEdit = screen.getByRole("button", { name: "Accept edit" });
     expect(acceptEdit).toBeEnabled();
     fireEvent.click(acceptEdit);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(nonTakeoverCalls()).toHaveLength(2);
     expect(acceptEdit).toBeDisabled();
 
     releasePrior();
