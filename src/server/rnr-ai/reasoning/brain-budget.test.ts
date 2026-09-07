@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadBusinessBrain } from '../business-brain/loader';
 import { SolProviderError, type SolProviderRequest } from '../providers/openai-sol';
 import type { ConversationTurn, RnrAiRequest } from '../types';
-import { BRAIN_BUDGET_MS, REPAIR_ADMISSION_MS, STAGE_BUDGET_MS, STAGE_RETRY_MINIMUM_MS, generateReasonedReply, type StructuredProvider } from './brain';
+import { AUDIT_REPAIR_ADMISSION_MS, BRAIN_BUDGET_MS, REPAIR_ADMISSION_MS, STAGE_BUDGET_MS, STAGE_RETRY_MINIMUM_MS, generateReasonedReply, type StructuredProvider } from './brain';
 import type { Candidate, ClaimAudit } from './claim-contract';
 
 const candidate: Candidate = { mode: 'ANSWER', reply: 'A2 is 59.4 x 42 cm.', market: 'UNKNOWN', marketEvidenceTurn: null };
@@ -71,6 +71,35 @@ describe('reasoning stage budgets', () => {
       expect(JSON.stringify(contracts)).not.toMatch(/What size|59\.4|private-message|safe-hash/);
     } finally { spy.mockRestore(); vi.useRealTimers(); }
   });
+  it('admits a bounded repair at the observed generation and verification latency boundary', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const repaired = { ...candidate, reply: 'A2 measures 59.4 x 42 cm.' };
+      const repairedAudit = { ...audit(true), claims: [{ ...claim, span: repaired.reply }] };
+      const current = delayedProvider([plan(), audit(false), repaired, repairedAudit], [11_306, 10_889, 3_500, 8_000]);
+      const pending = generateReasonedReply(request(), current.provider, { execute: vi.fn() }, { deadlineAt: BRAIN_BUDGET_MS });
+      await vi.advanceTimersByTimeAsync(33_696);
+
+      await expect(pending).resolves.toMatchObject({ risk: 'GREEN', nextAction: 'AUTO_REPLY_ELIGIBLE', replyText: repaired.reply });
+      expect(current.requests).toHaveLength(4);
+    } finally { vi.useRealTimers(); }
+  });
+  it('re-audits safe claim bindings without reserving time for an unnecessary rewrite', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const invalidAudit = { ...audit(true), claims: [{ ...claim, span: 'missing span' }] };
+      const current = delayedProvider([plan(), invalidAudit, audit(true)], [11_306, 16_000, 8_000]);
+      const pending = generateReasonedReply(request(), current.provider, { execute: vi.fn() }, { deadlineAt: BRAIN_BUDGET_MS });
+      await vi.advanceTimersByTimeAsync(35_307);
+
+      await expect(pending).resolves.toMatchObject({ risk: 'GREEN', nextAction: 'AUTO_REPLY_ELIGIBLE', replyText: candidate.reply });
+      expect(current.requests).toHaveLength(3);
+      expect(BRAIN_BUDGET_MS - 27_306).toBeGreaterThanOrEqual(AUDIT_REPAIR_ADMISSION_MS);
+      expect(BRAIN_BUDGET_MS - 27_306).toBeLessThan(REPAIR_ADMISSION_MS);
+    } finally { vi.useRealTimers(); }
+  });
 
   it('keeps a timely generation and verification on the normal GREEN path', async () => {
     vi.useFakeTimers();
@@ -136,22 +165,23 @@ describe('reasoning stage budgets', () => {
       const toolPlan = { ...candidate, market: 'AU' as const, marketEvidenceTurn: 't1', requestedTools: [{ name: 'dynamic_shipping_quote' as const, input: { product: 'photo_print_canvas', size: 'A2', destination: 'Sydney', orderReference: null } }] };
       const current = delayedProvider([toolPlan, plan(candidate), audit(false)], [1_000, 1_000, 1_000]);
       const tools = { execute: vi.fn(async () => {
-        await new Promise(resolve => setTimeout(resolve, 20_000));
+        await new Promise(resolve => setTimeout(resolve, 20_001));
         return { tool: 'dynamic_shipping_quote' as const, status: 'failed' as const, source: 'offline', facts: {} };
       }) };
       const pending = generateReasonedReply(request(), current.provider, tools, { deadlineAt: BRAIN_BUDGET_MS });
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(30_001);
 
       await expect(pending).resolves.toMatchObject({ risk: 'RED', nextAction: 'HUMAN_REVIEW', reasons: expect.arrayContaining(['semantic_verification_failed']) });
       expect(current.requests).toHaveLength(3);
-      expect(BRAIN_BUDGET_MS - 23_000).toBeLessThan(REPAIR_ADMISSION_MS);
+      expect(BRAIN_BUDGET_MS - 23_001).toBeLessThan(REPAIR_ADMISSION_MS);
     } finally { vi.useRealTimers(); }
   });
 
   it('keeps the approved stage and total budget constants exact', () => {
     expect(STAGE_BUDGET_MS).toEqual({ generation: 12_000, verification: 40_000, repair: 7_000, repair_verification: 40_000 });
     expect(BRAIN_BUDGET_MS).toBe(40_000);
-    expect(REPAIR_ADMISSION_MS).toBe(19_000);
+    expect(REPAIR_ADMISSION_MS).toBe(17_000);
+    expect(AUDIT_REPAIR_ADMISSION_MS).toBe(10_000);
     expect(STAGE_RETRY_MINIMUM_MS).toEqual({ generation: 3_500, verification: 8_000 });
   });
   it('allows a thoughtful generation beyond seven seconds and still verifies within the outer cap', async () => {

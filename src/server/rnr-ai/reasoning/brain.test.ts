@@ -30,6 +30,7 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect(h.tools.execute).not.toHaveBeenCalled();
         const first = JSON.parse(String(h.fetchImpl.mock.calls[0][1]?.body));
         expect(first.input[0].role).toBe('developer');
+        expect(first.input[0].content[0].text).toContain('ask for the missing delivery input directly without adding an inclusion or exclusion assertion');
         expect(first.reasoning.effort).toBe('medium');
         expect(first.model).toBe('gpt-5.6-luna');
         const data = JSON.parse(first.input[0].content[0].text.split('Business reference data:\n')[1]);
@@ -308,6 +309,20 @@ describe('audit coverage repair', () => {
         expect(await h.brain.generate(request())).toMatchObject({ risk: 'GREEN', replyText: base.reply });
         const payload = JSON.parse(JSON.parse(String(h.fetchImpl.mock.calls[2][1]?.body)).input[1].content[0].text);
         expect(payload.contractFeedback).toMatchObject({ failures: ['claim_span_not_in_candidate'], invalidClaimSpans: ['This span does not exist.'] });
+    });
+    it('re-audits the unchanged safe candidate when claim bindings fail the deterministic contract', async () => {
+        const single: Candidate = { ...c, reply: 'A2 photo canvas costs AUD109.99.' };
+        const correct = audit(single, [price]);
+        const wrongProduct = audit(single, [{ ...price, product: 'digital-oil-painting-canvas' }]);
+        const h = harness([plan(single), wrongProduct, correct]);
+
+        await expect(h.brain.generate(request([['customer', 'What does A2 photo canvas cost in Australia?']])))
+            .resolves.toMatchObject({ risk: 'GREEN', replyText: single.reply, nextAction: 'AUTO_REPLY_ELIGIBLE' });
+        expect(h.fetchImpl).toHaveBeenCalledTimes(3);
+        const payload = JSON.parse(JSON.parse(String(h.fetchImpl.mock.calls[2][1]?.body)).input[1].content[0].text);
+        expect(payload.candidate).toMatchObject(single);
+        expect(payload.previousCandidate).toBeUndefined();
+        expect(payload.contractFeedback.failures).toEqual(['product_source_binding_mismatch']);
     });
 });
 

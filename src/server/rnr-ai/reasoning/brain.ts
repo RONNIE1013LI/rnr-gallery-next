@@ -14,8 +14,10 @@ export const BRAIN_BUDGET_MS = 40_000;
 const DEFAULT_EXECUTION_BUDGET_MS = 24_000;
 // Both independent verification passes may use the remaining outer request budget.
 export const STAGE_BUDGET_MS = Object.freeze({ generation: 12_000, verification: BRAIN_BUDGET_MS, repair: 7_000, repair_verification: BRAIN_BUDGET_MS });
-// Admit a rewrite only with at least 7s generation + 11s verification + 1s margin.
-export const REPAIR_ADMISSION_MS = 19_000;
+// Admit a rewrite with the full 7s repair stage, the verifier's 8s retry floor,
+// and 2s of orchestration margin. Every stage still fails closed at the outer cap.
+export const REPAIR_ADMISSION_MS = 17_000;
+export const AUDIT_REPAIR_ADMISSION_MS = 10_000;
 export const STAGE_RETRY_MINIMUM_MS = Object.freeze({ generation: 3_500, verification: 8_000 });
 export type ReasoningExecutionOptions = Readonly<{ deadlineAt?: number }>;
 type Tools = {
@@ -135,11 +137,14 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
         // Quality is separate from factual risk, but a material defect still requires a
         // bounded rewrite and fresh verification before an autonomous reply.
         const needsQualityRepair = () => !audit.helpful || audit.unnecessaryQuestion;
-        if ((contract.risk === 'RED' || needsQualityRepair()) && deadlineAt - Date.now() >= REPAIR_ADMISSION_MS) {
+        // If the verifier says the text is safe but its structured claim bindings fail,
+        // re-audit the unchanged text. Rewriting a correct customer reply cannot repair
+        // verifier metadata and adds an unnecessary model call.
+        const repairAuditOnly = audit.safe && !needsQualityRepair() && contract.failures.length > 0;
+        const repairAdmissionMs = repairAuditOnly ? AUDIT_REPAIR_ADMISSION_MS : REPAIR_ADMISSION_MS;
+        if ((contract.risk === 'RED' || needsQualityRepair()) && deadlineAt - Date.now() >= repairAdmissionMs) {
             const original = { candidate, audit, contract };
             try {
-                const repairAuditOnly = audit.safe && !needsQualityRepair() && contract.failures.length > 0
-                    && contract.failures.every(failure => failure === 'uncovered_money_claim' || failure === 'claim_span_not_in_candidate');
                 const contractFeedback = repairAuditOnly ? { failures: contract.failures, ...auditCoverageFeedback(candidate, audit, true) } : null;
                 verificationSuccess = false;
                 if (!repairAuditOnly) {
