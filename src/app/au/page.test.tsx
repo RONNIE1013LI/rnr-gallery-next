@@ -61,11 +61,11 @@ describe("Australia storefront", () => {
     render(await AustraliaPage());
 
     expect(screen.getByRole("heading", {
-      name: "From your photos to the piece you imagined.",
+      name: "Custom Canvas & Banners, made for your story.",
     })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Custom artwork for Australia." }))
       .not.toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Start With Your Photos" })[0])
+    expect(screen.getAllByRole("link", { name: "Choose Your Product" })[0])
       .toHaveAttribute("href", "/au/shop");
     expect(screen.getByRole("link", { name: "Shop Roll-up Banners" })).toHaveAttribute(
       "href",

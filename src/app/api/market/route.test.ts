@@ -51,7 +51,7 @@ function urgentCart() {
       clientItemId: "00000000-0000-4000-8000-000000000010",
       productKey: "custom-themed-canvas", sizeKey: "a3", orientation: "landscape",
       peoplePets: 0, photoSubmissionMethod: "upload", designText: "Family portrait",
-      notes: "Warm colours", neededDate: "2026-08-28", urgentServiceConfirmed: false,
+      notes: "Warm colours", neededDate: "2026-08-25", urgentServiceConfirmed: false,
       quantity: 1, uploadReferences: ["00000000-0000-4000-8000-000000000001"],
     }],
   };

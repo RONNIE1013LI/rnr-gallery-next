@@ -145,7 +145,7 @@ export function auditCoverageFeedback(candidate: Candidate, audit: ClaimAudit, r
     };
 }
 
-export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sources: EvidenceSource[], turns: Turn[], requireMoneyMentions = false): {
+export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sources: EvidenceSource[], turns: Turn[], requireMoneyMentions = false, websiteMarket: 'NZ' | 'AU' | null = null): {
     risk: 'GREEN' | 'YELLOW' | 'RED';
     failures: ContractFailureCode[];
 } {
@@ -170,7 +170,8 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
         failures.push('response_mode_disagreement');
     if (candidate.market !== audit.market)
         failures.push('market_disagreement');
-    if (candidate.market !== 'UNKNOWN' && (!candidate.marketEvidenceTurn || !customerIds.has(candidate.marketEvidenceTurn) || !audit.marketEvidenceTurn || !customerIds.has(audit.marketEvidenceTurn)))
+    const usesWebsiteMarket = candidate.market === websiteMarket && audit.market === websiteMarket && candidate.marketEvidenceTurn === null && audit.marketEvidenceTurn === null;
+    if (candidate.market !== 'UNKNOWN' && !usesWebsiteMarket && (!candidate.marketEvidenceTurn || !customerIds.has(candidate.marketEvidenceTurn) || !audit.marketEvidenceTurn || !customerIds.has(audit.marketEvidenceTurn)))
         failures.push('market_source_not_customer');
     if (audit.relevantCustomerTurnIds.some(id => !customerIds.has(id)))
         failures.push('invalid_active_context_source');

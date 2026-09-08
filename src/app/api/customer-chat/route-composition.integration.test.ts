@@ -85,7 +85,7 @@ describe.runIf(Boolean(url))("actual Redis public route composition", () => {
     expect(next.events.some((event: { role: string; text: string }) => event.role === "staff" && event.text === "We can help you choose a size.")).toBe(true);
   });
 
-  it("runs the actual shared brain and publishes its verified response without a database dependency", async () => {
+  it.each(['NZ', 'AU'] as const)("publishes a %s quote through real Redis and the shared brain without asking country", async market => {
     vi.stubEnv("RNR_AI_MASTER_ENABLED", "true");
     vi.stubEnv("OPENAI_API_KEY", "synthetic-provider-test-key");
     const redis = new Redis({ url: url!, token: "synthetic-local-redis-test", responseEncoding: false });
@@ -99,10 +99,12 @@ describe.runIf(Boolean(url))("actual Redis public route composition", () => {
       revision: 2, mode: "OFF", timezone: "Pacific/Auckland", periods: [], override: null,
     });
     const nativeFetch = globalThis.fetch;
-    const candidate = { mode: "ANSWER", reply: "Hello! How can we help?", market: "UNKNOWN", marketEvidenceTurn: null };
+    const currency = market === 'AU' ? 'AUD' : 'NZD';
+    const amountMinor = market === 'AU' ? 10999 : 11270;
+    const candidate = { mode: "ANSWER", reply: `A2 Photo Print Canvas costs ${currency}${(amountMinor / 100).toFixed(2)}.`, market, marketEvidenceTurn: null };
     const outputs = [{ ...candidate, requestedTools: [] }, {
       mode: candidate.mode, market: candidate.market, marketEvidenceTurn: null, openIssue: "NONE", relevantCustomerTurnIds: ["t1"],
-      claims: [], safe: true, helpful: true, clarificationOnly: false, customerInputRequest: null,
+      claims: [{ span: candidate.reply, product: 'photo-print-canvas', orderReference: null, destination: null, kind: 'price', sources: [market === 'AU' ? 'au-photo-canvas-prices' : 'derived-nz-canvas-including-gst'], marketDependent: true, amountMinor, currency, size: 'A2', quantity: null, numericPath: 'pricesMinor.A2', calculation: [], liveRequired: false, amountMentionIds: ['n3'] }], safe: true, helpful: true, clarificationOnly: false, customerInputRequest: null,
       internalErrorLanguage: false, unnecessaryQuestion: false, issues: [],
     }];
     let attempt = 0;
@@ -111,16 +113,26 @@ describe.runIf(Boolean(url))("actual Redis public route composition", () => {
       usage: { input_tokens: 100, output_tokens: 20, input_tokens_details: { cached_tokens: 0 } },
     }), { status: 200 }));
     vi.stubGlobal("fetch", (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      if (input === "https://api.openai.com/v1/responses") return provider();
+      if (input === "https://api.openai.com/v1/responses") {
+        const body = JSON.parse(String(init?.body));
+        const payload = JSON.parse(body.input[1].content[0].text);
+        expect(payload.websiteMarket).toBe(market);
+        if (payload.numericMentions) {
+          const monetary = payload.numericMentions.find((n: { amountMinor: number }) => n.amountMinor === amountMinor);
+          const audit = outputs[1] as { claims: { amountMentionIds: string[] }[] };
+          audit.claims[0].amountMentionIds = [monetary.id];
+        }
+        return provider();
+      }
       if (!String(input).startsWith(url!)) throw Error("unexpected external transport");
       return nativeFetch(input, init);
     });
     const chat = await start();
-    expect((await send(request("messages", { ...message(chat.key), message: "Hello" }, chat.cookie, chat.permit))).status).toBe(202);
+    expect((await send(request("messages", { ...message(chat.key), message: "How much is A2 Photo Print Canvas?" }, `${chat.cookie}; rnr-market=${market}`, chat.permit))).status).toBe(202);
     await scheduled.tasks[0]();
-    expect(provider).toHaveBeenCalled();
+    expect(provider).toHaveBeenCalledTimes(2);
     const result = await (await updates(request("updates", undefined, chat.cookie))).json();
-    expect(result.events.some((event: { role: string; text: string }) => event.role === "assistant" && event.text === "Hello! How can we help?")).toBe(true);
+    expect(result.events.some((event: { role: string; text: string }) => event.role === "assistant" && event.text === candidate.reply)).toBe(true);
   });
 
   it("uses native login cache, isolates login/logout identities and fails closed for missing signed sessions", async () => {

@@ -39,7 +39,18 @@ describe("product registry administration", () => {
     const current = await service.current();
 
     expect(current.revision).toBe(0);
-    expect(current.registry).toEqual(defaultProductRegistry);
+    expect(current.registry).toEqual({
+      ...defaultProductRegistry,
+      markets: { ...defaultProductRegistry.markets, AU: {
+        ...defaultProductRegistry.markets.AU,
+        urgentServiceFees: [
+          { workingDays: 1, amountInclTaxCents: 6000 },
+          { workingDays: 2, amountInclTaxCents: 5000 },
+          { workingDays: 3, amountInclTaxCents: 0 },
+          { workingDays: 4, amountInclTaxCents: 0 },
+        ],
+      } },
+    });
   });
 
   it("publishes a complete validated snapshot from a product patch", async () => {
@@ -213,7 +224,7 @@ describe("product registry administration", () => {
     })).resolves.toMatchObject({ result: "duplicate", revision: 1 });
   });
 
-  it("uses a published store-wide fee policy in the next registry revision", async () => {
+  it("publishes editing fees while retaining the current urgency policy", async () => {
     const service = createProductRegistryService(memoryRepository());
 
     const result = await service.publishPricing(actor, {
@@ -227,7 +238,7 @@ describe("product registry administration", () => {
     expect(result.registry.pricing).toEqual({
       peoplePetsFeesExGstCents: [4_500, 6_500, 9_000, 11_500, 13_500],
       additionalPeoplePetsEachExGstCents: 2_750,
-      urgentServiceFeesInclGstCents: [8_500, 7_500, 6_500, 5_500],
+      urgentServiceFeesInclGstCents: [6_000, 5_000, 0, 0],
     });
   });
 

@@ -1,3 +1,5 @@
+import { resolveRequestMarket } from "@/server/markets/request-market";
+import { MARKET_COOKIE_NAME, parseMarketCookie } from "@/server/markets/market-cookie";
 import { WebsiteChatIdentityUnavailableError } from "@/server/rnr-ai/website/chat-auth";
 import { assertTrustedMutationRequest, MutationRequestError, parseBoundedJson } from "@/server/http/mutation-request";
 import { websiteChannelAdapter } from "@/server/customer-service/adapters/website";
@@ -91,7 +93,16 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
         const productContext = input.pathname
           ? await dependencies.resolveProductContext(input.pathname)
           : null;
-        const pageMarket = productContext?.market ?? input.pageMarket;
+        const savedMarket = request.headers.get("cookie")?.split(";").map(value => value.trim()).find(value => value.startsWith(`${MARKET_COOKIE_NAME}=`))?.slice(MARKET_COOKIE_NAME.length + 1);
+        const resolvedMarket = resolveRequestMarket({
+          pathname: input.pathname ?? "/",
+          savedPreference: parseMarketCookie(savedMarket),
+          requestCountry: request.headers.get("x-vercel-ip-country"),
+          userAgent: request.headers.get("user-agent"),
+        });
+        // A storefront fallback is not a detected country. Body/page defaults must
+        // not override the visitor's selection or the request's country.
+        const pageMarket = resolvedMarket.source === "fallback" ? null : resolvedMarket.market;
         const receivedAt = (dependencies.now ?? (() => new Date()))();
         const cookieToken = readWebsiteSessionToken(request, dependencies.cookieEnvironment);
         if (!cookieToken) return sessionRequired();

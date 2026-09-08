@@ -1,3 +1,4 @@
+import { createWebsiteBrainAdapter } from '../website/website-brain-adapter';
 import { describe, it, expect, vi } from 'vitest';
 import { createRnrAiBrain } from '../brain';
 import { OpenAiSolProvider } from '../providers/openai-sol';
@@ -343,4 +344,37 @@ it('rejects a production monetary audit without occurrence bindings', async () =
     delete a.claims[0].amountMentionIds;
     const h = harness([plan(c), a]);
     expect(await h.brain.generate(request([['customer', 'Australia. A2 price?']]))).toMatchObject({ risk: 'RED', replyText: null, reasons: ['verification_failure', 'structured_output_invalid'] });
+});
+
+
+describe('website default quote market', () => {
+    it.each(['NZ', 'AU'] as const)('quotes using website %s without inventing a customer destination turn', async market => {
+        const amount = market === 'AU' ? 10999 : 11270;
+        const currency = market === 'AU' ? 'AUD' : 'NZD';
+        const c: Candidate = { ...base, reply: `A2 Photo Print Canvas costs ${currency}${(amount / 100).toFixed(2)}.`, market, marketEvidenceTurn: null };
+        const a = audit(c, [{ ...fact, span: c.reply, kind: 'price', product: 'photo-print-canvas', sources: [market === 'AU' ? 'au-photo-canvas-prices' : 'derived-nz-canvas-including-gst'], marketDependent: true, amountMinor: amount, currency, size: 'A2', numericPath: 'pricesMinor.A2' }]);
+        const h = harness([plan(c), a]);
+        const r = { ...request([['customer', 'How much is A2 Photo Print Canvas?']]), channel: 'website' as const, market };
+        const adapter = createWebsiteBrainAdapter({ brain: h.brain, businessBrain: r.businessBrain });
+        const result = await adapter.generate({ current: { id: 'country-test', text: r.conversation[0].text, pageMarket: market }, context: r.conversation.map(t => ({ role: 'customer' as const, text: t.text, receivedAt: t.sentAt })), expectedIntent: 'unknown' });
+        expect(result.decision).toMatchObject({ risk: 'GREEN', replyText: c.reply });
+        expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+        for (const call of h.fetchImpl.mock.calls) {
+            const body = JSON.parse(String(call[1]?.body));
+            const payload = JSON.parse(body.input[1].content[0].text);
+            expect(payload.websiteMarket).toBe(market);
+            expect(payload.turns).toHaveLength(1);
+        }
+        const meta = harness([plan(c), a, a]);
+        expect((await meta.brain.generate({ ...r, channel: 'meta' })).risk).toBe('RED');
+    });
+});
+
+
+it('uses a customer destination correction ahead of the website default', async () => {
+    const c: Candidate = { ...base, market: 'AU', marketEvidenceTurn: 't3', reply: 'A2 Photo Print Canvas costs AUD109.99.' };
+    const a = audit(c, [{ ...fact, span: c.reply, kind: 'price', product: 'photo-print-canvas', sources: ['au-photo-canvas-prices'], amountMinor: 10999, currency: 'AUD', size: 'A2', numericPath: 'pricesMinor.A2', marketDependent: true }]);
+    const h = harness([plan(c), a]);
+    expect(await h.brain.generate({ ...request([['customer', 'A2 Photo Print Canvas for Auckland'], ['staff', 'Noted'], ['customer', 'Actually send it to Sydney. Price?']]), channel: 'website', market: 'NZ' })).toMatchObject({ risk: 'GREEN', replyText: c.reply });
+    expect(h.fetchImpl).toHaveBeenCalledTimes(2);
 });

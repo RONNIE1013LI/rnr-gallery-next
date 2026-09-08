@@ -85,7 +85,7 @@ describe("public design detail page", () => {
 
     expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Start With Your Photos" }))
+    expect(screen.getByRole("link", { name: "Customise This Design" }))
       .toHaveAttribute("href", `/au/products/roll-up-banner/configure?design=${designId}`);
   });
 
@@ -97,7 +97,7 @@ describe("public design detail page", () => {
     render(await DesignDetailPage(props));
 
     expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Start With Your Photos" }))
+    expect(screen.getByRole("link", { name: "Customise This Design" }))
       .toHaveAttribute("href", `/au/products/roll-up-banner/configure?design=${designId}`);
   });
 
@@ -121,7 +121,7 @@ describe("public design detail page", () => {
     expect(screen.getByText("85 × 200 cm")).toBeVisible();
     expect(screen.queryByText("Design image")).not.toBeInTheDocument();
     expect(screen.queryByText("1200 × 2400 px")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Start With Your Photos" }))
+    expect(screen.getByRole("link", { name: "Customise This Design" }))
       .toHaveAttribute("href", `/products/roll-up-banner/configure?design=${designId}`);
     expect(screen.getByRole("link", { name: "View Similar Designs" }))
       .toHaveAttribute("href", "/design-gallery?occasion=birthday&page=2");

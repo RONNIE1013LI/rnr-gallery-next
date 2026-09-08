@@ -327,3 +327,17 @@ it.each([
     const s = { ...source, market };
     expect(checkSafetyContract(c, a, [s], turns, true).failures).toContain('actual_text_currency_mismatch');
 });
+
+
+it('limits website default evidence to matching markets and keeps independent safety checks', () => {
+    const c = { ...candidate, marketEvidenceTurn: null };
+    const a = { ...audit, marketEvidenceTurn: null };
+    expect(checkSafetyContract(c, a, [source], turns, false, 'AU').risk).toBe('GREEN');
+    for (const market of [null, 'NZ'] as const) {
+        expect(checkSafetyContract(c, a, [source], turns, false, market).risk).toBe('RED');
+    }
+    expect(checkSafetyContract(c, { ...a, safe: false }, [source], turns, false, 'AU').risk).toBe('RED');
+    expect(checkSafetyContract(c, { ...a, market: 'NZ' }, [source], turns, false, 'AU').risk).toBe('RED');
+    expect(checkSafetyContract({ ...c, marketEvidenceTurn: 'p1' }, { ...a, marketEvidenceTurn: 'p1' }, [source], turns, false, 'AU').risk).toBe('RED');
+    expect(checkSafetyContract(c, a, [{ ...source, market: 'NZ' }], turns, false, 'AU').risk).toBe('RED');
+});

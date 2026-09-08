@@ -284,7 +284,7 @@ describe("POST /api/customer-chat/messages", () => {
       externalConversationKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       externalMessageKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       productContext: expect.objectContaining({ productKey: "roll-up-banner" }),
-      websitePageMarket: "NZ",
+      websitePageMarket: null,
     }));
     expect(current.tasks).toHaveLength(1);
     await current.tasks[0]();
@@ -416,4 +416,19 @@ describe("POST /api/customer-chat/messages", () => {
     expect(await response.json()).toEqual({ error: { code: "REQUEST_REJECTED" } });
     expect(current.repository.ensureWebsiteSession).not.toHaveBeenCalled();
   });
+});
+
+
+it.each([
+  ['saved preference', 'rnr-market=AU', 'NZ', 'AU'],
+  ['NZ preference beats AU geo', 'rnr-market=NZ', 'AU', 'NZ'],
+  ['AU geo', '', 'AU', 'AU'],
+  ['NZ geo', '', 'NZ', 'NZ'],
+  ['unknown country', '', 'US', null],
+] as const)('resolves chat quote market from %s', async (_label, cookie, geo, expected) => {
+  const current = setup();
+  const req = permittedRequest(validBody, { cookie: `__Host-rnr_customer_chat=${sessionToken}; ${cookie}` });
+  req.headers.set('x-vercel-ip-country', geo);
+  expect((await current.handler.POST(req)).status).toBe(202);
+  expect(current.repository.ingestConversationEvent).toHaveBeenCalledWith(expect.objectContaining({ websitePageMarket: expected }));
 });

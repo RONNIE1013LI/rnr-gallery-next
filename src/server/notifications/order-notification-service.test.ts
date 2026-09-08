@@ -264,7 +264,7 @@ describe("order notification delivery", () => {
     });
     expect(send).toHaveBeenCalledWith(expect.objectContaining({
       subject: `Payment confirmed — ${delivery.orderNumber}`,
-      text: expect.stringContaining("Production normally takes 5 business days"),
+      text: expect.stringContaining("Production normally takes 3 business days"),
     }));
   });
 

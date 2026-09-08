@@ -30,7 +30,8 @@ function toolRequest(plan: Plan, item: Plan['requestedTools'][number], request: 
             return null;
         return { name: item.name, input: { customerReference: request.toolContext.customerReference, orderReference: value.orderReference } };
     }
-    if (plan.market === 'UNKNOWN' || !turns.some(t => t.id === plan.marketEvidenceTurn && t.role === 'customer') || !value.product?.trim())
+    const usesWebsiteMarket = request.channel === 'website' && plan.market === request.market && plan.marketEvidenceTurn === null;
+    if (plan.market === 'UNKNOWN' || (!usesWebsiteMarket && !turns.some(t => t.id === plan.marketEvidenceTurn && t.role === 'customer')) || !value.product?.trim())
         return null;
     if (item.name === 'canonical_product_price')
         return { name: item.name, input: { market: plan.market, product: value.product, ...(value.size ? { size: value.size } : {}) } };
@@ -132,7 +133,7 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
         const turns: Turn[] = context.turns.filter((t): t is typeof t & {
             role: 'customer' | 'staff';
         } => t.role === 'customer' || t.role === 'staff');
-        let contract = checkSafetyContract(candidate, audit, evidence, turns, true);
+        let contract = checkSafetyContract(candidate, audit, evidence, turns, true, context.websiteMarket);
         trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk, undefined, { phase: 'initial_contract', failures: contract.failures });
         // Quality is separate from factual risk, but a material defect still requires a
         // bounded rewrite and fresh verification before an autonomous reply.
@@ -155,7 +156,7 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
                 audit = await modelCall(verifier, { ...data(), candidate, numericMentions: numericMentions(candidate.reply), ...(contractFeedback ? { contractFeedback } : {}) }, auditSchemaForSources(evidence, customerTurnIds, candidate), 2400);
                 verificationSuccess = true;
                 stage = 'contract';
-                contract = checkSafetyContract(candidate, audit, evidence, turns, true);
+                contract = checkSafetyContract(candidate, audit, evidence, turns, true, context.websiteMarket);
                 trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk, undefined, { phase: 'repair_contract', failures: contract.failures });
             } catch (error) {
                 // A quality-only outage does not invalidate the original independent

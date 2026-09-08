@@ -34,7 +34,7 @@ describe("public help pages", () => {
 
     expect(screen.getAllByText(/proof before printing/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/two revision/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/5 business days/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/3 business days/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/New Zealand.*2–3 business days/i)).toBeVisible();
     expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();
     expect(screen.getByText(/Standard delivery.*7–10 days/i)).toBeVisible();
