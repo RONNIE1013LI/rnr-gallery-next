@@ -59,6 +59,6 @@ describe("canvas preview integration",()=>{
   it("does not add canvas geometry to banners",()=>{
     const product=getProductBySlug("roll-up-banner")!;
     render(<ProductConfigurator product={product} schema={getConfigurationSchema(product.key)!} orderDate="2026-09-06"/>);
-    expect(screen.queryByRole("button",{name:"3D View"})).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Interactive canvas preview")).not.toBeInTheDocument();
   });
 });

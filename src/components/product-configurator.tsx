@@ -38,6 +38,7 @@ import styles from "./storefront.module.css";
 import { useContainedDialog } from "./forms/use-contained-dialog";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { CanvasProductPreview } from "./canvas-product-preview";
+import { RollUpBannerPreview } from "./roll-up-banner-preview";
 import { PurchaseTrustStrip } from "./purchase-trust-strip";
 import { AnalyticsEventTracker } from "./analytics-event-tracker";
 import {
@@ -87,6 +88,7 @@ export function ProductConfigurator({
   relatedDesigns = [],
   initialSizeKey,
 }: ProductConfiguratorProps) {
+  const ProductPreview = product.slug === "roll-up-banner" ? RollUpBannerPreview : CanvasProductPreview;
   const designInspiration = selectedDesign;
   const [sizeKey, setSizeKey] = useState(
     initialSizeKey && schema.sizes.some((size) => size.key === initialSizeKey)
@@ -344,7 +346,7 @@ export function ProductConfigurator({
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
         <section className={styles.artworkPreview} aria-label="Artwork preview">
-        <CanvasProductPreview imageSrc={canvas3DImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
+        <ProductPreview imageSrc={product.slug === "roll-up-banner" ? designInspiration?.imageUrl ?? relatedDesigns.find(design => design.productSlug === "roll-up-banner")?.imageUrl ?? "" : canvas3DImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
         <div className={styles.artworkPreviewMedia}>
           <Image
             src={previewImage}
@@ -363,7 +365,7 @@ export function ProductConfigurator({
             <span aria-hidden="true" role="img">🔍</span>
           </button>
         </div>
-        </CanvasProductPreview>
+        </ProductPreview>
         <div className={styles.artworkPreviewCopy}>
           <p className={styles.eyebrow}>Example shown</p>
           <h2>{product.title}</h2>

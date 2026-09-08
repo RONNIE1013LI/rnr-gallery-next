@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { CanvasProductPreview } from "@/components/canvas-product-preview";
+import { RollUpBannerPreview } from "@/components/roll-up-banner-preview";
 import { StructuredData } from "@/components/structured-data";
 import styles from "@/components/storefront.module.css";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
@@ -149,6 +150,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
     related = [];
   }
 
+  const ProductPreview = design.productTypeSlug === "roll-up-banner" ? RollUpBannerPreview : CanvasProductPreview;
   return (
     <main id="main-content" className={styles.designDetailPage}>
       <StructuredData id="rnr-design-breadcrumbs" data={buildBreadcrumbData([
@@ -158,7 +160,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
       ])} />
       <section className={styles.designDetailHero}>
         <div className={styles.designDetailMedia}>
-          <CanvasProductPreview
+          <ProductPreview
             imageSrc={`/gallery-images/${design.id}?v=${design.contentHash}`}
             sizeKey={design.productTypeSlug === "canvas" ? (registryProduct.configuration.sizes.some(size=>size.key==="a0") ? "a0" : registryProduct.configuration.sizes[0]?.key ?? "") : ""}
             sizes={registryProduct.configuration.sizes.map(size=>size.key)}
@@ -172,7 +174,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
             priority
             sizes="(max-width: 560px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px"
           />
-          </CanvasProductPreview>
+          </ProductPreview>
         </div>
         <div className={styles.designDetailCopy}>
           <p className={styles.eyebrow}>{productType} · {occasion}</p>
