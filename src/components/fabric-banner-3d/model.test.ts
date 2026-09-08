@@ -9,8 +9,14 @@ describe('fabric banner model', () => {
   expect(size.x).toBeCloseTo(w); expect(size.y).toBeCloseTo(h); expect(front.material.map).toBe(texture);
   const back=model.getObjectByName('plain-back') as THREE.Mesh<THREE.BufferGeometry,THREE.MeshStandardMaterial>;
   expect(back.material.map).toBeNull();
-  expect(model.userData.eyelets).toBe(4);
-  expect(model.getObjectByName("eyelet-4")).toBeUndefined();
+  expect(model.userData.eyelets).toBe(w === 3 ? 6 : 4);
+  if (w === 3) {
+    for (const [index, y] of [[4, -.725], [5, .725]]) {
+      const eyelet = model.getObjectByName(`eyelet-${index}`)!;
+      expect(eyelet.position.x).toBe(0); expect(eyelet.position.y).toBeCloseTo(y);
+    }
+    expect(model.getObjectByName("corner-cord-4")).toBeUndefined();
+  } else expect(model.getObjectByName("eyelet-4")).toBeUndefined();
  });
  it('lays the grave artwork horizontally at 100 x 200 cm with six eyelets',()=>{
   const model=createFabricBannerModel('grave',1,2); model.updateMatrixWorld(true);

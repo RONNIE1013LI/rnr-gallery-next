@@ -9,7 +9,9 @@ export function createFabricBannerModel(kind: FabricBannerKind, width: number, h
   const corners = [-1, 1].flatMap(x => [-1, 1].map(y => new THREE.Vector2(x * (width / 2 - inset), y * (height / 2 - inset))));
   const eyelets = kind === "grave"
     ? [...corners, new THREE.Vector2(-width / 2 + inset, 0), new THREE.Vector2(width / 2 - inset, 0)]
-    : corners;
+    : kind === "wall" && width === 3 && height === 1.5
+      ? [...corners, new THREE.Vector2(0, -height / 2 + inset), new THREE.Vector2(0, height / 2 - inset)]
+      : corners;
   const outline = new THREE.Shape();
   outline.moveTo(-width / 2, -height / 2); outline.lineTo(width / 2, -height / 2);
   outline.lineTo(width / 2, height / 2); outline.lineTo(-width / 2, height / 2); outline.closePath();
@@ -25,7 +27,7 @@ export function createFabricBannerModel(kind: FabricBannerKind, width: number, h
   for (const [index, p] of eyelets.entries()) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(radius + .0025, .0025, 10, 32), silver);
     ring.name = `eyelet-${index}`; ring.position.set(p.x, p.y, .002); sheet.add(ring);
-    if (kind === "wall") {
+    if (kind === "wall" && index < corners.length) {
       const end = new THREE.Vector3(p.x + Math.sign(p.x) * .12, p.y + Math.sign(p.y) * .085, -.04);
       const rope = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(new THREE.Vector3(p.x, p.y, .002), end), 1, .0018, 6, false), new THREE.MeshStandardMaterial({ color: 0xb8afa0, roughness: 1 }));
       rope.name = `corner-cord-${index}`; sheet.add(rope);
