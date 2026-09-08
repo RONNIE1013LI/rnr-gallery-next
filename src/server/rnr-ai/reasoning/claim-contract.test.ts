@@ -4,6 +4,19 @@ import { reasoningEvidence } from './evidence';
 import { auditSchemaForSources, checkSafetyContract, type Candidate, type ClaimAudit, type EvidenceSource } from './claim-contract';
 const candidate: Candidate = { mode: 'ANSWER', reply: 'A2 is AUD109.99.', market: 'AU', marketEvidenceTurn: 'c1' };
 const turns = [{ id: 'c1', role: 'customer' as const, text: 'Sydney' }, { id: 'p1', role: 'staff' as const, text: 'New Zealand' }];
+
+it.each(['NZ', 'AU'] as const)('accepts the published %s urgency fee without inventing live availability', market => {
+    const currency = market === 'NZ' ? 'NZD' : 'AUD';
+    const c: Candidate = { mode: 'ANSWER', reply: `The surcharge for 2 working days is ${currency}50.`, market, marketEvidenceTurn: null };
+    const sourceId = `${market.toLowerCase()}-urgent-fees`;
+    const sources = reasoningEvidence({ businessBrain: loadBusinessBrain() } as Parameters<typeof reasoningEvidence>[0]);
+    const a: ClaimAudit = { ...audit, market, marketEvidenceTurn: null, claims: [{ ...audit.claims[0], span: c.reply,
+      kind: 'additional_fee', product: null, size: null, sources: [sourceId], amountMinor: 5000, currency,
+      quantity: 2, numericPath: 'feesMinor.2', liveRequired: false }] };
+    expect(checkSafetyContract(c, a, sources, turns, false, market).risk).toBe('GREEN');
+    expect(checkSafetyContract(c, { ...a, claims: [{ ...a.claims[0], amountMinor: 7000 }] }, sources, turns, false, market).risk).toBe('RED');
+    expect(checkSafetyContract(c, { ...a, claims: [{ ...a.claims[0], liveRequired: true }] }, sources, turns, false, market).risk).toBe('RED');
+});
 const source: EvidenceSource = { id: 'au-photo-canvas-prices', market: 'AU', status: 'CONFIRMED', category: 'pricing', kind: 'knowledge', statement: 'A2 photo canvas is AUD109.99.', facts: { pricesMinor: { A2: 10999 }, productKeys: ['photo-print-canvas'] }, authenticated: false };
 const audit: ClaimAudit = { mode: 'ANSWER', market: 'AU', marketEvidenceTurn: 'c1', openIssue: 'NONE', relevantCustomerTurnIds: ['c1'], claims: [{ span: 'AUD109.99', product: 'photo-print-canvas', destination: null, orderReference: null, kind: 'price', sources: ['au-photo-canvas-prices'], marketDependent: true, amountMinor: 10999, currency: 'AUD', size: 'A2', calculation: [], quantity: null, numericPath: 'pricesMinor.A2', liveRequired: false }], safe: true, helpful: true, clarificationOnly: false, customerInputRequest: null, internalErrorLanguage: false, unnecessaryQuestion: false, issues: [] };
 const check = (a = audit, c = candidate, s = [source]) => checkSafetyContract(c, a, s, turns);

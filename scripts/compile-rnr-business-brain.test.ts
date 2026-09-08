@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import canonicalSource from "../src/server/rnr-ai/business-brain/rnr-business-brain.v0.5.1.json";
 import { compileBusinessBrain, type BusinessBrainSource } from "./compile-rnr-business-brain";
+import { STANDARD_PRODUCTION_WORKING_DAYS, DEFAULT_URGENT_SERVICE_FEES_INCL_GST_CENTS } from "../src/domain/scheduling/urgent-service";
 
 function validSource(): BusinessBrainSource {
   return {
@@ -45,6 +46,17 @@ function validSource(): BusinessBrainSource {
 }
 
 describe("compileBusinessBrain", () => {
+  it("keeps both markets' published urgency fees aligned with website scheduling", () => {
+    const compiled = compileBusinessBrain(canonicalSource as BusinessBrainSource);
+    expect(compiled.rules.find(r => r.id === 'production-standard-target')?.facts?.workingDaysApproximate).toBe(STANDARD_PRODUCTION_WORKING_DAYS);
+    for (const market of ['NZ', 'AU']) {
+      const rule = compiled.rules.find(r => r.id === `${market.toLowerCase()}-urgent-fees`);
+      expect(rule).toMatchObject({ market, category: 'pricing', status: 'CONFIRMED', autonomous: true, requiresLiveTool: false,
+        currency: market === 'NZ' ? 'NZD' : 'AUD',
+        facts: { feeBasis: 'working_days', noFeeFromWorkingDays: STANDARD_PRODUCTION_WORKING_DAYS,
+          feesMinor: Object.fromEntries(DEFAULT_URGENT_SERVICE_FEES_INCL_GST_CENTS.map((fee, i) => [String(i + 1), fee])) } });
+    }
+  });
   it("keeps all eleven owner-review items non-autonomous", () => {
     const compiled = compileBusinessBrain(canonicalSource as BusinessBrainSource);
     const reviewRules = compiled.rules.filter((rule) => compiled.reviewItems.includes(rule.id));

@@ -246,22 +246,25 @@
     },
     {
       "autonomous": true,
-      "category": "production",
+      "category": "pricing",
       "currency": "AUD",
       "facts": {
+        "feeBasis": "working_days",
         "feesMinor": {
-          "1": 8000,
-          "2": 7000,
-          "3": 6000,
-          "4": 5000
-        }
+          "1": 6000,
+          "2": 5000,
+          "3": 0,
+          "4": 0
+        },
+        "noFeeFromWorkingDays": 3,
+        "taxPresentation": "final_price"
       },
       "id": "au-urgent-fees",
       "market": "AU",
-      "provenance": "Owner-supplied AU price book, 2026-09-04",
-      "requiresLiveTool": true,
+      "provenance": "Owner-confirmed website urgency policy, synchronized 2026-09-09 with domain/scheduling/urgent-service.ts",
+      "requiresLiveTool": false,
       "sourceKind": "canonical",
-      "statement": "AU urgent fees are 80 AUD for working day 1, 70 for day 2, 60 for day 3 and 50 for day 4, but availability and deadlines still require confirmation.",
+      "statement": "AU urgency surcharges are 60 AUD for 1 working day, 50 AUD for 2 working days, and zero for 3 or more working days. These are final surcharges added to the product subtotal, not per-person fees. Count working days after the order date through the requested date, excluding weekends and public holidays. The published fee schedule can be explained without a live tool; actual urgent capacity and any promised completion or arrival date require confirmation. Shipping is separate.",
       "status": "CONFIRMED"
     },
     {
@@ -513,6 +516,29 @@
       "category": "pricing",
       "currency": "NZD",
       "facts": {
+        "feeBasis": "working_days",
+        "feesMinor": {
+          "1": 6000,
+          "2": 5000,
+          "3": 0,
+          "4": 0
+        },
+        "noFeeFromWorkingDays": 3,
+        "taxPresentation": "including_gst"
+      },
+      "id": "nz-urgent-fees",
+      "market": "NZ",
+      "provenance": "Owner-confirmed website urgency policy, synchronized 2026-09-09 with domain/scheduling/urgent-service.ts",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "NZ urgency surcharges are 60 NZD including GST for 1 working day, 50 NZD including GST for 2 working days, and zero for 3 or more working days. These surcharges are added to the product subtotal, not per-person fees. Count working days after the order date through the requested date, excluding weekends and public holidays. The published fee schedule can be explained without a live tool; actual urgent capacity and any promised completion or arrival date require confirmation. Shipping is separate.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "NZD",
+      "facts": {
         "pricesMinor": {
           "160x80cm": 18975,
           "200x100cm": 21275,
@@ -646,7 +672,7 @@
       "status": "CONFIRMED"
     }
   ],
-  "sourceSha256": "f3edcab6510d9fb16f1316be6268d10a086056d11e1958bb217f701017334400",
+  "sourceSha256": "887c01d7155e0d3c3b6a7b1af04020a2eaf47864526133e5ce0cf9418e42d3ab",
   "version": "0.5.1",
   "voice": {
     "avoid": [

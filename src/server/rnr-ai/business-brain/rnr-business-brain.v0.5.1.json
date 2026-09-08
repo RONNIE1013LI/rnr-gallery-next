@@ -296,14 +296,27 @@
       "id": "au-urgent-fees",
       "status": "CONFIRMED",
       "market": "AU",
-      "category": "production",
-      "statement": "AU urgent fees are 80 AUD for working day 1, 70 for day 2, 60 for day 3 and 50 for day 4, but availability and deadlines still require confirmation.",
-      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "category": "pricing",
+      "statement": "AU urgency surcharges are 60 AUD for 1 working day, 50 AUD for 2 working days, and zero for 3 or more working days. These are final surcharges added to the product subtotal, not per-person fees. Count working days after the order date through the requested date, excluding weekends and public holidays. The published fee schedule can be explained without a live tool; actual urgent capacity and any promised completion or arrival date require confirmation. Shipping is separate.",
+      "provenance": "Owner-confirmed website urgency policy, synchronized 2026-09-09 with domain/scheduling/urgent-service.ts",
       "sourceKind": "canonical",
       "autonomous": true,
-      "requiresLiveTool": true,
+      "requiresLiveTool": false,
       "currency": "AUD",
-      "facts": { "feesMinor": { "1": 8000, "2": 7000, "3": 6000, "4": 5000 } }
+      "facts": { "feesMinor": { "1": 6000, "2": 5000, "3": 0, "4": 0 }, "feeBasis": "working_days", "noFeeFromWorkingDays": 3, "taxPresentation": "final_price" }
+    },
+    {
+      "id": "nz-urgent-fees",
+      "status": "CONFIRMED",
+      "market": "NZ",
+      "category": "pricing",
+      "statement": "NZ urgency surcharges are 60 NZD including GST for 1 working day, 50 NZD including GST for 2 working days, and zero for 3 or more working days. These surcharges are added to the product subtotal, not per-person fees. Count working days after the order date through the requested date, excluding weekends and public holidays. The published fee schedule can be explained without a live tool; actual urgent capacity and any promised completion or arrival date require confirmation. Shipping is separate.",
+      "provenance": "Owner-confirmed website urgency policy, synchronized 2026-09-09 with domain/scheduling/urgent-service.ts",
+      "sourceKind": "canonical",
+      "autonomous": true,
+      "requiresLiveTool": false,
+      "currency": "NZD",
+      "facts": { "feesMinor": { "1": 6000, "2": 5000, "3": 0, "4": 0 }, "feeBasis": "working_days", "noFeeFromWorkingDays": 3, "taxPresentation": "including_gst" }
     },
     {
       "id": "au-shipping-dynamic",
