@@ -444,8 +444,18 @@ export class RedisWebsiteRepository
       };
       c.turns.push(turn);
       c.latestTurnId = turnId;
-      // An open review follows the newest customer question; old selectors become invalid.
-      if (c.review && !c.review.resolvedText) c.review = null;
+      // A new customer message does not resolve an earlier pending review.
+      // Rotate its action token so a staff response based on an old view cannot win.
+      const reviewWrites: Write[] = [];
+      if (c.review && !c.review.resolvedText) {
+        const generation = c.review.generation + 1;
+        const selector = createWebsiteReviewSelectorRecord({ reviewId: c.review.id,
+          generation, secret: this.secret, now: new Date(now) });
+        c.review = { ...c.review, generation, turnId, selector: selector.selector,
+          expiresAt: selector.expiresAt.getTime(), draft: null };
+        reviewWrites.push(this.write(this.key("selector", selector.selector),
+          { id, reviewId: c.review.id }, selector.expiresAt.getTime() - now));
+      }
       this.append(
         c,
         {
@@ -517,6 +527,7 @@ export class RedisWebsiteRepository
           this.write(technicalKey, { id }),
           this.write(duplicateKey, { id }),
           this.write(this.key("turn", turnId), { id }),
+          ...reviewWrites,
         ],
         rates,
         pending: { id, score: -now },
@@ -885,7 +896,7 @@ export class RedisWebsiteRepository
       const writes: Write[] = [];
       if (publish) {
         t.status = "published";
-        c.review = null;
+        // A safe answer to this turn does not resolve an earlier staff review.
         this.append(
           c,
           {
@@ -900,7 +911,8 @@ export class RedisWebsiteRepository
         );
       } else {
         t.status = "review";
-        c.takeover = true;
+        // A failed automatic reply is pending review, not a staff takeover.
+        // New customer turns still pass through the complete shared safety gate.
         const reviewId = randomUUID(),
           generation = (c.review?.generation ?? 0) + 1;
         const selector = createWebsiteReviewSelectorRecord({

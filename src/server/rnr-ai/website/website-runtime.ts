@@ -3,6 +3,7 @@ import { RedisReplyRuntimeStore } from "../runtime-store/redis-reply-runtime-sto
 import type { ReplyRuntimeStore } from "../runtime-store/reply-runtime-store";
 import { evaluateAiControl } from "../control/schedule";
 import { BRAIN_BUDGET_MS } from "../reasoning/brain";
+import { logWebsiteTurnDiagnostic } from "../diagnostics";
 import { randomUUID } from "node:crypto";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import { sanitizeWebsiteModelInput } from "@/server/customer-service/website/model-input-sanitizer";
@@ -120,6 +121,9 @@ export function createWebsiteReplyRuntime(input: {
       decision,
       reviewReason,
     );
+    logWebsiteTurnDiagnostic({ messageHash: lease.event.externalMessageKeyHash,
+      admitted: !!admitted, aiEnabled, takeover: lease.takeover, status,
+      risk: decision?.risk ?? null, reviewReason: reviewReason ?? null });
     if (status === "review" && input.reviewAlerts)
       await input.reviewAlerts.deliverNext();
     return { status };

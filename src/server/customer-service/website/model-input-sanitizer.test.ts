@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { sanitizeWebsiteModelInput } from "./model-input-sanitizer";
 
+it.each(["What is your order process?", "How long does order production take?", "How do I get tracking information?"])("preserves the general question %s", text => {
+  expect(sanitizeWebsiteModelInput(text).text).toBe(text);
+});
+
+it.each(["Order number abcdef", "Order no. abcdef", "invoice # confidential", "order RNR-123456", "order ABCDEF", "tracking number abcdefgh", "tracking no. abcdefgh", "tracking NZPOST123456789"])("still removes reference %s", text => {
+  expect(sanitizeWebsiteModelInput(text).text).toMatch(/reference removed/);
+});
+
 describe("Website model input sanitizer", () => {
   it("removes direct identifiers from provider text", () => {
     const raw = [

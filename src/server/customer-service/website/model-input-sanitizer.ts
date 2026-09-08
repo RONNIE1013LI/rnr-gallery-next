@@ -45,19 +45,23 @@ export function sanitizeWebsiteModelInput(rawText: string): SanitizedWebsiteMode
     "email",
     codes,
   );
-  text = replaceAndRecord(
-    text,
-    /\b(?:order|invoice)\s*(?:number|no\.?|#|:)?\s*[A-Z0-9][A-Z0-9-]{5,}\b/gi,
-    "[order reference removed]",
-    "order_identifier",
-    codes,
+  // A lowercase prose word after "order" or "tracking" is not a reference.
+  // Explicit reference labels, digits and uppercase codes remain redacted.
+  text = text.replace(
+    /\b(?:order|invoice)\s*(number\b|no\b\.?|#|:)?\s*([A-Z0-9][A-Z0-9-]{5,})\b/gi,
+    (match, marker: string | undefined, reference: string) => {
+      if (!marker && !/\d/.test(reference) && reference !== reference.toUpperCase()) return match;
+      codes.add("order_identifier");
+      return "[order reference removed]";
+    },
   );
-  text = replaceAndRecord(
-    text,
-    /\b(?:tracking|track)\s*(?:number|no\.?|#|:)?\s*[A-Z0-9][A-Z0-9-]{7,}\b/gi,
-    "[tracking reference removed]",
-    "tracking_identifier",
-    codes,
+  text = text.replace(
+    /\b(?:tracking|track)\s*(number\b|no\b\.?|#|:)?\s*([A-Z0-9][A-Z0-9-]{7,})\b/gi,
+    (match, marker: string | undefined, reference: string) => {
+      if (!marker && !/\d/.test(reference) && reference !== reference.toUpperCase()) return match;
+      codes.add("tracking_identifier");
+      return "[tracking reference removed]";
+    },
   );
   text = replaceAndRecord(
     text,

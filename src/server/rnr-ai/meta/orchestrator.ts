@@ -200,11 +200,9 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
             createdAt: now().toISOString(),
             reviewedTurnKeyHash: dependencies.hashExternalKey(event.externalMessageKey),
           });
-          await dependencies.takeover.set(event.externalConversationKey, true, "risk", now());
           await settle("review");
           return { acknowledged: true, status: "review", risk: payload.risk, reviewKey };
         } catch {
-          await dependencies.takeover.set(event.externalConversationKey, true, "risk", now()).catch(() => undefined);
           await settle("failed").catch(() => undefined);
           return { acknowledged: true, status: "failed" };
         }

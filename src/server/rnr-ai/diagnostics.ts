@@ -49,6 +49,21 @@ const logSchema = z.object({
   contractFailures: z.array(contractFailureCodeSchema).max(30).optional(),
 });
 export type ReasoningDiagnostic = z.infer<typeof logSchema>;
+const websiteTurnSchema = z.object({
+  messageHash: z.string().regex(/^[a-f0-9]{64}$/),
+  admitted: z.boolean(),
+  aiEnabled: z.boolean(),
+  takeover: z.boolean(),
+  status: z.enum(['published', 'review', 'cancelled']),
+  risk: z.enum(['GREEN', 'YELLOW', 'RED']).nullable(),
+  reviewReason: z.enum(['unresolved', 'system_failure', 'provider_error', 'budget_blocked']).nullable(),
+});
+export function logWebsiteTurnDiagnostic(value: z.infer<typeof websiteTurnSchema>) {
+  try {
+    const parsed = websiteTurnSchema.safeParse(value);
+    if (parsed.success) console.info('rnr_ai_website_turn', parsed.data);
+  } catch { /* Diagnostics cannot change delivery. */ }
+}
 // Projection drops unknown fields; every emitted string is a fixed enum or a hash.
 // A diagnostic sink must never change a safety decision or trigger a provider retry.
 export function logReasoningDiagnostic(value: ReasoningDiagnostic) {

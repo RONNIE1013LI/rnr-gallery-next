@@ -156,14 +156,29 @@ describe("MetaReplyOrchestrator", () => {
     expect(current.brain.generate).not.toHaveBeenCalled();
   });
 
-  it("encrypts YELLOW review content for 48 hours and activates takeover", async () => {
+  it("encrypts YELLOW review content without pretending staff have taken over", async () => {
     const current = await setup({ decision: { ...greenDecision, risk: "YELLOW", nextAction: "HUMAN_REVIEW", replyText: "Private draft" } });
     const result = await current.orchestrator.handle(event());
     expect(result).toMatchObject({ status: "review", risk: "YELLOW" });
     const ciphertext = await current.store.readEncryptedReview(result.reviewKey!);
     expect(ciphertext).toMatch(/^v1\./);
     expect(ciphertext).not.toContain("Private draft");
-    expect(await current.takeover.read("conversation-raw")).toMatchObject({ active: true, source: "risk" });
+    expect(await current.takeover.read("conversation-raw")).toBeNull();
+  });
+
+  it("re-evaluates the next customer turn after review and preserves its unresolved history", async () => {
+    const first = event();
+    const next = event({ externalMessageKey: "next-question", text: "Will I see the design before printing?", receivedAt: now });
+    const current = await setup({ snapshots: [snapshot([first]), snapshot([first]), snapshot([first, next]), snapshot([first, next])], senderStatus: "sent" });
+    current.brain.generate.mockResolvedValueOnce({ ...greenDecision, risk: "RED", replyText: null, reasons: ["verification_timeout"], nextAction: "HUMAN_REVIEW" });
+    const review = await current.orchestrator.handle(first);
+    expect(review.status).toBe("review");
+    expect(await current.orchestrator.handle(next)).toMatchObject({ status: "delivery_sent" });
+    expect(current.brain.generate).toHaveBeenCalledTimes(2);
+    expect(current.brain.generate.mock.calls[1][0].conversation.map(t => t.text)).toEqual([first.text, next.text]);
+    expect(await current.store.readEncryptedReview(review.reviewKey!)).toBeTruthy();
+    expect(current.sender.sendEligibleReply).toHaveBeenCalledTimes(1);
+    expect(await current.orchestrator.handle(next)).toMatchObject({ status: "duplicate" });
   });
 
   it("keeps a released review as history while making the next customer message the only active turn", async () => {
@@ -230,7 +245,7 @@ describe("MetaReplyOrchestrator", () => {
     await expect(current.orchestrator.handle(repeated)).resolves.toMatchObject({ status: "review", risk: "YELLOW" });
     expect(current.brain.generate).toHaveBeenCalledOnce();
     expect(current.sender.sendEligibleReply).not.toHaveBeenCalled();
-    await expect(current.takeover.read("conversation-raw")).resolves.toMatchObject({ active: true, source: "risk" });
+    await expect(current.takeover.read("conversation-raw")).resolves.toMatchObject({ active: false, source: "admin" });
   });
 
   it("cancels a candidate when a newer customer message or OFF state wins the final recheck", async () => {
@@ -290,17 +305,17 @@ describe("MetaReplyOrchestrator", () => {
     await expect(current.orchestrator.handle(event(), { deadlineAt: Date.now() + 45_000 }))
       .resolves.toMatchObject({ status: "review", risk: "RED" });
     expect(current.sender.sendEligibleReply).not.toHaveBeenCalled();
-    expect(await current.takeover.read("conversation-raw")).toMatchObject({ active: true, source: "risk" });
+    expect(await current.takeover.read("conversation-raw")).toBeNull();
   });
 
-  it("turns an image resolution failure into review takeover without a generic model answer", async () => {
+  it("keeps a failed image in review without a generic model answer or staff takeover", async () => {
     const current = await setup();
     current.images.resolveMetaImages.mockRejectedValueOnce(new MetaImageResolutionError());
     await expect(current.orchestrator.handle(event({
       attachments: [{ externalAttachmentKey: "image-1", ordinal: 0, kind: "image", sourceRef: { kind: "facebook_remote", url: "https://scontent.test/image.jpg" }, mimeTypeHint: null, failureCode: null }],
     }))).resolves.toMatchObject({ status: "review", risk: "YELLOW" });
     expect(current.brain.generate).not.toHaveBeenCalled();
-    expect(await current.takeover.read("conversation-raw")).toMatchObject({ active: true, source: "risk" });
+    expect(await current.takeover.read("conversation-raw")).toBeNull();
   });
 
   it("keeps orchestration and backlog free of Neon, product registry and channel send implementation", () => {

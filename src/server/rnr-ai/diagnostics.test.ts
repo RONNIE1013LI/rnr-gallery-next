@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { contractFailureCodes } from './reasoning/claim-contract';
-import { logReasoningDiagnostic, type ReasoningDiagnostic } from './diagnostics';
+import { logReasoningDiagnostic, logWebsiteTurnDiagnostic, type ReasoningDiagnostic } from './diagnostics';
 
 const expectedCodes = [
   'invalid_money_mention', 'conflicting_money_mention', 'unsafe_public_output', 'semantic_verification_failed', 'uncovered_money_claim', 'internal_error_language',
@@ -17,6 +17,18 @@ const expectedCodes = [
 const safe: ReasoningDiagnostic = { messageHash: 'a'.repeat(64), model: 'gpt-5.6-luna', stage: 'generation', reason: 'none', candidateCreated: false, reasoningSuccess: false, verificationSuccess: false, risk: null };
 
 describe('contract diagnostics privacy boundary', () => {
+  it('projects website admission diagnostics without customer text or arbitrary errors', () => {
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    try {
+      const value = { messageHash: 'a'.repeat(64), admitted: false, aiEnabled: true,
+        takeover: true, status: 'review' as const, risk: null, reviewReason: 'unresolved' as const };
+      logWebsiteTurnDiagnostic({ ...value, customerText: 'private' } as typeof value);
+      expect(spy).toHaveBeenCalledWith('rnr_ai_website_turn', value);
+      expect(JSON.stringify(spy.mock.calls)).not.toContain('private');
+      spy.mockImplementation(() => { throw Error('sink unavailable'); });
+      expect(() => logWebsiteTurnDiagnostic(value)).not.toThrow();
+    } finally { spy.mockRestore(); }
+  });
   it('retains the base diagnostic privacy projection and enum validation', () => {
     const spy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     try {

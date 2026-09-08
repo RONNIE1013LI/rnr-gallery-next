@@ -53,6 +53,36 @@ describe("website shared runtime", () => {
 });
 
 describe("website provider admission gates", () => {
+  it("re-evaluates a new question after a failed turn without treating review as human takeover", async () => {
+    const f = fixture();
+    const generate = vi.fn().mockRejectedValueOnce(Error("provider failed"))
+      .mockResolvedValue({ text: decision.replyText, decision });
+    const runtime = createWebsiteReplyRuntime({ repository: f.repository, brain: { generate }, perCallBudget: true });
+    let oldSelector = "";
+    for (const [key, text, status] of [
+      ["failed", "How much is A3?", "review"],
+      ["next", "Will I see the design before printing?", "published"],
+    ]) {
+      f.advance(2000);
+      const turn = await f.repository.ingestConversationEvent(f.event(key, { text }));
+      if (turn.status !== "turn_pending") throw Error();
+      expect(await runtime.processTurn(turn.turnId)).toEqual({ status });
+      if (key === "failed") oldSelector = (await f.repository.listQueue(5)).items[0].websiteReview!.selector!;
+    }
+    expect(generate).toHaveBeenCalledTimes(2);
+    const item = (await f.repository.listQueue(5)).items[0];
+    // Answering a later question must not erase the earlier pending review.
+    expect(item.websiteReview?.reason).toBe("provider_error");
+    expect(await f.repository.answerWebsiteReview({ reviewSelector: oldSelector, text: "Stale answer", actorUserId: "staff", now: new Date(f.now()) })).toEqual({ status: "unavailable" });
+    expect(await f.repository.answerWebsiteReview({ reviewSelector: item.websiteReview!.selector!,
+      text: "Our team is reviewing your earlier question.", actorUserId: "staff", now: new Date(f.now()) })).toEqual({ status: "sent" });
+    f.advance(2000);
+    const next = await f.repository.ingestConversationEvent(f.event("manual", { text: "What sizes?" }));
+    if (next.status !== "turn_pending") throw Error();
+    await runtime.processTurn(next.turnId);
+    expect(generate).toHaveBeenCalledTimes(2);
+  });
+
   it("opens a manually answerable review without generation when master gate is off", async () => {
     const f = fixture(),
       generate = vi.fn(),
