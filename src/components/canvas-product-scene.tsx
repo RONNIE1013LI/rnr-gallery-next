@@ -92,9 +92,9 @@ function Scene({imageSrc,sizeKey,orientation}:CanvasPreviewProps) {
       {([['front','Front'],['back','Back'],['side','Side'],['detail','Detail'],['rear-detail','Back detail'],['reset','Reset']] as const).map(([view,label])=><button type="button" key={view} data-mobile-primary={["front", "back", "reset"].includes(view) || undefined} disabled={!!status} onClick={()=>actions.current?.view(view)}>{label}</button>)}
       {displayProfile.braces!=="none"&&<button type="button" disabled={!!status} onClick={()=>actions.current?.view("brace-detail")}>Brace detail</button>}
       <button type="button" disabled={!!status} aria-pressed={auto} onClick={()=>setAuto(actions.current?.rotate()??false)}>Rotate</button>
-      <button type="button" disabled={!!status} aria-label="Zoom in" onClick={()=>actions.current?.zoom(.85)}>＋</button>
-      <button type="button" disabled={!!status} aria-label="Zoom out" onClick={()=>actions.current?.zoom(1/.85)}>−</button>
-      <button type="button" disabled={!!status} aria-label="Fullscreen 3D" onClick={()=>{if(document.fullscreenElement)void document.exitFullscreen();else void panel.current?.requestFullscreen?.().catch(()=>{});}}>⛶</button>
+      <button type="button" disabled={!!status} data-mobile-primary aria-label="Zoom in" onClick={()=>actions.current?.zoom(.85)}>＋</button>
+      <button type="button" disabled={!!status} data-mobile-primary aria-label="Zoom out" onClick={()=>actions.current?.zoom(1/.85)}>−</button>
+      <button type="button" disabled={!!status} data-mobile-primary aria-label="Fullscreen 3D" onClick={()=>{if(document.fullscreenElement)void document.exitFullscreen();else void panel.current?.requestFullscreen?.().catch(()=>{});}}>⛶</button>
     </div>
     <p className={styles.caption}>Drag to rotate · Scroll or pinch to zoom<br/>Artwork shown without cropping. Construction details are indicative.</p>
   </div>;
