@@ -1,3 +1,5 @@
+import { fabricBannerDefaults } from "@/components/fabric-banner-3d/defaults";
+import { FabricBannerPreview } from "@/components/fabric-banner-preview";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -150,7 +152,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
     related = [];
   }
 
-  const ProductPreview = design.productTypeSlug === "roll-up-banner" ? RollUpBannerPreview : CanvasProductPreview;
+  const ProductPreview = design.productTypeSlug === "roll-up-banner" ? RollUpBannerPreview : fabricBannerDefaults[registryProduct.slug] ? FabricBannerPreview : CanvasProductPreview;
   return (
     <main id="main-content" className={styles.designDetailPage}>
       <StructuredData id="rnr-design-breadcrumbs" data={buildBreadcrumbData([
@@ -161,6 +163,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
       <section className={styles.designDetailHero}>
         <div className={styles.designDetailMedia}>
           <ProductPreview
+            productSlug={registryProduct.slug}
             imageSrc={`/gallery-images/${design.id}?v=${design.contentHash}`}
             sizeKey={design.productTypeSlug === "canvas" ? (registryProduct.configuration.sizes.some(size=>size.key==="a0") ? "a0" : registryProduct.configuration.sizes[0]?.key ?? "") : ""}
             sizes={registryProduct.configuration.sizes.map(size=>size.key)}

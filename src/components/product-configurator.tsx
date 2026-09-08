@@ -1,4 +1,6 @@
 "use client";
+import { fabricBannerDefaults } from "./fabric-banner-3d/defaults";
+import { FabricBannerPreview } from "./fabric-banner-preview";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -88,7 +90,7 @@ export function ProductConfigurator({
   relatedDesigns = [],
   initialSizeKey,
 }: ProductConfiguratorProps) {
-  const ProductPreview = product.slug === "roll-up-banner" ? RollUpBannerPreview : CanvasProductPreview;
+  const ProductPreview = product.slug === "roll-up-banner" ? RollUpBannerPreview : fabricBannerDefaults[product.slug] ? FabricBannerPreview : CanvasProductPreview;
   const designInspiration = selectedDesign;
   const [sizeKey, setSizeKey] = useState(
     initialSizeKey && schema.sizes.some((size) => size.key === initialSizeKey)
@@ -346,7 +348,7 @@ export function ProductConfigurator({
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
         <section className={styles.artworkPreview} aria-label="Artwork preview">
-        <ProductPreview imageSrc={product.slug === "roll-up-banner" ? designInspiration?.imageUrl ?? "/roll-up-banner-3d/default-artwork.avif" : canvas3DImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
+        <ProductPreview productSlug={product.slug} imageSrc={product.slug === "roll-up-banner" ? designInspiration?.imageUrl ?? "/roll-up-banner-3d/default-artwork.avif" : fabricBannerDefaults[product.slug] ? designInspiration?.imageUrl ?? fabricBannerDefaults[product.slug] : canvas3DImage} sizeKey={product.category === "canvas" || fabricBannerDefaults[product.slug] ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
         <div className={styles.artworkPreviewMedia}>
           <Image
             src={previewImage}
