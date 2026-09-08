@@ -5908,3 +5908,26 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.priceAtStart {
+  margin:0 0 1.25rem;
+  padding:1rem 1.25rem;
+  border:1px solid #d9ded6;
+  border-radius:.75rem;
+  background:#f2f5ef}
+.priceAtStart strong {
+  font-size:1.35rem}
+.priceAtStart p,.priceAtStart a {
+  font-size:.85rem;
+  line-height:1.5;
+  margin:.4rem 0}
+.catalogueLinks {
+  display:flex;
+  gap:1rem;
+  flex-wrap:wrap;
+  margin:1rem 0 1.5rem}
+.catalogueLinks a {
+  padding:.6rem 1rem;
+  border:1px solid #173f35;
+  border-radius:2rem;
+  color:#173f35}

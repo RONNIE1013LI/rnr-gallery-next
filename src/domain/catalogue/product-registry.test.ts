@@ -140,6 +140,7 @@ describe("authoritative product registry", () => {
     expect(parsed.markets.NZ).toEqual(expectedNewZealand);
     expect(parsed.markets.AU).toEqual({
       ...expectedAustralia,
+      urgentServiceFees: [6000,5000,0,0].map((amountInclTaxCents,index)=>({workingDays:index+1,amountInclTaxCents})),
       shippingMethods: [
         {
           key: "au-standard",
@@ -319,7 +320,7 @@ describe("authoritative product registry", () => {
         "2026-08-04",
         registry.pricing.urgentServiceFeesInclGstCents,
       ).feeInclGstCents,
-    ).toBe(8_500);
+    ).toBe(6_000);
   });
 
   it("rejects unsafe prices and an inactive featured product", () => {

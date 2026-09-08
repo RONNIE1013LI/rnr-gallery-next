@@ -21,7 +21,7 @@ export default function HelpPage() {
         <h2>Will I see the artwork before it is printed?</h2>
         <p>Yes. Personalised orders include a proof before printing and two revision rounds.</p>
         <h2>How long does production take?</h2>
-        <p>Standard production time is 5 business days from the date the order is placed.</p>
+        <p>Standard production time is 3 business days from the date the order is placed.</p>
         <h2>Where do you deliver?</h2>
         <p>R&amp;R Gallery offers delivery within New Zealand and to Australia. See current estimated delivery times on the shipping page.</p>
         <div className={styles.legalActions}>

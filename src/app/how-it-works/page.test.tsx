@@ -6,7 +6,7 @@ describe("HowItWorksPage", () => {
   it("explains the real production, revision, delivery and support process", () => {
     render(<HowItWorksPage />);
 
-    expect(screen.getByText(/5 business days from the date the order is placed/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 business days from the date the order is placed/i)).toBeInTheDocument();
     expect(screen.getByText(/two free design revisions/i)).toBeInTheDocument();
     expect(screen.getByText(/rush order/i)).toBeInTheDocument();
     expect(screen.getByText(/new zealand.*2–3 business days/i)).toBeInTheDocument();

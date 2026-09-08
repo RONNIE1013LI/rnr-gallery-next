@@ -232,17 +232,17 @@ export function HomepageV3({
         <div className={`${styles.shell} ${styles.heroGrid}`}>
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>CUSTOM STORY &amp; ARTWORK STUDIO</p>
-            <h1>From your photos to the piece you imagined.</h1>
+            <h1>Custom Canvas &amp; Banners, made for your story.</h1>
             <div className={styles.heroActions}>
               <a className={styles.textLink} href="#transformation">
                 See Transformations <Arrow />
               </a>
               <Link className={`${styles.button} ${styles.buttonPrimary}`} href={shopHref}>
-                Start With Your Photos
+                Choose Your Product
               </Link>
             </div>
             <p className={styles.microcopy}>
-              You don&apos;t need perfect photos. We&apos;ll help you choose the right format.
+              Custom design, proof before printing and delivery across New Zealand and Australia.
             </p>
           </div>
 
@@ -283,6 +283,48 @@ export function HomepageV3({
             <strong>REAL CUSTOMER SUPPORT</strong>
             <span className={styles.trustCopyDesktop}>Help choosing photos, wording and format.</span>
             <span className={styles.trustCopyMobile}>Help with photos, wording and format.</span>
+          </div>
+        </div>
+      </section>
+
+      {reviewSection?.summary && <div className={styles.reviewHighlight}>
+        <a href={reviewSection.summary.reviewsPageUrl}>Recommended by our customers · {reviewSection.summary.countIsApproximate ? "About " : ""}{reviewSection.summary.recommendationCount} Facebook reviews</a>
+        <span>See the customer stories and verified source below.</span>
+      </div>}
+      <section id="transformation" className={`${styles.transformationSection} ${styles.sectionDark}`}>
+        <div className={styles.shell}>
+          <p className={`${styles.eyebrow} ${styles.eyebrowLight} ${styles.transformationEyebrow}`}>SIGNATURE TRANSFORMATION</p>
+          <div className={styles.transformationGrid}>
+            <div className={styles.transformationIntro}>
+              <h2>Three photographs.<br />One family piece.</h2>
+              <p>See the starting photographs, the refinements completed by R&amp;R Gallery and the final printed result.</p>
+              <div className={styles.rawPhotoCollage}>
+                {homepageV3ImageSlots.signatureOriginalPhotos.map((imageSlot, index) => (
+                  <Artwork
+                    key={imageSlot.alt}
+                    slot={imageSlot}
+                    tone={index === 0 ? "sand" : index === 1 ? "blue" : "clay"}
+                    people={index === 1 ? 2 : 1}
+                    label={`PHOTO 0${index + 1}`}
+                    className={`${styles.rawPhoto} ${index === 0 ? styles.rawOne : index === 1 ? styles.rawTwo : styles.rawThree}`}
+                    sizes="(max-width: 420px) 148px, (max-width: 760px) 162px, 210px"
+                  />
+                ))}
+              </div>
+              <span className={styles.darkCaption}>THE PHOTOS PROVIDED</span>
+            </div>
+            <div className={styles.workList} aria-label="Design work completed">
+              <div className={styles.workItem}><span>01</span><strong>People combined naturally</strong></div>
+              <div className={styles.workItem}><span>02</span><strong>Background cleaned and rebuilt</strong></div>
+              <div className={styles.workItem}><span>03</span><strong>Positioning, clothing and detail refined</strong></div>
+              <div className={styles.workItem}><span>04</span><strong>Personal wording and cultural elements added</strong></div>
+              <p className={styles.workNote}>Every artwork is reviewed and refined by our team before printing.</p>
+            </div>
+            <div className={styles.transformationResult}>
+              <Artwork slot={homepageV3ImageSlots.signatureFinishedArtwork} tone="sage" ratio="five-four" people={4} label="FINAL ARTWORK" darkLabel className={styles.resultArt} sizes="(max-width: 420px) calc(100vw - 2rem), (max-width: 760px) calc(100vw - 2.5rem), (max-width: 1080px) 560px, (max-width: 1352px) calc(42.97vw - 5.05rem), 500px" />
+              <h3>Finished as a custom family canvas</h3>
+              <p>3 source photos · Custom background · Proof approved before print</p>
+            </div>
           </div>
         </div>
       </section>
@@ -346,7 +388,7 @@ export function HomepageV3({
             {hasActiveProduct("grave-cover") ? (
               <article className={styles.productVertical}>
                 <Artwork slot={homepageV3ImageSlots.graveCoverProductImage} tone="olive" ratio="four-five" people={2} className={styles.productMedia} productRatio="grave-cover-4-5" sizes="(max-width: 412px) calc(100vw - 2rem), 380px" />
-                <div className={styles.productCopy}><h3>Grave Cover</h3><p>A complete 100 cm × 200 cm vertical memorial format shown without horizontal cropping.</p><Link className={styles.textLink} href={configureHref("grave-cover")}>Shop Grave Covers <Arrow /></Link></div>
+                <div className={styles.productCopy}><h3>Grave Cover</h3><p>A personalised 100 × 200 cm memorial grave cover with reinforced eyelets.</p><Link className={styles.textLink} href={configureHref("grave-cover")}>Shop Grave Covers <Arrow /></Link></div>
               </article>
             ) : null}
           </div>
@@ -362,7 +404,7 @@ export function HomepageV3({
               <p className={styles.eyebrow}>START WITH YOUR PHOTOS</p>
               <h3>Use the photos you have.</h3>
               <p>You don&apos;t need perfect photos. We&apos;ll help you choose a suitable product and format.</p>
-              <Link className={styles.textLink} href={shopHref}>Start with your photos <Arrow /></Link>
+              <Link className={styles.textLink} href={shopHref}>Choose your product <Arrow /></Link>
             </article>
             <article className={styles.discoverySupportItem}>
               <p className={styles.eyebrow}>DESIGN HELP</p>
@@ -370,44 +412,6 @@ export function HomepageV3({
               <p>Send your photos or idea by Messenger and we&apos;ll explain a clear next step.</p>
               <a className={styles.textLink} href="https://m.me/RandRgallery" rel="noopener noreferrer">Get Design Help <Arrow /></a>
             </article>
-          </div>
-        </div>
-      </section>
-
-      <section id="transformation" className={`${styles.transformationSection} ${styles.sectionDark}`}>
-        <div className={styles.shell}>
-          <p className={`${styles.eyebrow} ${styles.eyebrowLight} ${styles.transformationEyebrow}`}>SIGNATURE TRANSFORMATION</p>
-          <div className={styles.transformationGrid}>
-            <div className={styles.transformationIntro}>
-              <h2>Three photographs.<br />One family piece.</h2>
-              <p>See the starting photographs, the refinements completed by R&amp;R Gallery and the final printed result.</p>
-              <div className={styles.rawPhotoCollage}>
-                {homepageV3ImageSlots.signatureOriginalPhotos.map((imageSlot, index) => (
-                  <Artwork
-                    key={imageSlot.alt}
-                    slot={imageSlot}
-                    tone={index === 0 ? "sand" : index === 1 ? "blue" : "clay"}
-                    people={index === 1 ? 2 : 1}
-                    label={`PHOTO 0${index + 1}`}
-                    className={`${styles.rawPhoto} ${index === 0 ? styles.rawOne : index === 1 ? styles.rawTwo : styles.rawThree}`}
-                    sizes="(max-width: 420px) 148px, (max-width: 760px) 162px, 210px"
-                  />
-                ))}
-              </div>
-              <span className={styles.darkCaption}>THE PHOTOS PROVIDED</span>
-            </div>
-            <div className={styles.workList} aria-label="Design work completed">
-              <div className={styles.workItem}><span>01</span><strong>People combined naturally</strong></div>
-              <div className={styles.workItem}><span>02</span><strong>Background cleaned and rebuilt</strong></div>
-              <div className={styles.workItem}><span>03</span><strong>Positioning, clothing and detail refined</strong></div>
-              <div className={styles.workItem}><span>04</span><strong>Personal wording and cultural elements added</strong></div>
-              <p className={styles.workNote}>Every artwork is reviewed and refined by our team before printing.</p>
-            </div>
-            <div className={styles.transformationResult}>
-              <Artwork slot={homepageV3ImageSlots.signatureFinishedArtwork} tone="sage" ratio="five-four" people={4} label="FINAL ARTWORK" darkLabel className={styles.resultArt} sizes="(max-width: 420px) calc(100vw - 2rem), (max-width: 760px) calc(100vw - 2.5rem), (max-width: 1080px) 560px, (max-width: 1352px) calc(42.97vw - 5.05rem), 500px" />
-              <h3>Finished as a custom family canvas</h3>
-              <p>3 source photos · Custom background · Proof approved before print</p>
-            </div>
           </div>
         </div>
       </section>
@@ -428,7 +432,7 @@ export function HomepageV3({
                 <div className={styles.approvedBox}><small>APPROVED FOR PRINT</small><strong>The customer confirms the exact version that will be printed.</strong></div>
               </div>
               <ol className={styles.proofSteps}>
-                <li><span>01</span><div><strong>Tell us your idea</strong><p>Upload photos and explain the people, wording, occasion and style.</p></div></li>
+                <li><span>01</span><div><strong>Order your artwork</strong><p>Choose your product, send your photos and wording, and complete payment.</p></div></li>
                 <li><span>02</span><div><strong>We create the artwork</strong><p>Our team prepares the composition, layout and background.</p></div></li>
                 <li><span>03</span><div><strong>You review the proof</strong><p>Two free design revisions are included. List requested changes together to avoid an additional fee.</p></div></li>
                 <li><span>04</span><div><strong>We print and deliver</strong><p>Only the approved design moves into production and delivery.</p></div></li>
@@ -464,7 +468,7 @@ export function HomepageV3({
       <section id="final-cta" className={`${styles.finalCta} ${styles.sectionDark}`}>
         <div className={`${styles.shell} ${styles.finalCtaGrid}`}>
           <div><p className={`${styles.eyebrow} ${styles.eyebrowLight}`}>A PLACE TO START</p><h2>You don&apos;t need perfect photos.<br />You just need a place to start.</h2><p>Upload what you have, tell us what the piece is for, and we&apos;ll guide you from there.</p></div>
-          <div className={styles.finalActions}><Link className={`${styles.button} ${styles.buttonLight}`} href={shopHref}>Start With Your Photos</Link><a className={`${styles.textLink} ${styles.textLinkLight}`} href="#products">Get product guidance <Arrow /></a></div>
+          <div className={styles.finalActions}><Link className={`${styles.button} ${styles.buttonLight}`} href={shopHref}>Choose Your Product</Link><a className={`${styles.textLink} ${styles.textLinkLight}`} href="#products">Get product guidance <Arrow /></a></div>
         </div>
       </section>
     </main>

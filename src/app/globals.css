@@ -1325,3 +1325,5 @@ a:active {
     display: none;
   }
 }
+
+@media(max-width:600px){.site-header__brand .brand-mark__name{white-space:nowrap;font-size:.85rem}.site-header__brand .brand-mark__line{display:none}}

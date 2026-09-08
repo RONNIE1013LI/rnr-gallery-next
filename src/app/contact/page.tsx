@@ -25,7 +25,7 @@ export default function ContactPage() {
           <a href="tel:+642102348948">+64 21 023 48948</a><br />
           <a href="mailto:customerservice@rnrgallery.com">customerservice@rnrgallery.com</a>
         </address>
-        <p>Send questions or order photos through the channel that suits you.</p>
+        <p>Need help choosing? Send your photos, occasion, preferred size and the date you need it. We can help you choose the next step.</p>
         <div className={styles.legalActions}>
           <a className={styles.primaryButton} href="https://m.me/RandRgallery" rel="noopener noreferrer">Messenger</a>
           <a className={styles.secondaryButton} href="https://wa.me/642102348948" rel="noopener noreferrer">WhatsApp</a>

@@ -5,7 +5,7 @@
 ## General
 
 - Production time and delivery time are separate.
-- Design and printing usually take around five working days after all photos, details, and deposit are received.
+- Standard production is three working days from the order date, excluding weekends and existing public holidays. Delivery is additional. Complete materials and proof approval are needed to keep the schedule.
 - Delivery timing depends on dispatch date, destination, courier route, and remote-area status.
 - Do not guarantee an arrival date unless the courier/order system confirms it.
 - A courier estimate is not a business guarantee. Urgent-order and delivery guarantees are `HIGH RISK` and always require human approval.
@@ -58,7 +58,7 @@
 
 For general timing:
 
-> Design and printing usually take around 5 working days after we receive all photos, details and the deposit. Delivery time depends on your location. Please send your suburb/postcode and required date for an estimate.
+> Standard production takes 3 working days from the order date. You approve the design before printing; missing materials or delayed approval may affect the schedule. Delivery time depends on your location. Please send your suburb/postcode and required date for an estimate.
 
 For a deadline:
 

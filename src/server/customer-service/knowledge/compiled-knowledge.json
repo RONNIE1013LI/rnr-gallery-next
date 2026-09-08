@@ -1,10 +1,10 @@
 {
-  "knowledgeVersion": "894aa90cd6e228d303bfb55fd15de5e7525014432e47786bf85e3921a6705b92",
+  "knowledgeVersion": "c498f67bac9a9c81caa09f1dd81a6ae0e8324b1b6a636a6ec866c17dd0385fe3",
   "metadata": {
     "buildVersion": "1",
-    "sourceCommit": "15c5d55fd3430d439108f36b2a6eafb91b9aa22f",
-    "compiledAt": "2026-08-20T03:05:44.817Z",
-    "sourceChecksum": "24a8af5368043e8b4f296f4cbce295f21912609661cd57fafcc4bc121c608536",
+    "sourceCommit": "c4303be97af4996d61b9de8672c4aa7d69ac8dc4",
+    "compiledAt": "2026-09-08T08:43:37.161Z",
+    "sourceChecksum": "ef2f665915e59b9842d069642a92fccdefff4e78b37ac7d29bd57c03dd3aeca4",
     "sourceCounts": {
       "policyRules": 58,
       "replyExamples": 20,
@@ -523,12 +523,12 @@
     },
     {
       "id": "PRODUCTION-01",
-      "text": "Design and printing usually take around five working days after all photos, details, and deposit are received.",
+      "text": "Standard production is three working days from the order date; complete materials and proof approval are required, and delivery is additional.",
       "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
       "source": "Ronnie explicitly supplied this wording",
-      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "lastConfirmed": "2026-09-08",
       "mayAnswerAutomatically": false,
       "requiresHumanEscalation": true
     },
@@ -745,7 +745,7 @@
     {
       "intent": "production_timing",
       "customer": "How long do design and printing take?",
-      "reply": "Design and printing usually take around five working days after we receive all photos, details, and the deposit. Please send your required date so we can check current capacity.",
+      "reply": "Standard production takes three working days from the order date. Complete materials and proof approval are needed to keep the schedule; delivery is additional. Please send your required date so we can check current capacity.",
       "risk": "live_capacity_required",
       "provenance": "customer_brain.md"
     },

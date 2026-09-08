@@ -568,14 +568,14 @@
       "autonomous": true,
       "category": "production",
       "facts": {
-        "workingDaysApproximate": 5
+        "workingDaysApproximate": 3
       },
       "id": "production-standard-target",
       "market": "GLOBAL",
-      "provenance": "R&R Business Brain v0.5.1 section 3.1",
+      "provenance": "Owner production policy confirmed 2026-09-08",
       "requiresLiveTool": false,
       "sourceKind": "canonical",
-      "statement": "The standard production target is approximately five working days once required photos, details and applicable payment conditions are satisfied; urgent deadlines are never guaranteed without capacity confirmation.",
+      "statement": "Standard production is three working days from the order date, excluding weekends and public holidays. Complete materials and proof approval are needed to keep the schedule; delivery is additional, and urgent deadlines require capacity confirmation.",
       "status": "CONFIRMED"
     },
     {
@@ -646,7 +646,7 @@
       "status": "CONFIRMED"
     }
   ],
-  "sourceSha256": "9bb3840c97f59728d00723432c7a82727528e25ff11ddf66e5923aadfb5846a5",
+  "sourceSha256": "f3edcab6510d9fb16f1316be6268d10a086056d11e1958bb217f701017334400",
   "version": "0.5.1",
   "voice": {
     "avoid": [

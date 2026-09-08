@@ -26,6 +26,7 @@ import { quoteMarketConfiguration } from "@/domain/pricing/market-quote";
 import { getPriceLineAmountInclGstCents } from "@/domain/pricing/types";
 import {
   addWorkingDays,
+  STANDARD_PRODUCTION_WORKING_DAYS,
   getUrgentService,
 } from "@/domain/scheduling/urgent-service";
 import { createClientId } from "@/lib/client-id";
@@ -128,7 +129,7 @@ export function BannerBundleConfigurator({
     initialCustomisation(schema.defaultPhotoSubmissionMethod));
   const [rollUpUploading, setRollUpUploading] = useState(false);
   const [wallBannerUploading, setWallBannerUploading] = useState(false);
-  const [neededDate, setNeededDate] = useState(() => addWorkingDays(orderDate, 5));
+  const [neededDate, setNeededDate] = useState(() => addWorkingDays(orderDate, STANDARD_PRODUCTION_WORKING_DAYS));
   const [urgentServiceConfirmed, setUrgentServiceConfirmed] = useState(false);
   const [deliveryPreference, setDeliveryPreference] =
     useState<DeliveryPreference>(schema.defaultDeliveryPreference);
@@ -310,6 +311,12 @@ export function BannerBundleConfigurator({
         } : null}
         scopeKey={`${product.key}:${selectedDesign?.id ?? "none"}`}
       />
+      <div className={styles.priceAtStart} aria-label="Current price">
+        <strong>{formatMarketMoney(quote.totalInclGstCents, currency)}{taxSuffix}</strong>
+        <p>Selected options included. Delivery is calculated at checkout.</p>
+        <p>Order and pay → Receive your design proof → Approve before printing.</p>
+        <Link href="/contact">Need help choosing? Send your photos, occasion and required date.</Link>
+      </div>
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
           <section className={styles.artworkPreview} aria-label="Artwork preview">
@@ -522,7 +529,8 @@ export function BannerBundleConfigurator({
                   <p>{deliveryCopy.australiaRemote}</p>
                 </>
               )}
-              <p>If your order is <strong>urgent</strong>, please make sure to clearly let us know when placing your order so that we can arrange it accordingly and avoid any delays.</p>
+              <p><strong>This is the production completion date, not the delivery date.</strong> Allow additional time for shipping.</p>
+            <p>If your order is <strong>urgent</strong>, please make sure to clearly let us know when placing your order so that we can arrange it accordingly and avoid any delays.</p>
             </div>
             <div className={`${styles.fieldGrid} ${styles.timingFields}`}>
               <label className={styles.formField}>

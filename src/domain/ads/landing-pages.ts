@@ -62,7 +62,7 @@ export const adLandingPages = Object.freeze({
     faq: [
       { question: "Which photo should I use?", answer: "Use the clearest original file available. Uploading on the customising page is recommended for preserving original quality." },
       { question: "Can I choose portrait or landscape?", answer: "Yes. Choose the orientation and finished size while customising." },
-      { question: "How long does production take?", answer: "Standard production time is 5 business days from the date the order is placed." },
+      { question: "How long does production take?", answer: "Standard production time is 3 business days from the date the order is placed." },
     ],
   },
 } satisfies Record<string, AdLandingPageContent>);

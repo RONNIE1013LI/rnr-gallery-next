@@ -78,12 +78,12 @@
       "status": "CONFIRMED",
       "market": "GLOBAL",
       "category": "production",
-      "statement": "The standard production target is approximately five working days once required photos, details and applicable payment conditions are satisfied; urgent deadlines are never guaranteed without capacity confirmation.",
-      "provenance": "R&R Business Brain v0.5.1 section 3.1",
+      "statement": "Standard production is three working days from the order date, excluding weekends and public holidays. Complete materials and proof approval are needed to keep the schedule; delivery is additional, and urgent deadlines require capacity confirmation.",
+      "provenance": "Owner production policy confirmed 2026-09-08",
       "sourceKind": "canonical",
       "autonomous": true,
       "requiresLiveTool": false,
-      "facts": { "workingDaysApproximate": 5 }
+      "facts": { "workingDaysApproximate": 3 }
     },
     {
       "id": "nz-canvas-base-prices",

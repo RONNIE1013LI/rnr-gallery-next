@@ -304,7 +304,7 @@ export function ProductRegistryForm({
             {pricing.urgentServiceFeesInclGstCents.map((amount, index) => (
               <label key={index + 1}>
                 <span>Working day {index + 1} urgent fee incl GST (NZD)</span>
-                <input name={`urgent-${index + 1}`} inputMode="decimal" defaultValue={moneyInput(amount)} required disabled={pending !== null} />
+                <input name={`urgent-${index + 1}`} readOnly title="Current production policy: day 1 $60, day 2 $50, day 3 onward $0" inputMode="decimal" defaultValue={moneyInput(amount)} required disabled={pending !== null} />
               </label>
             ))}
           </div>
@@ -386,7 +386,7 @@ export function ProductRegistryForm({
               {markets.AU.urgentServiceFees.map((fee) => (
                 <label key={fee.workingDays}>
                   <span>Working day {fee.workingDays} urgent fee final price (AUD)</span>
-                  <input name={`au-urgent-${fee.workingDays}`} inputMode="decimal" defaultValue={moneyInput(fee.amountInclTaxCents)} disabled={pending !== null} />
+                  <input name={`au-urgent-${fee.workingDays}`} readOnly title="Current production policy: day 1 $60, day 2 $50, day 3 onward $0" inputMode="decimal" defaultValue={moneyInput(fee.amountInclTaxCents)} disabled={pending !== null} />
                 </label>
               ))}
             </div>

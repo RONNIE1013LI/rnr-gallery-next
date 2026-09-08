@@ -48,7 +48,7 @@ Revision counting method: unresolved.
 
 ## How long do design and printing take?
 
-The current guideline is around five working days after all photos, details, and deposit are received. This is an estimate.
+Standard production is three working days from the order date, excluding weekends and public holidays. Complete materials and proof approval are needed to keep the schedule. Delivery is additional.
 
 Current queue/rush capacity: `LIVE`.
 

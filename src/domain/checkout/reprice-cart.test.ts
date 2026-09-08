@@ -499,10 +499,10 @@ describe("authoritative checkout repricing", () => {
   });
 
   it.each([
-    ["2026-08-04", 1, 8_000, 6_957, 20_075],
-    ["2026-08-05", 2, 7_000, 6_087, 19_075],
-    ["2026-08-06", 3, 6_000, 5_217, 18_075],
-    ["2026-08-07", 4, 5_000, 4_348, 17_075],
+    ["2026-08-04", 1, 6_000, 5_217, 18_075],
+    ["2026-08-05", 2, 5_000, 4_348, 17_075],
+    ["2026-08-06", 3, 0, 0, 12_075],
+    ["2026-08-07", 4, 0, 0, 12_075],
     ["2026-08-10", 5, 0, 0, 12_075],
   ])(
     "recalculates %s as working day %i with urgent fee %i",
@@ -548,7 +548,7 @@ describe("authoritative checkout repricing", () => {
     (urgentServiceConfirmed) => {
       expect(() =>
         repriceCart(
-          cart({ neededDate: "2026-08-07", urgentServiceConfirmed }),
+          cart({ neededDate: "2026-08-05", urgentServiceConfirmed }),
           { now: MONDAY_IN_AUCKLAND },
         ),
       ).toThrow("Urgent service must be confirmed");

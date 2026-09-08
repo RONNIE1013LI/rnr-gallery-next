@@ -681,3 +681,29 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+.reviewHighlight {
+  padding:1rem 1.25rem;
+  text-align:center;
+  background:#f2eee4;
+  display:grid;
+  gap:.35rem}
+.reviewHighlight a {
+  font-weight:600;
+  color:#173f35}
+.reviewHighlight span {
+  font-size:.8rem;
+  color:#626d64}
+@media(max-width:760px) {
+  .hero {
+  padding-top:1.75rem;
+  padding-bottom:1.75rem}
+.transformationSection {
+  padding:2rem 0}
+.transformationEyebrow {
+  margin-bottom:1.25rem}
+.workList {
+  display:none}
+.resultArt {
+  max-width:100%}
+}

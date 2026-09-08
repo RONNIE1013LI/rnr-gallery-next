@@ -78,7 +78,7 @@ export function AdLandingPage({ content, product, priceInclGstCents }: Readonly<
           <li><strong>Customise</strong><span>Choose the product options and add your wording.</span></li>
           <li><strong>Send photos</strong><span>Upload now or send them after ordering.</span></li>
           <li><strong>Approve the proof</strong><span>Review the design before printing.</span></li>
-          <li><strong>Production and delivery</strong><span>Standard production is 5 business days, followed by delivery.</span></li>
+          <li><strong>Production and delivery</strong><span>Standard production is 3 business days, followed by delivery.</span></li>
         </ol>
       </section>
       <section className={styles.adLandingExamples}>

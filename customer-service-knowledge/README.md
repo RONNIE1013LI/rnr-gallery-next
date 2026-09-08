@@ -123,7 +123,7 @@ See `knowledge-gaps.md` for the complete gap register.
 | Photo replacement fee | Partial | $25 per person after painting starts; product scope unclear |
 | NZ shipping | Partial | North Island orders over $299 free; other rates missing |
 | Australia shipping | Partial | DHL/standard timing exists; rates and postcode rules missing |
-| Production timing | Covered with caveat | Usually 5 working days after all photos, details, and deposit |
+| Production timing | Covered with caveat | Standard production is 3 working days from the order date; shipping is additional |
 | Customer approval rules | Covered | Preview before printing; no changes after printing confirmation |
 
 ## Document Map

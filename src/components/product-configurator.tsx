@@ -34,6 +34,7 @@ import { MAX_PEOPLE_PETS_PER_ITEM } from "@/domain/checkout/input-schema";
 import { createClientId } from "@/lib/client-id";
 import {
   addWorkingDays,
+  STANDARD_PRODUCTION_WORKING_DAYS,
   getUrgentService,
 } from "@/domain/scheduling/urgent-service";
 import styles from "./storefront.module.css";
@@ -136,7 +137,7 @@ export function ProductConfigurator({
       uploadedFiles: [],
       extraBackgroundRemovalUploadIds: [],
     });
-  const [neededDate, setNeededDate] = useState(() => addWorkingDays(orderDate, 5));
+  const [neededDate, setNeededDate] = useState(() => addWorkingDays(orderDate, STANDARD_PRODUCTION_WORKING_DAYS));
   const [urgentServiceConfirmed, setUrgentServiceConfirmed] = useState(false);
   const [deliveryPreference, setDeliveryPreference] =
     useState<DeliveryPreference>(schema.defaultDeliveryPreference);
@@ -345,6 +346,12 @@ export function ProductConfigurator({
         } : null}
         scopeKey={`${product.key}:${designInspiration?.id ?? "none"}`}
       />
+      <div className={styles.priceAtStart} aria-label="Current price">
+        <strong>{formatMarketMoney(quote.totalInclGstCents, currency)}{taxSuffix}</strong>
+        <p>Selected options included. Delivery is calculated at checkout.</p>
+        <p>Order and pay → Receive your design proof → Approve before printing.</p>
+        <Link href="/contact">Need help choosing? Send your photos, occasion and required date.</Link>
+      </div>
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
         <section className={styles.artworkPreview} aria-label="Artwork preview">
@@ -646,6 +653,7 @@ export function ProductConfigurator({
                 <p>{deliveryCopy.australiaRemote}</p>
               </>
             )}
+            <p><strong>This is the production completion date, not the delivery date.</strong> Allow additional time for shipping.</p>
             <p>If your order is <strong>urgent</strong>, please make sure to clearly let us know when placing your order so that we can arrange it accordingly and avoid any delays.</p>
           </div>
           <div className={`${styles.fieldGrid} ${styles.timingFields}`}>

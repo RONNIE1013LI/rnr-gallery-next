@@ -876,7 +876,7 @@ describe("ProductConfigurator", () => {
     expect(screen.getByText("Extra background removals").nextElementSibling).toHaveTextContent("0");
   });
 
-  it("adds the GST-inclusive fourth-day fee only after confirmation", () => {
+  it("adds the GST-inclusive second-day fee only after confirmation", () => {
     render(
       <ProductConfigurator
         product={product}
@@ -887,7 +887,7 @@ describe("ProductConfigurator", () => {
     );
     fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.change(screen.getByLabelText("Production completion date"), {
-      target: { value: "2026-08-07" },
+      target: { value: "2026-08-05" },
     });
 
     const orderSummary = screen.getByRole("complementary", { name: "Order summary" });

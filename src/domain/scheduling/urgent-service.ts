@@ -10,7 +10,8 @@ const MATARIKI_DATES = new Set([
   "2052-06-21",
 ]);
 const PUBLIC_HOLIDAYS_BY_YEAR = new Map<number, ReadonlySet<string>>();
-export const URGENT_SERVICE_FEES_INCL_GST_CENTS = Object.freeze([0, 8_000, 7_000, 6_000, 5_000] as const);
+export const STANDARD_PRODUCTION_WORKING_DAYS = 3;
+export const URGENT_SERVICE_FEES_INCL_GST_CENTS = Object.freeze([0, 6_000, 5_000, 0, 0] as const);
 export const DEFAULT_URGENT_SERVICE_FEES_INCL_GST_CENTS = Object.freeze(
   URGENT_SERVICE_FEES_INCL_GST_CENTS.slice(1),
 );

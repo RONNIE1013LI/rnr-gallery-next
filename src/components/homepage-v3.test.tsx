@@ -82,7 +82,7 @@ describe("HomepageV3", () => {
 
     const heroHeading = screen.getByRole("heading", {
       level: 1,
-      name: "From your photos to the piece you imagined.",
+      name: "Custom Canvas & Banners, made for your story.",
     });
     const heroSection = heroHeading.closest("section");
 
@@ -158,7 +158,7 @@ describe("HomepageV3", () => {
       .toHaveAttribute("href", "/shop");
     expect(screen.getByRole("link", { name: "Browse by occasion" }))
       .toHaveAttribute("href", "/design-gallery?filters=1#browse-by-occasion");
-    expect(screen.getByRole("link", { name: "Start with your photos" }))
+    expect(screen.getByRole("link", { name: "Choose your product" }))
       .toHaveAttribute("href", "/shop");
     expect(screen.getByRole("link", { name: "Get Design Help" }))
       .toHaveAttribute("href", "https://m.me/RandRgallery");
@@ -183,9 +183,9 @@ describe("HomepageV3", () => {
     );
 
     expect(reassuranceIndex).toBeGreaterThanOrEqual(0);
-    expect(galleryIndex).toBe(reassuranceIndex + 1);
+    expect(galleryIndex).toBe(transformationIndex + 1);
     expect(beginIndex).toBe(galleryIndex + 1);
-    expect(transformationIndex).toBe(beginIndex + 1);
+    expect(transformationIndex).toBe(reassuranceIndex + 1);
     expect(sections.filter((section) => section.id === "products")).toHaveLength(0);
   });
 
@@ -297,7 +297,7 @@ describe("HomepageV3", () => {
 
     const heroHeading = screen.getByRole("heading", {
       level: 1,
-      name: "From your photos to the piece you imagined.",
+      name: "Custom Canvas & Banners, made for your story.",
     });
     const heroLinks = Array.from(
       heroHeading.closest("section")?.querySelectorAll("a") ?? [],
@@ -306,7 +306,7 @@ describe("HomepageV3", () => {
 
     expect(heroLinks).toEqual([
       "See Transformations →",
-      "Start With Your Photos",
+      "Choose Your Product",
     ]);
   });
 
@@ -594,7 +594,7 @@ describe("HomepageV3", () => {
     expect(container.querySelector("main")).not.toHaveAttribute("data-homepage-palette");
     expect(screen.getByRole("heading", {
       level: 1,
-      name: "From your photos to the piece you imagined.",
+      name: "Custom Canvas & Banners, made for your story.",
     })).toBeInTheDocument();
     expect(screen.getByText("DESIGNER-LED. APPROVED BY YOU.")).toBeInTheDocument();
     expect(screen.queryByText("DESIGNED BY REAL PEOPLE")).not.toBeInTheDocument();
@@ -602,7 +602,7 @@ describe("HomepageV3", () => {
       "Every artwork is reviewed and refined by our team before printing.",
     )).toHaveLength(2);
     expect(screen.getAllByText(/Two free design revisions are included/)).toHaveLength(2);
-    expect(screen.getByText(/Standard production time is 5 business days/)).toBeInTheDocument();
+    expect(screen.getByText(/Standard production time is 3 business days/)).toBeInTheDocument();
     expect(screen.getByText(
       "Yes, please send us the original photos 😊 We’ll check the quality and enhance them where possible. Very blurry or low-resolution photos may affect the final result, so if any photo isn’t clear enough, we’ll let you know and ask for a better one.",
     )).toBeInTheDocument();
@@ -633,7 +633,7 @@ describe("HomepageV3", () => {
   it("maps every call to action to a real storefront destination", () => {
     const { container } = render(<HomepageV3 registry={defaultProductRegistry} />);
 
-    expect(screen.getAllByRole("link", { name: "Start With Your Photos" })[0])
+    expect(screen.getAllByRole("link", { name: "Choose Your Product" })[0])
       .toHaveAttribute("href", "/shop");
     expect(screen.getByRole("link", { name: "Shop Custom Canvas" }))
       .toHaveAttribute("href", "/canvas");
@@ -656,7 +656,7 @@ describe("HomepageV3", () => {
   it("keeps Australian homepage shopping links on direct AUD configuration routes", () => {
     render(<HomepageV3 registry={defaultProductRegistry} market="AU" />);
 
-    expect(screen.getAllByRole("link", { name: "Start With Your Photos" })[0])
+    expect(screen.getAllByRole("link", { name: "Choose Your Product" })[0])
       .toHaveAttribute("href", "/au/shop");
     expect(screen.getByRole("link", { name: "Shop Custom Canvas" }))
       .toHaveAttribute("href", "/au/canvas");

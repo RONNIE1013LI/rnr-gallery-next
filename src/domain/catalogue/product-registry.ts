@@ -560,6 +560,11 @@ export function parseProductRegistry(value: unknown): ProductRegistryDocument {
     );
   }
   const document = parsed.data as ProductRegistryDocument;
+  // Current production policy also applies to previously saved registries, without a database migration.
+  document.pricing.urgentServiceFeesInclGstCents = [...DEFAULT_URGENT_SERVICE_FEES_INCL_GST_CENTS];
+  for (const market of ["NZ", "AU"] as const) {
+    document.markets[market].urgentServiceFees = DEFAULT_URGENT_SERVICE_FEES_INCL_GST_CENTS.map((amount, index) => ({ workingDays: index + 1, amountInclTaxCents: amount }));
+  }
   assertBannerBundleInvariants(document);
   assertImmutableStructure(document);
   try {

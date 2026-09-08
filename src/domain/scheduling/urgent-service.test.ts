@@ -6,9 +6,9 @@ import {
 } from "./urgent-service";
 
 describe("urgent service schedule", () => {
-  it("defaults to the fifth working day, skipping weekends", () => {
-    expect(addWorkingDays("2026-08-03", 5)).toBe("2026-08-10");
-    expect(addWorkingDays("2026-08-07", 5)).toBe("2026-08-14");
+  it("defaults to the third working day, skipping weekends", () => {
+    expect(addWorkingDays("2026-08-03", 3)).toBe("2026-08-06");
+    expect(addWorkingDays("2026-08-07", 3)).toBe("2026-08-12");
   });
 
   it("skips New Zealand public holidays and Auckland Anniversary Day", () => {
@@ -19,16 +19,16 @@ describe("urgent service schedule", () => {
   it("counts Matariki as a non-working day when pricing urgent service", () => {
     expect(getUrgentService("2026-07-07", "2026-07-13")).toEqual({
       workingDays: 3,
-      feeInclGstCents: 6_000,
-      requiresConfirmation: true,
+      feeInclGstCents: 0,
+      requiresConfirmation: false,
     });
   });
 
   it.each([
-    ["2026-08-04", 1, 8_000],
-    ["2026-08-05", 2, 7_000],
-    ["2026-08-06", 3, 6_000],
-    ["2026-08-07", 4, 5_000],
+    ["2026-08-04", 1, 6_000],
+    ["2026-08-05", 2, 5_000],
+    ["2026-08-06", 3, 0],
+    ["2026-08-07", 4, 0],
     ["2026-08-10", 5, 0],
     ["2026-08-17", 10, 0],
   ])("maps %s to working day %i and fee %i", (neededDate, workingDays, fee) => {

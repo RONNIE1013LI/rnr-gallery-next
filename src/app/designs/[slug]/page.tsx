@@ -204,7 +204,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
           </p>
           <div className={styles.designDetailActions}>
             <Link className={styles.primaryButton} href={`${configurePath}?design=${design.id}`}>
-              Start With Your Photos
+              Customise This Design
             </Link>
             <Link className={styles.secondaryButton} href={returnTo}>View Similar Designs</Link>
           </div>
