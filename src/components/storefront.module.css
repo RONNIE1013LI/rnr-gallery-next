@@ -5940,11 +5940,14 @@
 }
 @media (max-width: 600px) {
   .priceAtStart {
-    padding-top: 2.8rem;
+    padding: .75rem 0 1.25rem;
   }
   .configurePage {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: .85rem;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .configureIntro {
+    padding-bottom: 0;
+    border-bottom: 0;
   }
   .configureIntro h1 {
     font-size: 1.45rem;
