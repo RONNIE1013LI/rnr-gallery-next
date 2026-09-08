@@ -346,7 +346,7 @@ export function ProductConfigurator({
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
         <section className={styles.artworkPreview} aria-label="Artwork preview">
-        <ProductPreview imageSrc={product.slug === "roll-up-banner" ? designInspiration?.imageUrl ?? relatedDesigns.find(design => design.productSlug === "roll-up-banner")?.imageUrl ?? "" : canvas3DImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
+        <ProductPreview imageSrc={product.slug === "roll-up-banner" ? designInspiration?.imageUrl ?? "/roll-up-banner-3d/default-artwork.avif" : canvas3DImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
         <div className={styles.artworkPreviewMedia}>
           <Image
             src={previewImage}

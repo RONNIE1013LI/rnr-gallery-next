@@ -19,9 +19,11 @@ describe("roll-up banner integration", () => {
     expect(screen.queryByTitle("Interactive roll-up banner preview")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View full image" })).toBeInTheDocument();
   });
-  it("never maps a product photograph onto the print surface", async () => {
-    render(<ProductConfigurator {...props} />);
+  it("uses the dedicated default artwork instead of an unrelated related design", async () => {
+    const unrelatedDesign = { id: "b".repeat(64), title: "Unrelated", altText: "Unrelated", imageUrl: "/gallery-images/unrelated?v=old", contentHash: "old", productSlug: "roll-up-banner" as const, width: 850, height: 2000 };
+    render(<ProductConfigurator {...props} relatedDesigns={[unrelatedDesign]} />);
     fireEvent.click(screen.getByRole("button", { name: "3D View" }));
-    expect(await screen.findByTitle("Interactive roll-up banner preview")).not.toHaveAttribute("data-image", product.image.src);
+    expect(await screen.findByTitle("Interactive roll-up banner preview"))
+      .toHaveAttribute("data-image", "/roll-up-banner-3d/default-artwork.avif");
   });
 });
