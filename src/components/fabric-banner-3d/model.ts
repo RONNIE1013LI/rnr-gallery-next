@@ -7,10 +7,13 @@ export function createFabricBannerModel(kind: FabricBannerKind, width: number, h
   const sheet = new THREE.Group(); root.add(sheet);
   const inset = .025, radius = .008;
   const corners = [-1, 1].flatMap(x => [-1, 1].map(y => new THREE.Vector2(x * (width / 2 - inset), y * (height / 2 - inset))));
+  const eyelets = kind === "grave"
+    ? [...corners, new THREE.Vector2(-width / 2 + inset, 0), new THREE.Vector2(width / 2 - inset, 0)]
+    : corners;
   const outline = new THREE.Shape();
   outline.moveTo(-width / 2, -height / 2); outline.lineTo(width / 2, -height / 2);
   outline.lineTo(width / 2, height / 2); outline.lineTo(-width / 2, height / 2); outline.closePath();
-  for (const p of corners) { const hole = new THREE.Path(); hole.absarc(p.x, p.y, radius, 0, Math.PI * 2, true); outline.holes.push(hole); }
+  for (const p of eyelets) { const hole = new THREE.Path(); hole.absarc(p.x, p.y, radius, 0, Math.PI * 2, true); outline.holes.push(hole); }
   const geometry = new THREE.ShapeGeometry(outline, 24);
   const positions = geometry.getAttribute("position"), uv = geometry.getAttribute("uv");
   for (let i = 0; i < positions.count; i++) uv.setXY(i, positions.getX(i) / width + .5, positions.getY(i) / height + .5);
@@ -19,7 +22,7 @@ export function createFabricBannerModel(kind: FabricBannerKind, width: number, h
   const back = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xe8e5df, roughness: .95, side: THREE.BackSide }));
   back.name = "plain-back"; back.position.z = -.001; sheet.add(back);
   const silver = new THREE.MeshStandardMaterial({ color: 0xc7cbcc, metalness: .85, roughness: .29, side: THREE.DoubleSide });
-  for (const [index, p] of corners.entries()) {
+  for (const [index, p] of eyelets.entries()) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(radius + .0025, .0025, 10, 32), silver);
     ring.name = `eyelet-${index}`; ring.position.set(p.x, p.y, .002); sheet.add(ring);
     if (kind === "wall") {
@@ -35,6 +38,6 @@ export function createFabricBannerModel(kind: FabricBannerKind, width: number, h
   ]);
   sheet.add(new THREE.LineLoop(seam, new THREE.LineBasicMaterial({ color: 0x817b70, transparent: true, opacity: .22 })));
   if (kind === "grave") { sheet.rotation.x = -Math.PI / 2; sheet.position.y = .012; }
-  root.userData = { kind, width, height, eyelets: 4 };
+  root.userData = { kind, width, height, eyelets: eyelets.length };
   return root;
 }
