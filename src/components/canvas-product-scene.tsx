@@ -89,7 +89,7 @@ function Scene({imageSrc,sizeKey,orientation}:CanvasPreviewProps) {
     }}/>
     {status&&<p className={styles.status} role="status">{status}</p>}
     <div className={styles.controls} role="group" aria-label="3D view controls">
-      {([['front','Front'],['back','Back'],['side','Side'],['detail','Detail'],['rear-detail','Back detail'],['reset','Reset']] as const).map(([view,label])=><button type="button" key={view} disabled={!!status} onClick={()=>actions.current?.view(view)}>{label}</button>)}
+      {([['front','Front'],['back','Back'],['side','Side'],['detail','Detail'],['rear-detail','Back detail'],['reset','Reset']] as const).map(([view,label])=><button type="button" key={view} data-mobile-primary={["front", "back", "reset"].includes(view) || undefined} disabled={!!status} onClick={()=>actions.current?.view(view)}>{label}</button>)}
       {displayProfile.braces!=="none"&&<button type="button" disabled={!!status} onClick={()=>actions.current?.view("brace-detail")}>Brace detail</button>}
       <button type="button" disabled={!!status} aria-pressed={auto} onClick={()=>setAuto(actions.current?.rotate()??false)}>Rotate</button>
       <button type="button" disabled={!!status} aria-label="Zoom in" onClick={()=>actions.current?.zoom(.85)}>＋</button>

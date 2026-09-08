@@ -125,7 +125,7 @@ export default function FabricBannerScene({ imageSrc, kind = "wall", width = 1.6
     }} />
     {status && <p className={styles.status} role="status">{status}</p>}
     <div className={styles.controls} role="group" aria-label="3D view controls">
-      {[["front", kind === "grave" ? "Top" : "Front"], ["back", "Back"], ["side", "Side"], ["reset", "Reset"]].map(([name, label]) => <button type="button" key={name} disabled={!!status} onClick={() => actions.current?.view(name)}>{label}</button>)}
+      {[["front", kind === "grave" ? "Top" : "Front"], ["back", "Back"], ["side", "Side"], ["reset", "Reset"]].map(([name, label]) => <button type="button" key={name} data-mobile-primary={["front", "back", "reset"].includes(name) || undefined} disabled={!!status} onClick={() => actions.current?.view(name)}>{label}</button>)}
       <button type="button" disabled={!!status} aria-pressed={auto} onClick={() => setAuto(actions.current?.rotate() ?? false)}>Rotate</button>
       <button type="button" disabled={!!status} aria-label="Zoom in" onClick={() => actions.current?.zoom(.85)}>＋</button>
       <button type="button" disabled={!!status} aria-label="Zoom out" onClick={() => actions.current?.zoom(1 / .85)}>−</button>
