@@ -64,11 +64,11 @@ export function CataloguePage({
         <h1>{title}</h1>
         {description ? <p className={styles.pageIntroDescription}>{description}</p> : null}
       </header>
-      <nav className={styles.catalogueLinks} aria-label="Choose a product category">
+      {path !== "/shop" && path !== "/au/shop" && <nav className={styles.catalogueLinks} aria-label="Choose a product category">
         <Link href={market === "AU" ? "/au/canvas" : "/canvas"}>Canvas</Link>
         <Link href={market === "AU" ? "/au/banners" : "/banners"}>Banners</Link>
         <Link href="/design-gallery?filters=1#browse-by-occasion">Browse by occasion</Link>
-      </nav>
+      </nav>}
       <section className={styles.productGrid} aria-label={`${title} products`}>
         {products.map((product, index) => (
           <ProductCard

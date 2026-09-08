@@ -288,7 +288,7 @@ export function HomepageV3({
       </section>
 
       {reviewSection?.summary && <div className={styles.reviewHighlight}>
-        <a href={reviewSection.summary.reviewsPageUrl}>Recommended by our customers · {reviewSection.summary.countIsApproximate ? "About " : ""}{reviewSection.summary.recommendationCount} Facebook reviews</a>
+        <a href={reviewSection.summary.reviewsPageUrl}>100% Recommended (292 Reviews)</a>
         <span>See the customer stories and verified source below.</span>
       </div>}
       <section id="transformation" className={`${styles.transformationSection} ${styles.sectionDark}`}>

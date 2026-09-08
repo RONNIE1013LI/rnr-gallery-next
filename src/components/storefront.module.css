@@ -5909,18 +5909,59 @@
   }
 }
 
+.configurePage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  column-gap: clamp(1rem, 3vw, 3rem);
+  max-width: calc(var(--content-width) + var(--page-gutter) * 2);
+  margin-inline: auto;
+}
+.configurePage > :not(.configureIntro):not(.priceAtStart) {
+  grid-column: 1 / -1;
+}
 .priceAtStart {
-  margin:0 0 1.25rem;
-  padding:1rem 1.25rem;
-  border:1px solid #d9ded6;
-  border-radius:.75rem;
-  background:#f2f5ef}
+  min-width: 0;
+  margin: 0;
+  padding: 1.8rem 0 2rem;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
 .priceAtStart strong {
-  font-size:1.35rem}
-.priceAtStart p,.priceAtStart a {
-  font-size:.85rem;
-  line-height:1.5;
-  margin:.4rem 0}
+  font-size: 1.15rem;
+}
+.priceAtStart p,
+.priceAtStart a {
+  font-size: .75rem;
+  line-height: 1.5;
+  margin: .3rem 0;
+}
+.priceAtStart a {
+  display: block;
+}
+@media (max-width: 600px) {
+  .priceAtStart {
+    padding-top: 2.8rem;
+  }
+  .configurePage {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: .85rem;
+  }
+  .configureIntro h1 {
+    font-size: 1.45rem;
+    overflow-wrap: anywhere;
+  }
+  .configureIntro > p:not(.eyebrow) {
+    font-size: .8rem;
+  }
+  .priceAtStart strong {
+    font-size: .95rem;
+  }
+  .priceAtStart p,
+  .priceAtStart a {
+    font-size: .7rem;
+  }
+}
+
 .catalogueLinks {
   display:flex;
   gap:1rem;
