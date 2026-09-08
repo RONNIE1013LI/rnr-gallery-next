@@ -25,7 +25,9 @@ const getCachedPublicProductRegistry = cachePublicData(
 
 export async function getSafePublicProductRegistry() {
   try {
-    return await getCachedPublicProductRegistry();
+    const current = await getCachedPublicProductRegistry();
+    // The persistent cache can contain a registry parsed by an earlier release.
+    return Object.freeze({ ...current, registry: parseProductRegistry(current.registry) });
   } catch {
     return Object.freeze({
       revision: 0,
