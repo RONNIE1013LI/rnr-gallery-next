@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase } from "@/server/db/client";
-import { account, adminAuditLogs, adminStaffAccess, user } from "@/server/db/schema";
+import { account, adminAuditLogs, adminStaffAccess, staffSecurityPolicy, user } from "@/server/db/schema";
 import {
   isStaffAccessProfile,
   normalizeStaffAccessProfile,
@@ -171,6 +171,8 @@ export function createDrizzleAdminEmployeeRepository(database: Database): AdminE
     async create(actor, input, verifyReplayPassword) {
       return database.transaction(async (transaction) => {
         await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('rnr_admin_user_access_change'))`);
+        const [securityPolicy] = await transaction.select({ id: staffSecurityPolicy.id }).from(staffSecurityPolicy).limit(1);
+        if (securityPolicy) throw new AdminEmployeeAuthorizationError("Use staff invitations in Account Security. Initial-password creation is no longer available.");
 
         const [currentActor] = await transaction
           .select({ role: user.role })

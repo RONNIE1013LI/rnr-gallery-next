@@ -236,3 +236,12 @@ describe("AuthForm", () => {
     );
   });
 });
+
+it("routes a pending MFA challenge to security verification without treating it as login success", async () => {
+  const client = createClient({ signIn: { email: vi.fn().mockResolvedValue({ error: null, data: { twoFactorRedirect: true } }) } });
+  render(<AuthForm mode="sign-in" client={client} returnTo="/admin/orders" />);
+  fireEvent.change(screen.getByLabelText("Email address"), { target: { value: "staff@example.test" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct horse battery staple" } });
+  fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  await waitFor(() => expect(replace).toHaveBeenCalledWith("/account/security?verify=1&next=%2Fadmin%2Forders"));
+});

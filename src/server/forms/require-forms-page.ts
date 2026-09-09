@@ -1,3 +1,4 @@
+import { StaffSecurityError } from "@/server/auth/staff-security-runtime";
 import { redirect } from "next/navigation";
 
 import { safeAuthReturnPath } from "@/server/auth/safe-return-path";
@@ -13,6 +14,9 @@ export async function requireFormsPageFrom<T>(
   try {
     return await verify();
   } catch (error) {
+    if (error instanceof StaffSecurityError && ["mfa_required", "step_up_required"].includes(error.reason)) {
+      return redirectTo(`/account/security?next=${encodeURIComponent(safeAuthReturnPath(requestedPath, "/order-system"))}`);
+    }
     if (error instanceof HttpError && error.status === 401) {
       const next = encodeURIComponent(safeAuthReturnPath(requestedPath, "/order-system"));
       return redirectTo(`/order-system/sign-in?next=${next}`);

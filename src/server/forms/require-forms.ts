@@ -103,7 +103,18 @@ export async function requireFormPermission(permission: FormPermission) {
     import("@/server/auth"),
   ]);
   return requireFormPermissionFrom(
-    auth.api.getSession,
+    async (context) => {
+      const session = await auth.api.getSession(context);
+      if (session) {
+        const { assertStaffSecurity } = await import("@/server/auth/staff-security-runtime");
+        const role = await assertStaffSecurity(session, undefined, permission === "export_jobs");
+        if (role) {
+          const { staffRoleAllowsForm } = await import("@/server/auth/staff-security-policy");
+          if (!staffRoleAllowsForm(role, permission)) throw new HttpError("Forbidden", 403);
+        }
+      }
+      return session;
+    },
     accessForUser,
     await headers(),
     permission,

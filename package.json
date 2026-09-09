@@ -47,7 +47,9 @@
     "reply-assistant:images:cleanup": "tsx scripts/cleanup-customer-service-attachments.ts"
   },
   "dependencies": {
+    "@better-auth/core": "1.6.25",
     "@better-auth/drizzle-adapter": "1.6.25",
+    "@better-auth/passkey": "1.6.25",
     "@next/third-parties": "16.3.3",
     "@stripe/react-stripe-js": "^6.8.0",
     "@stripe/stripe-js": "^9.12.1",

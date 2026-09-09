@@ -442,6 +442,13 @@
       "when": 1788256848819,
       "tag": "0062_customer_service_conversation_identities",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1788991415946,
+      "tag": "0063_staff_account_security",
+      "breakpoints": true
     }
   ]
 }

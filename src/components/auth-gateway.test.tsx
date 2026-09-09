@@ -15,6 +15,11 @@ function createSocialClient(): SocialAuthClient {
   };
 }
 
+it("offers a Passkey entry for staff destinations", () => {
+  render(<AuthGateway mode="sign-in" configuredProviders={[]} returnTo="/admin/orders" />);
+  expect(screen.getByRole("link", { name: "Use a staff passkey" })).toHaveAttribute("href", "/account/security?next=%2Fadmin%2Forders");
+});
+
 describe("AuthGateway", () => {
   it("shows configured social choices and hides unavailable providers", () => {
     render(

@@ -54,10 +54,10 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(63);
+    expect(journal.entries).toHaveLength(64);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(63);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(63);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(64);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(64);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -135,6 +135,23 @@ describe("migration lineage artifacts", () => {
     expect(sha256("drizzle/0062_customer_service_conversation_identities.sql")).toBe(
       "eb82b078195e3a55329e78687dd83c9b7743743c1c719527d19735eacd3f7c76",
     );
+  });
+
+  it("adds only staff security tables and the MFA flag after 0062", () => {
+    const journal = loadJson<Journal>("drizzle/meta/_journal.json");
+    expect(journal.entries[63]).toMatchObject({"idx": 63, "when": 1788991415946, "tag": "0063_staff_account_security"});
+    expect(sha256("drizzle/0063_staff_account_security.sql")).toBe("aee51d62469d234085da486755529a5bc50b540711d1368047dcf8d252d9d732");
+    const previous = loadJson<Snapshot>("drizzle/meta/0062_snapshot.json");
+    const current = loadJson<Snapshot>("drizzle/meta/0063_snapshot.json");
+    expect(current.prevId).toBe(previous.id);
+    expect(Object.keys(current.tables).filter((name) => !(name in previous.tables)).sort()).toEqual([
+      "public.staff_passkey", "public.staff_security", "public.staff_security_policy", "public.staff_session_security", "public.staff_two_factor",
+    ]);
+    for (const [name, table] of Object.entries(previous.tables)) {
+      const actual = structuredClone(current.tables[name]);
+      if (name === "public.user") delete actual.columns.two_factor_enabled;
+      expect(actual, `${name} has an unrelated schema change`).toEqual(table);
+    }
   });
 
   it("adds only the V2 tables, visitor index, and direct-payment evidence after 0059", () => {

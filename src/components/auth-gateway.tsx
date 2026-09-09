@@ -123,6 +123,10 @@ export function AuthGateway({
         </>
       ) : null}
 
+      {mode === "sign-in" && (isForms || /^\/(admin|forms|order-system)(?:[/?]|$)/.test(destination)) && <div className={styles.socialAuthList}>
+        <Link className={styles.secondaryButton} href={`/account/security?next=${encodeURIComponent(destination)}`}>Use a staff passkey</Link>
+      </div>}
+
       {visibleProviders.length > 0 ? (
         <>
           <div className={styles.socialAuthList}>

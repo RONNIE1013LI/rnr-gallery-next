@@ -21,6 +21,22 @@ function activeLegacyRedirects() {
 }
 
 describe("protected request proxy", () => {
+  it.each(["/api/auth/get-session", "/api/auth/callback/google", "/api/admin/users"])(
+    "redirects safe alias requests for %s to the authentication domain with all query parameters", (path) => {
+      const query = "utm_source=facebook&fbclid=test&gclid=test&state=encoded%2Bvalue";
+      const response = proxy(new NextRequest(`https://rrgallery.co.nz${path}?${query}`));
+      expect(response.status).toBe(307);
+      expect(response.headers.get("location")).toBe(`https://rnrgallery.com${path}?${query}`);
+    },
+  );
+
+  it.each(["/api/auth/sign-in/email", "/api/admin/users", "/api/forms/jobs"])(
+    "rejects alias mutations to %s without forwarding authentication bodies", (path) => {
+      const response = proxy(new NextRequest(`https://rrgallery.co.nz${path}`, { method: "POST" }));
+      expect(response.status).toBe(403);
+      expect(response.headers.get("location")).toBeNull();
+    },
+  );
   it.each([
     ["http://localhost/admin/users?q=staff", "/admin/users?q=staff"],
     ["http://localhost/order-system/stats?range=30d", "/order-system/stats?range=30d"],
@@ -305,7 +321,7 @@ describe("protected request proxy", () => {
       .toBe("https://rnrgallery.com/shop?campaign=legacy");
 
     const apiResponse = proxy(new NextRequest(
-      "https://www.rrgallery.co.nz/api/auth/callback/google",
+      "https://www.rrgallery.co.nz/api/payments/stripe/webhook",
     ));
     expect(apiResponse.status).toBe(200);
     expect(apiResponse.headers.get("location")).toBeNull();

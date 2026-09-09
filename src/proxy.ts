@@ -102,6 +102,22 @@ function resolveMarket(request: NextRequest) {
 
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  const isIdentityOrStaffApi = ["/api/auth", "/api/admin", "/api/forms"].some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+  if (isIdentityOrStaffApi && canonicalRedirectHosts.has(request.nextUrl.hostname)) {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return NextResponse.json({ error: "Use https://rnrgallery.com for staff authentication." }, {
+        status: 403,
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
+    const destination = new URL(request.url);
+    destination.protocol = "https:";
+    destination.hostname = "rnrgallery.com";
+    destination.port = "";
+    return NextResponse.redirect(destination, 307);
+  }
   const legacyDestination = getLegacyRedirectDestination(pathname);
   if (legacyDestination) {
     const resolved = resolveMarket(request);

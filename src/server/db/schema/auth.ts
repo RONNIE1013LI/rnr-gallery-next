@@ -18,6 +18,7 @@ export const user = pgTable(
     name: text("name").notNull(),
     email: text("email").notNull().unique(),
     emailVerified: boolean("email_verified").default(false).notNull(),
+    twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(),
     image: text("image"),
     role: text("role")
       .$type<"customer" | "form_staff" | "staff" | "admin">()

@@ -45,8 +45,10 @@ export async function requireAdminPermissionFrom<T extends SessionWithUser>(
   findAccess: (userId: string) => Promise<StoredAdminAccess>,
   requestHeaders: Headers,
   permission: AdminPermission,
+  verifySecurity?: (session: T, permission: AdminPermission) => Promise<unknown>,
 ): Promise<AdminAccess<T>> {
   const session = await requireSessionFrom(getSession, requestHeaders);
+  await verifySecurity?.(session, permission);
   const stored = await findAccess(session.user.id);
   if (!isAdminRole(stored.role)) {
     throw new HttpError("Forbidden", 403);
@@ -101,6 +103,7 @@ export async function requireAdminPermission(permission: AdminPermission) {
     accessForUser,
     await headers(),
     permission,
+    (session, permission) => import("./staff-security-runtime").then(({ assertStaffSecurity }) => assertStaffSecurity(session, permission)),
   );
 }
 
@@ -112,7 +115,11 @@ export async function requireAdmin() {
   ]);
   const database = getDatabase();
   return requireAdminFrom(
-    auth.api.getSession,
+    async (context) => {
+      const session = await auth.api.getSession(context);
+      if (session) await import("./staff-security-runtime").then(({ assertStaffSecurity }) => assertStaffSecurity(session, "access_admin"));
+      return session;
+    },
     async (userId) => {
       const [record] = await database
         .select({ role: user.role })

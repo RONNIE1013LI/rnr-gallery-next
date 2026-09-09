@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, ilike, max, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase } from "@/server/db/client";
-import { adminAuditLogs, adminStaffAccess, formUserAccess, session, user } from "@/server/db/schema";
+import { adminAuditLogs, adminStaffAccess, formUserAccess, session, staffSecurity, user } from "@/server/db/schema";
 import {
   isStaffAccessProfile,
   normalizeStaffAccessProfile,
@@ -402,6 +402,11 @@ export function createDrizzleAdminUserRepository(database: Database): AdminUserR
         if (currentActor?.role !== "admin") {
           throw new AdminUserAuthorizationError("Administrator access has changed. Sign in again.");
         }
+        const [actorSecurity] = await transaction.select().from(staffSecurity).where(eq(staffSecurity.userId, actor.userId)).limit(1);
+        const [targetSecurity] = await transaction.select().from(staffSecurity).where(eq(staffSecurity.userId, input.targetUserId)).limit(1);
+        if (actorSecurity && (!actorSecurity.enabled || actorSecurity.role !== "owner")) throw new AdminUserAuthorizationError("Owner access is required.");
+        if (targetSecurity?.role === "owner") throw new AdminUserConflictError("Manage Owner access through Account Security.");
+        if (targetSecurity && input.role !== "staff") throw new AdminUserConflictError("Manage staff roles through Account Security.");
         if (input.targetUserId === actor.userId) {
           throw new AdminUserConflictError("You cannot change your own administrator role.");
         }

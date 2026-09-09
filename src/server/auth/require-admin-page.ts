@@ -1,3 +1,4 @@
+import { StaffSecurityError } from "./staff-security-runtime";
 import { redirect } from "next/navigation";
 import { requireAdminPermission } from "./require-admin";
 import type { AdminPermission } from "./admin-permissions";
@@ -12,6 +13,9 @@ export async function requireAdminPageFrom<T>(
   try {
     return await verify();
   } catch (error) {
+    if (error instanceof StaffSecurityError && ["mfa_required", "step_up_required"].includes(error.reason)) {
+      return redirectTo(`/account/security?next=${encodeURIComponent(safeAuthReturnPath(requestedPath, "/admin"))}`);
+    }
     if (error instanceof HttpError && error.status === 401) {
       const next = encodeURIComponent(safeAuthReturnPath(requestedPath, "/admin"));
       return redirectTo(`/account/sign-in?next=${next}`);

@@ -100,7 +100,11 @@ export function AuthForm({
         return;
       }
 
-      const data = response.data as { user?: { id?: unknown } } | undefined;
+      const data = response.data as { user?: { id?: unknown }; twoFactorRedirect?: boolean } | undefined;
+      if (data?.twoFactorRedirect) {
+        router.replace(`/account/security?verify=1&next=${encodeURIComponent(destination)}`);
+        return;
+      }
       if (typeof data?.user?.id !== "string" || !data.user.id.trim()) {
         setError("Your account was authenticated, but its customer ID was unavailable. Please try again.");
         return;

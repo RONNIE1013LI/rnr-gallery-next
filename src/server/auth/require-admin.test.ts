@@ -83,3 +83,15 @@ describe("requireAdminPermissionFrom", () => {
     });
   });
 });
+
+describe("strong staff session gate", () => {
+  it("denies a password-only admin session before any admin permission is returned", async () => {
+    await expect(requireAdminPermissionFrom(
+      async () => ({ user: { id: "staff-security-test" } }),
+      async () => ({ role: "admin", profile: null }),
+      new Headers(),
+      "access_admin",
+      async () => { throw new Error("MFA required"); },
+    )).rejects.toThrow("MFA required");
+  });
+});

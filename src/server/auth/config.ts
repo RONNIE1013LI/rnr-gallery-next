@@ -31,6 +31,11 @@ export function getAuthRateLimitOptions() {
     max: 100,
     storage: "database" as const,
     modelName: "rateLimit" as const,
+    customRules: {
+      "/passkey/*": { window: 60, max: 20 },
+      "/request-password-reset": { window: 60, max: 3 },
+      "/reset-password": { window: 60, max: 5 },
+    },
   });
 }
 
@@ -80,6 +85,9 @@ export function parseAuthConfig(
   }
 
   const url = parseAppOrigin(rawURL);
+  if (env.VERCEL_ENV === "production" && url.origin !== "https://rnrgallery.com") {
+    throw new Error("Production BETTER_AUTH_URL must be https://rnrgallery.com");
+  }
   if (env.NODE_ENV === "production" && url.protocol !== "https:") {
     throw new Error("BETTER_AUTH_URL must use HTTPS in production");
   }

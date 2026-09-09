@@ -10,6 +10,21 @@ import {
 const strongSecret = "test-only-auth-secret-32-characters";
 
 describe("parseAuthConfig", () => {
+  it("rejects a non-canonical Vercel Production authentication origin", () => {
+    expect(() => parseAuthConfig({
+      NODE_ENV: "production", VERCEL_ENV: "production",
+      BETTER_AUTH_URL: "https://rrgallery.co.nz",
+      BETTER_AUTH_SECRET: strongSecret,
+    })).toThrow("rnrgallery.com");
+  });
+
+  it("accepts only the canonical Vercel Production authentication origin", () => {
+    expect(parseAuthConfig({
+      NODE_ENV: "production", VERCEL_ENV: "production",
+      BETTER_AUTH_URL: "https://rnrgallery.com",
+      BETTER_AUTH_SECRET: strongSecret,
+    }).origin).toBe("https://rnrgallery.com");
+  });
   it("uses shared database-backed rate limits for authentication", () => {
     expect(getAuthRateLimitOptions()).toEqual({
       enabled: true,
@@ -17,6 +32,11 @@ describe("parseAuthConfig", () => {
       max: 100,
       storage: "database",
       modelName: "rateLimit",
+      customRules: {
+        "/passkey/*": { window: 60, max: 20 },
+        "/request-password-reset": { window: 60, max: 3 },
+        "/reset-password": { window: 60, max: 5 },
+      },
     });
   });
 
