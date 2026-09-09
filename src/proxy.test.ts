@@ -271,6 +271,23 @@ describe("protected request proxy", () => {
     expect(finalResponse.headers.get("location")).toBeNull();
   });
 
+  it.each([
+    "www.rnrgallery.com",
+    "rrgallery.co.nz",
+    "www.rrgallery.co.nz",
+  ])("normalizes %s and trailing slashes in one permanent hop", (hostname) => {
+    for (const pathname of ["/canvas", "/contact", "/how-it-works", "/products/roll-up-banner", "/au/canvas"]) {
+      const expected = `https://rnrgallery.com${pathname}?utm_source=google&gclid=click`;
+      const response = proxy(new NextRequest(
+        `https://${hostname}${pathname}/?utm_source=google&gclid=click`,
+      ));
+
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe(expected);
+      expect(proxy(new NextRequest(expected)).headers.get("location")).toBeNull();
+    }
+  });
+
   it("preserves canonical host redirects for unrelated public pages only", () => {
     const response = proxy(new NextRequest(
       "https://www.rrgallery.co.nz/shop?campaign=legacy",

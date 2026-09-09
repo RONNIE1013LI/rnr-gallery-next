@@ -135,6 +135,7 @@ export function proxy(request: NextRequest) {
     canonicalUrl.protocol = "https:";
     canonicalUrl.hostname = "rnrgallery.com";
     canonicalUrl.port = "";
+    canonicalUrl.pathname = normalizedPathname(pathname);
     return NextResponse.redirect(canonicalUrl, 301);
   }
 

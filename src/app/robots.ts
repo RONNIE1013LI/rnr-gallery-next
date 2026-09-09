@@ -8,9 +8,11 @@ const privateCrawlPaths = [
   "/cart",
   "/checkout",
   "/forms/",
+  "/order-system",
   "/orders/",
   "/pay/",
   "/products/*/configure",
+  "/au/products/*/configure",
 ];
 
 export function buildRobots(siteUrl: URL): MetadataRoute.Robots {

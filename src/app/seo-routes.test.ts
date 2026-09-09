@@ -138,9 +138,11 @@ describe("public SEO routes", () => {
           "/cart",
           "/checkout",
           "/forms/",
+          "/order-system",
           "/orders/",
           "/pay/",
           "/products/*/configure",
+          "/au/products/*/configure",
         ]),
       }),
       {
@@ -158,9 +160,11 @@ describe("public SEO routes", () => {
           "/cart",
           "/checkout",
           "/forms/",
+          "/order-system",
           "/orders/",
           "/pay/",
           "/products/*/configure",
+          "/au/products/*/configure",
         ]),
       }),
     ]));
