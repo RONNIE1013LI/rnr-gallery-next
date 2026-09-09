@@ -4,6 +4,10 @@
   scroll-margin-top: 6rem;
 }
 
+.formats > :first-child {
+  margin-bottom: 1.5rem;
+}
+
 .note {
   max-width: 48rem;
   margin: 1rem 0 2rem;
