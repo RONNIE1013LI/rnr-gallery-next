@@ -191,7 +191,7 @@ describe("WebsiteAnalyticsV2Dashboard", () => {
     expect(screen.getByText("AUD:50000")).toBeInTheDocument();
     expect(screen.getByText("Traffic and funnel metrics remain Website-only in All Business scope."))
       .toBeInTheDocument();
-    expect(screen.getByText(/Last touch uses the latest non-direct visit/)).toBeInTheDocument();
+    expect(screen.getByText(/Last non-direct touch uses the latest non-direct visit/)).toBeInTheDocument();
     expect(screen.getByText("Entrances: unavailable")).toBeInTheDocument();
     expect(screen.getByText("Exits: unavailable")).toBeInTheDocument();
     expect(screen.getByText("Assists: unavailable")).toBeInTheDocument();

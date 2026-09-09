@@ -55,6 +55,22 @@ describe("identity-scoped advertising attribution", () => {
     expect(isOrderAttribution(campaign)).toBe(true);
   });
 
+  it("constructs missing fbc from a captured click, but prefers a valid cookie", () => {
+    const consent = { version: 1 as const, analytics: true, advertising: true, decidedAt: "2026-09-10T00:00:00.000Z" };
+    const now = new Date("2026-09-10T00:00:00.000Z");
+    expect(buildStoredOrderAttribution({ fbclid: "click_123" }, consent, {}, now, now.toISOString())?.measurement?.fbc)
+      .toBe(`fb.1.${now.getTime()}.click_123`);
+    expect(buildStoredOrderAttribution({ fbclid: "click_123" }, consent, { fbc: "fb.1.1788998400000.cookie_click" }, now)?.measurement?.fbc)
+      .toBe("fb.1.1788998400000.cookie_click");
+  });
+
+  it("does not invent a fresh fbc timestamp for an untimed or expired stored click", () => {
+    const consent = { version: 1 as const, analytics: true, advertising: true, decidedAt: "2026-09-10T00:00:00.000Z" };
+    const now = new Date(consent.decidedAt);
+    expect(buildStoredOrderAttribution({fbclid:"old_click"},consent,{},now)?.measurement?.fbc).toBeUndefined();
+    expect(buildStoredOrderAttribution({fbclid:"old_click"},consent,{},now,"2026-01-01T00:00:00.000Z")?.measurement?.fbc).toBeUndefined();
+  });
+
   it("records denial without retaining fbclid or Meta cookies", () => {
     expect(buildStoredOrderAttribution({
       utm_source: "facebook",

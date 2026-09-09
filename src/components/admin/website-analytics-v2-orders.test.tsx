@@ -33,6 +33,17 @@ function renderOrders(onNavigate = vi.fn()) {
 }
 
 describe("WebsiteAnalyticsV2Orders", () => {
+  it("shows acquisition and last session separately", () => {
+    const row = { conversionId:"c1",source:"website" as const,orderId:"o1",productionJobId:null,reference:"RNR-TEST",occurredAt:"2026-09-10T00:00:00Z",localDate:"2026-09-10",market:"NZ" as const,currency:"NZD" as const,orderedAmountCents:100,collectedAmountCents:100,refundedAmountCents:0,netCollectedAmountCents:100,paymentStatus:"paid" as const,historical:false,adminHref:null,
+      attribution:{channel:"Meta Ads",source:"meta",medium:"paid_social",campaign:"test"},
+      touches:{firstTouch:"Meta Ads",lastTouch:"Direct",lastNonDirectTouch:"Meta Ads",acquisition:"Meta Ads"} };
+    render(<WebsiteAnalyticsV2Orders canonicalQuery={canonicalQuery} loading={false} onNavigate={vi.fn()} orders={{items:[row],total:1,page:1,pageSize:25,pageCount:1}} />);
+    expect(screen.getByRole("columnheader",{name:"Acquisition source"})).toBeInTheDocument();
+    expect(screen.getByRole("columnheader",{name:"Last session"})).toBeInTheDocument();
+    expect(screen.getByRole("cell",{name:"Direct"})).toBeInTheDocument();
+    expect(screen.getByText(/First touch: Meta Ads/)).toBeInTheDocument();
+  });
+
   it("preserves canonical filters and resets page when sort changes", () => {
     const onNavigate = renderOrders();
 

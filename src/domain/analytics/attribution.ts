@@ -1,3 +1,4 @@
+import type { AttributionHistory } from "./attribution-history";
 import type { AdvertisingConsent } from "@/domain/consent/advertising-consent";
 
 export const ATTRIBUTION_FIELDS = [
@@ -15,6 +16,7 @@ export const ATTRIBUTION_FIELDS = [
 export type AttributionField = typeof ATTRIBUTION_FIELDS[number];
 export type OrderAttribution = Readonly<Partial<Record<AttributionField, string>>>;
 export type StoredOrderAttribution = OrderAttribution & Readonly<{
+  touches?: AttributionHistory;
   measurement?: Readonly<{
     version: 1;
     advertisingConsent: boolean;
@@ -32,6 +34,8 @@ export function buildStoredOrderAttribution(
   attribution: OrderAttribution | null,
   consent: AdvertisingConsent | null,
   identifiers: Readonly<{ fbp?: string; fbc?: string }>,
+  now = new Date(),
+  clickCapturedAt?: string,
 ): StoredOrderAttribution | null {
   const { fbclid, ...nonMetaCampaign } = attribution ?? {};
   const campaign = consent?.advertising && fbclid
@@ -40,6 +44,12 @@ export function buildStoredOrderAttribution(
   if (!consent) {
     return Object.keys(campaign).length ? Object.freeze(campaign) : null;
   }
+  const capturedAt = clickCapturedAt ? Date.parse(clickCapturedAt) : Number.NaN;
+  const fbc = identifiers.fbc && META_COOKIE_PATTERN.test(identifiers.fbc)
+    ? identifiers.fbc
+    : fbclid && /^[A-Za-z0-9._-]{1,200}$/.test(fbclid) && Number.isFinite(capturedAt)
+      && capturedAt <= now.getTime() && now.getTime() - capturedAt <= 90 * 86_400_000
+      ? `fb.1.${capturedAt}.${fbclid}` : undefined;
   const measurement = {
     version: 1 as const,
     advertisingConsent: consent.advertising,
@@ -47,8 +57,8 @@ export function buildStoredOrderAttribution(
     ...(consent.advertising && identifiers.fbp && META_COOKIE_PATTERN.test(identifiers.fbp)
       ? { fbp: identifiers.fbp }
       : {}),
-    ...(consent.advertising && identifiers.fbc && META_COOKIE_PATTERN.test(identifiers.fbc)
-      ? { fbc: identifiers.fbc }
+    ...(consent.advertising && fbc
+      ? { fbc }
       : {}),
   };
   return Object.freeze({ ...campaign, measurement: Object.freeze(measurement) });

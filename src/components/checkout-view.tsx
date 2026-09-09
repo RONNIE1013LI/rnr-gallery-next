@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import type { AddressInput } from "@/domain/address/types";
 import type { Market } from "@/domain/markets/types";
 import { ADDRESS_FIELD_LIMITS, addressInputSchema } from "@/domain/address/schema";
+import { readAttributionHistory } from "@/domain/analytics/attribution-history";
 import { readAttribution } from "@/domain/analytics/attribution";
 import { emitAnalyticsEvent } from "@/domain/analytics/client";
 import { buildCartEvent, buildCheckoutEvent, type CheckoutAnalyticsDetails } from "@/domain/analytics/events";
@@ -107,15 +108,18 @@ function readPaymentIntent() {
 }
 
 function placementRequest(intent: CheckoutPaymentIntent) {
+  const attributionHistory = typeof window === "undefined" ? null : readAttributionHistory(window.localStorage, getActiveCustomerId());
   const attribution = typeof window === "undefined"
     ? null
-    : readAttribution(window.sessionStorage, getActiveCustomerId());
+    : attributionHistory ? (attributionHistory.lastNonDirectTouch ?? attributionHistory.firstTouch).campaign
+      : readAttribution(window.sessionStorage, getActiveCustomerId());
   return {
     idempotencyKey: intent.orderIdempotencyKey,
     checkoutVersion: intent.checkoutVersion,
     cartDigest: intent.cartDigest,
     shipping: intent.shipping,
-    ...(attribution ? { attribution } : {}),
+    ...(attribution && Object.keys(attribution).length ? { attribution } : {}),
+    ...(attributionHistory ? { attributionHistory } : {}),
   };
 }
 

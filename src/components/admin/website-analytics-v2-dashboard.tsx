@@ -121,6 +121,7 @@ export type WebsiteAnalyticsV2Order = Readonly<{
   paymentStatus: "paid" | "partial" | "unpaid" | "refunded";
   historical: boolean;
   adminHref: string | null;
+  touches?: Readonly<{ firstTouch: string; lastTouch: string; lastNonDirectTouch: string; acquisition: string }>;
   attribution: Readonly<{
     channel: string;
     source: string;

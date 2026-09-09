@@ -15,7 +15,7 @@ import { CheckoutEntrySummary } from "./checkout-entry-summary";
 import { CommerceIdentityProvider, useCommerceIdentity } from "./commerce-identity-provider";
 
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }), usePathname: () => window.location.pathname, useSearchParams: () => new URLSearchParams(window.location.search) }));
 
 function cart(title: string, quantity = 1): Cart {
   return { version: 1, items: [{

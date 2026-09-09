@@ -1,3 +1,4 @@
+import { orderAttributionDisplay } from "@/domain/analytics/order-attribution-display";
 import { and, asc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import {
   ANALYTICS_DIMENSION_SENTINELS,
@@ -1039,11 +1040,25 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
                 as medium,
               coalesce(nullif(trim(snapshots.campaign), ''), ${ANALYTICS_DIMENSION_SENTINELS.notSet})::text
                 as campaign,
+              first_snapshot.channel as "firstChannel",
+              first_session.started_at as "firstAt",
+              non_direct_session.started_at as "nonDirectAt",
+              final_session.channel as "lastChannel",
+              non_direct_session.channel as "nonDirectChannel",
+              acquisition_snapshot.channel as "acquisitionChannel",
+              website_orders.attribution->'touches' as "touches",
               conversions.historical
             from website_analytics_conversions conversions
             inner join website_analytics_attribution_snapshots snapshots
               on snapshots.conversion_id = conversions.id
               and snapshots.attribution_model = ${query.attribution}
+            left join website_analytics_attribution_snapshots first_snapshot
+              on first_snapshot.conversion_id = conversions.id and first_snapshot.attribution_model = 'first_touch'
+            left join website_analytics_attribution_snapshots acquisition_snapshot
+              on acquisition_snapshot.conversion_id = conversions.id and acquisition_snapshot.attribution_model = 'last_touch'
+            left join website_analytics_sessions first_session on first_session.id = conversions.first_session_id
+            left join website_analytics_sessions final_session on final_session.id = conversions.converting_session_id
+            left join website_analytics_sessions non_direct_session on non_direct_session.id = conversions.last_non_direct_session_id
             left join orders website_orders on website_orders.id = conversions.order_id
             left join production_jobs manual_jobs on manual_jobs.id = conversions.production_job_id
             left join lateral (
@@ -1094,7 +1109,14 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
               'channel', channel,
               'attributionSource', "attributionSource",
               'medium', medium,
-              'campaign', campaign
+              'campaign', campaign,
+              'firstChannel', "firstChannel",
+              'firstAt', "firstAt",
+              'nonDirectAt', "nonDirectAt",
+              'lastChannel', "lastChannel",
+              'nonDirectChannel', "nonDirectChannel",
+              'acquisitionChannel', "acquisitionChannel",
+              'touches', "touches"
             ) order by ordinal), '[]'::jsonb) as items
           from page_rows
         `);
@@ -1129,6 +1151,15 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
               : source === "manual" && productionJobId
                 ? `/admin/jobs/${encodeURIComponent(productionJobId)}`
                 : null,
+            touches: Object.freeze(Object.fromEntries(Object.entries(orderAttributionDisplay({
+              first: typeof item.firstChannel === "string" ? item.firstChannel : null,
+              firstAt: typeof item.firstAt === "string" ? item.firstAt : null,
+              nonDirectAt: typeof item.nonDirectAt === "string" ? item.nonDirectAt : null,
+              last: typeof item.lastChannel === "string" ? item.lastChannel : null,
+              nonDirect: typeof item.nonDirectChannel === "string" ? item.nonDirectChannel : null,
+              acquisition: typeof item.acquisitionChannel === "string" ? item.acquisitionChannel : null,
+              touches: item.touches,
+            })).map(([key, value]) => [key, displayChannel(value)]))) as Readonly<{ firstTouch: string; lastTouch: string; lastNonDirectTouch: string; acquisition: string }>,
             attribution: Object.freeze({
               channel: displayChannel(String(item.channel)),
               source: normalizeAnalyticsDimension(String(item.attributionSource), "source"),

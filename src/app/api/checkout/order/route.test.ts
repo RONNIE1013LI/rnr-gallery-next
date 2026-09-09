@@ -218,6 +218,19 @@ describe("POST /api/checkout/order", () => {
       attribution: { utm_source: "facebook", measurement: { advertisingConsent: true } },
     }))).status).toBe(400);
   });
+  it("stores a validated returning-visit history and derives fbc from its actual click time", async () => {
+    const service = { createOrder: vi.fn().mockResolvedValue({ orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-ATTR", currency: "NZD", totalInclGstCents: 9775, paymentStatus: "awaiting_payment" }) };
+    const now = new Date("2026-09-10T00:00:00.000Z");
+    const handler = createCheckoutOrderRoute({ repository: repository(), orderService: service, getOptionalSession: async () => null, trustedOrigin: origin, now: () => now });
+    const touch = { at: "2026-09-09T00:00:00.000Z", landingPath: "/canvas", referrerOrigin: null, campaign: { utm_source: "facebook", utm_medium: "paid_social", fbclid: "click_123" } };
+    const history = { version: 1, firstTouch: touch, lastNonDirectTouch: touch, lastTouch: { ...touch, at: now.toISOString(), campaign: {} }, lastSeenAt: now.toISOString() };
+    const consent = encodeURIComponent(serializeAdvertisingConsent({ version: 1, analytics: true, advertising: true, decidedAt: now.toISOString() }));
+    const req = request({ ...validBody, attributionHistory: history });
+    req.headers.set("Cookie", `${getCheckoutSessionCookieName(null)}=${token}; rnr-consent-v1=${consent}`);
+    expect((await handler(req)).status).toBe(200);
+    expect(service.createOrder).toHaveBeenCalledWith(sessionId,key,expect.objectContaining({ attribution: expect.objectContaining({ touches: history, measurement: expect.objectContaining({ fbc: `fb.1.${Date.parse(touch.at)}.click_123` }) }) }));
+  });
+
   it("binds only allowlisted attribution to the new order", async () => {
     const service = { createOrder: vi.fn().mockResolvedValue({
       orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-ATTR",

@@ -94,7 +94,8 @@ export function WebsiteAnalyticsV2Orders({
             <th scope="col">Refunded</th>
             <th scope="col">Net collected</th>
             <th scope="col">Payment</th>
-            <th scope="col">Channel</th>
+            <th scope="col">Acquisition source</th>
+            <th scope="col">Last session</th>
             <th scope="col">Attribution</th>
           </tr></thead>
           <tbody>{orders.items.map((order) => <tr key={order.conversionId}>
@@ -112,7 +113,10 @@ export function WebsiteAnalyticsV2Orders({
             <td>{formatAnalyticsMoney(order.currency, order.refundedAmountCents)}</td>
             <td>{formatAnalyticsMoney(order.currency, order.netCollectedAmountCents)}</td>
             <td>{titleCase(order.paymentStatus)}</td>
-            <td>{order.attribution.channel}</td>
+            <td>{order.touches?.acquisition ?? order.attribution.channel}
+              {order.touches ? <small className={styles.historical}>First touch: {order.touches.firstTouch}<br />Last non-direct: {order.touches.lastNonDirectTouch}</small> : null}
+            </td>
+            <td>{order.touches?.lastTouch ?? "Unattributed"}</td>
             <td>{[order.attribution.source, order.attribution.medium, order.attribution.campaign].join(" / ")}</td>
           </tr>)}</tbody>
         </table>

@@ -143,11 +143,11 @@ export function WebsiteAnalyticsV2Filters({
         value={state.attribution}
         onChange={(event) => field("attribution", event.target.value)}
       >
-        <option value="last_touch">Last touch</option>
+        <option value="last_touch">Last non-direct touch</option>
         <option value="first_touch">First touch</option>
       </select>
       <small id="analytics-attribution-help">
-        Last touch uses the latest non-direct visit, then the converting session as fallback.
+        Last non-direct touch uses the latest non-direct visit, then the converting session as fallback. The Orders table shows the actual last session separately.
       </small>
     </label>
     <label>

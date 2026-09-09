@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
+import { createContext, Fragment, Suspense, useContext, useEffect, useRef, useState } from "react";
 
 import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 import {
@@ -8,6 +8,7 @@ import {
   setActiveCustomerId,
 } from "@/domain/cart/browser-cart-scope";
 import { LEGACY_CART_STORAGE_KEY } from "@/domain/cart/types";
+import { clearAttributionHistory, handoffAttributionHistory } from "@/domain/analytics/attribution-history";
 import { clearAttribution, handoffGuestAttribution } from "@/domain/analytics/attribution";
 import { LEGACY_PAYMENT_INTENT_STORAGE_KEY } from "./payment-recovery-intent";
 import { LEGACY_PENDING_CHECKOUT_STORAGE_KEY } from "./pending-checkout";
@@ -52,6 +53,7 @@ export function CommerceIdentityProvider({
   useEffect(() => {
     if (customerIdRef.current !== null) {
       handoffGuestAttribution(window.sessionStorage, customerIdRef.current);
+      handoffAttributionHistory(window.localStorage, customerIdRef.current);
     }
     window.localStorage.removeItem(LEGACY_CART_STORAGE_KEY);
     window.localStorage.removeItem(LEGACY_PENDING_CHECKOUT_STORAGE_KEY);
@@ -66,6 +68,7 @@ export function CommerceIdentityProvider({
     if (previousCustomerId === initialCustomerId) return;
     if (previousCustomerId === null && initialCustomerId !== null) {
       handoffGuestAttribution(window.sessionStorage, initialCustomerId);
+      handoffAttributionHistory(window.localStorage, initialCustomerId);
     }
     if (previousCustomerId !== null) {
       clearIdentityCheckoutState(
@@ -74,6 +77,7 @@ export function CommerceIdentityProvider({
         previousCustomerId,
       );
       clearAttribution(window.sessionStorage, previousCustomerId);
+      clearAttributionHistory(window.localStorage, previousCustomerId);
     }
     customerIdRef.current = initialCustomerId;
     setActiveCustomerId(initialCustomerId);
@@ -84,6 +88,7 @@ export function CommerceIdentityProvider({
   function switchIdentity(nextCustomerId: string | null) {
     if (customerIdRef.current === null && nextCustomerId !== null) {
       handoffGuestAttribution(window.sessionStorage, nextCustomerId);
+      handoffAttributionHistory(window.localStorage, nextCustomerId);
     }
     customerIdRef.current = nextCustomerId;
     setActiveCustomerId(nextCustomerId);
@@ -102,6 +107,7 @@ export function CommerceIdentityProvider({
       if (customerId !== null) {
         clearIdentityCheckoutState(window.localStorage, window.sessionStorage, customerId);
         clearAttribution(window.sessionStorage, customerId);
+        clearAttributionHistory(window.localStorage, customerId);
       }
       switchIdentity(null);
     },
@@ -109,7 +115,7 @@ export function CommerceIdentityProvider({
 
   return (
     <CommerceIdentityContext.Provider value={value}>
-      <AttributionCapture customerId={customerId} />
+      <Suspense fallback={null}><AttributionCapture customerId={customerId} /></Suspense>
       <Fragment key={customerId ?? "guest"}>
         {children}
       </Fragment>

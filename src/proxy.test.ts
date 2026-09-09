@@ -288,6 +288,13 @@ describe("protected request proxy", () => {
     }
   });
 
+  it.each(["rnrgallery.com", "www.rnrgallery.com", "rrgallery.co.nz", "www.rrgallery.co.nz"])("preserves all Meta campaign parameters from %s", (host) => {
+    const query = "utm_source=facebook&utm_medium=paid_social&utm_campaign=test123&utm_content=creative&utm_term=term&fbclid=TEST_FBCLID_123";
+    const response = proxy(new NextRequest(`https://${host}/?${query}`));
+    const destination = response.headers.get("location") ?? `https://${host}/?${query}`;
+    expect(destination).toBe(`https://rnrgallery.com/?${query}`);
+  });
+
   it("preserves canonical host redirects for unrelated public pages only", () => {
     const response = proxy(new NextRequest(
       "https://www.rrgallery.co.nz/shop?campaign=legacy",

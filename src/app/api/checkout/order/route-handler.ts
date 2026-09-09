@@ -1,3 +1,4 @@
+import { attributionHistorySchema, consentedAttributionHistory, readAttributionHistory } from "@/domain/analytics/attribution-history";
 import { z, ZodError } from "zod";
 import {
   ATTRIBUTION_FIELDS,
@@ -58,6 +59,7 @@ const inputSchema = z.object({
   cartDigest: z.string().regex(/^[a-f0-9]{64}$/),
   shipping: z.object({ method: z.enum(["post", "pickup"]), serviceCode: z.string().min(1), amountExGstCents: z.number().int().nonnegative(), gstCents: z.number().int().nonnegative(), amountInclGstCents: z.number().int().nonnegative(), isTest: z.boolean() }).strict(),
   attribution: attributionSchema,
+  attributionHistory: attributionHistorySchema.optional(),
 }).strict();
 
 type OrderCreator = {
@@ -177,15 +179,23 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
           cartDigest: input.cartDigest,
           shipping: input.shipping,
           ...(() => {
+            const consent = parseAdvertisingConsent(requestCookie(request, ADVERTISING_CONSENT_COOKIE));
+            const submittedHistory = consent?.analytics && input.attributionHistory
+              ? readAttributionHistory({ getItem: () => JSON.stringify(input.attributionHistory) }, null, requestNow) : null;
+            const history = submittedHistory ? consentedAttributionHistory(submittedHistory, consent!.advertising) : null;
+            const campaign = history ? (history.lastNonDirectTouch ?? history.firstTouch).campaign : input.attribution ?? null;
             const attribution = buildStoredOrderAttribution(
-              input.attribution ?? null,
-              parseAdvertisingConsent(requestCookie(request, ADVERTISING_CONSENT_COOKIE)),
+              campaign,
+              consent,
               {
                 fbp: requestCookie(request, "_fbp"),
                 fbc: requestCookie(request, "_fbc"),
               },
+              requestNow,
+              [history?.lastNonDirectTouch, history?.lastTouch, history?.firstTouch]
+                .find(touch => touch?.campaign.fbclid && touch.campaign.fbclid === campaign?.fbclid)?.at,
             );
-            return attribution ? { attribution } : {};
+            return attribution || history ? { attribution: { ...attribution, ...(history ? { touches: history } : {}) } } : {};
           })(),
         },
       );
