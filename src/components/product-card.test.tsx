@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as analytics from "@/domain/analytics/client";
 import { products } from "@/domain/catalogue/products";
@@ -61,6 +61,17 @@ describe("ProductCard", () => {
 });
 
 describe("CataloguePage image loading", () => {
+  it.each(["NZ", "AU"] as const)("keeps %s category navigation in its market and marks the current page", (market) => {
+    const prefix = market === "AU" ? "/au" : "";
+    render(<CataloguePage eyebrow="Banners" title="Banners" description="Choose a format" path={`${prefix}/banners`} market={market} products={[]} />);
+    const navigation = within(screen.getByRole("navigation", { name: "Browse artwork categories" }));
+    expect(navigation.getByRole("link", { name: "Banners" })).toHaveAttribute("href", `${prefix}/banners`);
+    expect(navigation.getByRole("link", { name: "Banners" })).toHaveAttribute("aria-current", "page");
+    expect(navigation.getByRole("link", { name: "Canvas" })).toHaveAttribute("href", `${prefix}/canvas`);
+    expect(navigation.getByRole("link", { name: "Canvas" })).not.toHaveAttribute("aria-current");
+    expect(navigation.getByRole("link", { name: "Family" })).toHaveAttribute("href", "/design-gallery?occasion=family-portrait");
+  });
+
   it("tracks the visible item list and the selected product without delaying navigation", async () => {
     render(
       <CataloguePage

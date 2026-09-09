@@ -64,11 +64,16 @@ export function CataloguePage({
         <h1>{title}</h1>
         {description ? <p className={styles.pageIntroDescription}>{description}</p> : null}
       </header>
-      {path !== "/shop" && path !== "/au/shop" && <nav className={styles.catalogueLinks} aria-label="Choose a product category">
-        <Link href={market === "AU" ? "/au/canvas" : "/canvas"}>Canvas</Link>
-        <Link href={market === "AU" ? "/au/banners" : "/banners"}>Banners</Link>
-        <Link href="/design-gallery?filters=1#browse-by-occasion">Browse by occasion</Link>
-      </nav>}
+      <nav className={`${styles.galleryQuickFilters} ${styles.catalogueLinks}`} aria-label="Browse artwork categories">
+        <Link href="/design-gallery">All Designs</Link>
+        <Link href="/design-gallery?occasion=memorial">Memorial</Link>
+        <Link href="/design-gallery?occasion=birthday">Birthday</Link>
+        <Link href="/design-gallery?occasion=family-portrait">Family</Link>
+        <Link href="/design-gallery?occasion=wedding">Wedding</Link>
+        <Link href="/design-gallery?occasion=religious">Religious</Link>
+        <Link href={market === "AU" ? "/au/canvas" : "/canvas"} aria-current={path?.endsWith("/canvas") ? "page" : undefined}>Canvas</Link>
+        <Link href={market === "AU" ? "/au/banners" : "/banners"} aria-current={path?.endsWith("/banners") ? "page" : undefined}>Banners</Link>
+      </nav>
       <section className={styles.productGrid} aria-label={`${title} products`}>
         {products.map((product, index) => (
           <ProductCard
