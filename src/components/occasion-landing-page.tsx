@@ -103,14 +103,6 @@ export function OccasionLandingPage({ content, registry, market, artwork, artwor
         <h2 className={landing.sectionTitle} id="faq-heading">{content.label}: your questions</h2>
         {content.faq.map((item) => <details key={item.question}><summary>{item.question}</summary><p>{item.answer}</p></details>)}
       </section>
-      {content.related.length ? <section className={styles.adLandingSection}>
-        <h2 className={landing.sectionTitle}>Explore related banner ideas</h2>
-        <div className={`${styles.heroActions} ${landing.actions}`}>{content.related.map((slug) => <Link className={styles.secondaryButton} key={slug} href={occasionLandingPages[slug].path}>{occasionLandingPages[slug].label}</Link>)}</div>
-      </section> : null}
-      <section className={styles.adLandingFinalCta}>
-        <h2 className={landing.sectionTitle}>Ready to create your display?</h2>
-        <Link className={styles.primaryButton} href={ctaHref}>{content.cta}</Link>
-      </section>
     </main>
   );
 }

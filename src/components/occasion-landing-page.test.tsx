@@ -20,7 +20,7 @@ describe("occasion landing output", () => {
     expect(screen.getByRole("img", { name: artwork.altText })).toHaveAttribute("loading", "lazy");
     const design = screen.getByRole("link", { name: /View Design/ });
     expect(design.getAttribute("href")).toMatch(/^\/designs\/[^?]+$/);
-    expect(screen.getAllByRole("link", { name: content.cta })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: content.cta })).toHaveLength(1);
     for (const link of screen.getAllByRole("link", { name: content.cta })) expect(link).toHaveAttribute("href", `/products/${content.productSlugs[0]}`);
     for (const slug of content.productSlugs) expect(container.querySelector(`a[href="/products/${slug}"]`)).not.toBeNull();
     expect(container.querySelectorAll('script[type="application/ld+json"]')).toHaveLength(1);
