@@ -33,7 +33,7 @@ export function OccasionLandingPage({ content, registry, market, artwork, artwor
     { name: content.label, path: content.path },
   ];
   return (
-    <main id="main-content" className={styles.galleryPage}>
+    <main id="main-content" className={`${styles.galleryPage} ${landing.page}`}>
       <StructuredData id="rnr-occasion-breadcrumbs" data={buildBreadcrumbData(breadcrumbs)} />
       <nav className={styles.publicBreadcrumbs} aria-label="Breadcrumb">
         {breadcrumbs.map((entry, index) => <span key={entry.path}>
@@ -44,7 +44,7 @@ export function OccasionLandingPage({ content, registry, market, artwork, artwor
       <header className={styles.galleryIntro}>
         <h1>{content.heading}</h1>
         <p>{content.introduction}</p>
-        <div className={styles.designDetailActions}>
+        <div className={styles.heroActions}>
           <Link className={styles.primaryButton} href={ctaHref}>{content.cta}</Link>
           <Link className={styles.secondaryButton} href="#artwork">Explore Designs</Link>
         </div>
@@ -77,7 +77,7 @@ export function OccasionLandingPage({ content, registry, market, artwork, artwor
 
       <section className={landing.formats} aria-labelledby="formats-heading">
         <div className={styles.sectionHeading}><h2 id="formats-heading">Choose your display format</h2></div>
-        <div className={styles.designDetailActions}>{products.map((product) =>
+        <div className={`${styles.heroActions} ${landing.actions}`}>{products.map((product) =>
           <Link key={product.slug} className={styles.secondaryButton} href={`${productPrefix}/${product.slug}`}>{product.title} details</Link>,
         )}</div>
         <div className={styles.productGrid}>{products.map((product) =>
@@ -85,11 +85,11 @@ export function OccasionLandingPage({ content, registry, market, artwork, artwor
         )}</div>
       </section>
       <section className={styles.adLandingSection}>
-        <h2>{content.guidanceHeading}</h2>
+        <h2 className={landing.sectionTitle}>{content.guidanceHeading}</h2>
         <div>{content.guidance.map((paragraph) => <p className={landing.paragraph} key={paragraph}>{paragraph}</p>)}</div>
       </section>
       <section className={styles.adLandingSection}>
-        <div><h2>From your photos to a finished display</h2><PurchaseTrustStrip /></div>
+        <div><h2 className={landing.sectionTitle}>From your photos to a finished display</h2><PurchaseTrustStrip /></div>
         <div>
           <ol>
             <li><strong>Choose and personalise</strong><span>Select a format and supply your photos, wording and design details.</span></li>
@@ -100,15 +100,15 @@ export function OccasionLandingPage({ content, registry, market, artwork, artwor
         </div>
       </section>
       <section className={styles.adLandingFaq} aria-labelledby="faq-heading">
-        <h2 id="faq-heading">{content.label}: your questions</h2>
+        <h2 className={landing.sectionTitle} id="faq-heading">{content.label}: your questions</h2>
         {content.faq.map((item) => <details key={item.question}><summary>{item.question}</summary><p>{item.answer}</p></details>)}
       </section>
       {content.related.length ? <section className={styles.adLandingSection}>
-        <h2>Explore related banner ideas</h2>
-        <div className={styles.designDetailActions}>{content.related.map((slug) => <Link className={styles.secondaryButton} key={slug} href={occasionLandingPages[slug].path}>{occasionLandingPages[slug].label}</Link>)}</div>
+        <h2 className={landing.sectionTitle}>Explore related banner ideas</h2>
+        <div className={`${styles.heroActions} ${landing.actions}`}>{content.related.map((slug) => <Link className={styles.secondaryButton} key={slug} href={occasionLandingPages[slug].path}>{occasionLandingPages[slug].label}</Link>)}</div>
       </section> : null}
       <section className={styles.adLandingFinalCta}>
-        <h2>Ready to create your display?</h2>
+        <h2 className={landing.sectionTitle}>Ready to create your display?</h2>
         <Link className={styles.primaryButton} href={ctaHref}>{content.cta}</Link>
       </section>
     </main>
