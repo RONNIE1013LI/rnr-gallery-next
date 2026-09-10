@@ -89,7 +89,7 @@ export const galleryDesigns = pgTable(
     ),
     check(
       "gallery_designs_product_slug_valid",
-      sql`${table.productSlug} in ('digital-oil-painting-canvas', 'custom-themed-canvas', 'grave-cover', 'roll-up-banner', 'custom-themed-wall-banner')`,
+      sql`${table.productSlug} in ('digital-oil-painting-canvas', 'custom-themed-canvas', 'grave-cover', 'roll-up-banner', 'custom-themed-wall-banner', 'digital-oil-painting-banner')`,
     ),
     check(
       "gallery_designs_product_mapping_valid",
@@ -104,7 +104,7 @@ export const galleryDesigns = pgTable(
         and ${table.productSlug} = 'roll-up-banner'
       ) or (
         ${table.productTypeSlug} = 'wall-hanging-banners'
-        and ${table.productSlug} = 'custom-themed-wall-banner'
+        and ${table.productSlug} in ('custom-themed-wall-banner', 'digital-oil-painting-banner')
       )`,
     ),
     check(

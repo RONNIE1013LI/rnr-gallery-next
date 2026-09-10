@@ -6,6 +6,13 @@ const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
 describe("AdminGalleryForm", () => {
+  it("offers both product classifications for wall banners", () => {
+    render(<AdminGalleryForm />);
+    fireEvent.change(screen.getByLabelText("Product type"), { target: { value: "wall-hanging-banners" } });
+    expect(screen.getByRole("option", { name: "Digital Oil Painting Banner" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Custom Themed Wall Banner" })).toBeInTheDocument();
+  });
+
   it("submits approved fields and an image to the protected API", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "a".repeat(64) }) });
     vi.stubGlobal("fetch", fetchMock);

@@ -48,16 +48,33 @@ function sha256(path: string): string {
 }
 
 describe("migration lineage artifacts", () => {
+  it("extends only the two wall banner product checks in migration 0064", () => {
+    const previous = loadJson<Snapshot>("drizzle/meta/0063_snapshot.json");
+    const current = loadJson<Snapshot>("drizzle/meta/0064_snapshot.json");
+    expect(current.prevId).toBe(previous.id);
+    const expected = structuredClone(previous);
+    expected.id = current.id;
+    expected.prevId = previous.id;
+    for (const key of ["gallery_designs_product_slug_valid", "gallery_designs_product_mapping_valid"]) {
+      expect(current.tables["public.gallery_designs"].checkConstraints[key].value).toContain("digital-oil-painting-banner");
+      expected.tables["public.gallery_designs"].checkConstraints[key] = current.tables["public.gallery_designs"].checkConstraints[key];
+    }
+    expect(current).toEqual(expected);
+    const sql = readFileSync("drizzle/0064_digital_oil_banner_gallery.sql", "utf8");
+    expect(sql.match(/ALTER TABLE/g)).toHaveLength(4);
+    expect(sql).not.toMatch(/CREATE TABLE|INSERT INTO|UPDATE |DELETE FROM/);
+  });
+
   it("keeps the immutable Production prefix and appends the approved migrations", () => {
     const manifest = loadJson<AppliedMigration[]>(
       "drizzle/production-lineage-2026-08-24.json",
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(64);
+    expect(journal.entries).toHaveLength(65);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(64);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(64);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(65);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(65);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];

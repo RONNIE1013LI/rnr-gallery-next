@@ -12,7 +12,7 @@ export const galleryProductTypes = Object.freeze({
   ]),
   "grave-cover": Object.freeze(["grave-cover"]),
   "roll-up-banner": Object.freeze(["roll-up-banner"]),
-  "wall-hanging-banners": Object.freeze(["custom-themed-wall-banner"]),
+  "wall-hanging-banners": Object.freeze(["custom-themed-wall-banner", "digital-oil-painting-banner"]),
 } satisfies Record<GalleryProductTypeSlug, readonly GalleryProductSlug[]>);
 
 export const galleryOccasions = Object.freeze([
@@ -42,4 +42,5 @@ export const galleryTargetProducts: Readonly<Record<string, GalleryProductSlug>>
   "/product/grave-cover/": "grave-cover",
   "/product/roll-up-banner/": "roll-up-banner",
   "/product/custom-themed-wall-banner/": "custom-themed-wall-banner",
+  "/product/digital-oil-painting-banner/": "digital-oil-painting-banner",
 } satisfies Record<string, GalleryProductSlug>);

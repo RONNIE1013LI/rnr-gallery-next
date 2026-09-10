@@ -1,6 +1,9 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { galleryDesigns } from "@/server/db/schema";
+import { eq, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { galleryDesignRevisions, adminAuditLogs, user, galleryDesigns } from "@/server/db/schema";
 import {
   createDrizzleGalleryRepository,
   GalleryImportConflictError,
@@ -39,6 +42,48 @@ describe.runIf(hasDedicatedTestDatabase)("createDrizzleGalleryRepository", () =>
 
   afterAll(async () => {
     await database.delete(galleryDesigns);
+  });
+
+  it("audits reclassification and restores the original design before rolling back constraints", async () => {
+    const actorId = randomUUID();
+    await database.insert(user).values({ id: actorId, name: "Gallery test", email: `${actorId}@example.test`, role: "admin" });
+    const original = { ...row, productTypeSlug: "wall-hanging-banners" as const, productSlug: "custom-themed-wall-banner" as const };
+    try {
+      await database.insert(galleryDesigns).values(original);
+      await repository.updateDesign(row.id, { productSlug: "digital-oil-painting-banner" }, actorId);
+      const changed = await repository.findActiveDesign(row.id);
+      expect(changed).toMatchObject({ ...original, productSlug: "digital-oil-painting-banner" });
+      const revisions = await database.select().from(galleryDesignRevisions).where(eq(galleryDesignRevisions.designId, row.id));
+      expect(revisions).toHaveLength(1);
+      expect(revisions[0].priorSnapshot).toMatchObject({ productSlug: "custom-themed-wall-banner", contentHash: row.contentHash });
+      await repository.updateDesign(row.id, { productSlug: original.productSlug }, actorId);
+      expect(await repository.findActiveDesign(row.id)).toMatchObject(original);
+      const audit = await database.select().from(adminAuditLogs).where(eq(adminAuditLogs.actorUserId, actorId));
+      expect(audit).toHaveLength(2);
+      const previous = JSON.parse(readFileSync("drizzle/meta/0063_snapshot.json", "utf8"));
+      const rollbackProbe = new Error("rollback probe complete");
+      await expect(database.transaction(async (transaction) => {
+        for (const name of ["gallery_designs_product_slug_valid", "gallery_designs_product_mapping_valid"]) {
+          await transaction.execute(sql.raw(`ALTER TABLE gallery_designs DROP CONSTRAINT ${name}`));
+          await transaction.execute(sql.raw(`ALTER TABLE gallery_designs ADD CONSTRAINT ${name} CHECK (${previous.tables["public.gallery_designs"].checkConstraints[name].value})`));
+        }
+        throw rollbackProbe;
+      })).rejects.toBe(rollbackProbe);
+      await repository.updateDesign(row.id, { productSlug: "digital-oil-painting-banner" }, actorId);
+    } finally {
+      await database.delete(galleryDesignRevisions).where(eq(galleryDesignRevisions.designId, row.id));
+      await database.delete(galleryDesigns).where(eq(galleryDesigns.id, row.id));
+      await database.delete(adminAuditLogs).where(eq(adminAuditLogs.actorUserId, actorId));
+      await database.delete(user).where(eq(user.id, actorId));
+    }
+  });
+
+  it("accepts both wall banner products and rejects oil banner mapped to canvas", async () => {
+    await database.insert(galleryDesigns).values({ ...row, productTypeSlug: "wall-hanging-banners", productSlug: "digital-oil-painting-banner" });
+    expect(await repository.findActiveDesign(row.id)).toMatchObject({ productSlug: "digital-oil-painting-banner" });
+    await database.update(galleryDesigns).set({ productSlug: "custom-themed-wall-banner" });
+    expect(await repository.findActiveDesign(row.id)).toMatchObject({ productSlug: "custom-themed-wall-banner" });
+    await expect(database.update(galleryDesigns).set({ productTypeSlug: "canvas", productSlug: "digital-oil-painting-banner" })).rejects.toThrow();
   });
 
   it("inserts one initial snapshot and treats an identical rerun as a no-op", async () => {

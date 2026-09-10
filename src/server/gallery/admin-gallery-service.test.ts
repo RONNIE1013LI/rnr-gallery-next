@@ -30,6 +30,18 @@ function dependencies() {
 }
 
 describe("admin gallery service", () => {
+  it("reclassifies a wall banner as digital oil without replacing its image", async () => {
+    const deps = dependencies();
+    await createAdminGalleryService(deps).update("a".repeat(64), {
+      metadata: { ...metadata, productTypeSlug: "wall-hanging-banners", productSlug: "digital-oil-painting-banner" },
+      actorUserId: "admin-1",
+    });
+    expect(deps.store.writeManaged).not.toHaveBeenCalled();
+    expect(deps.repository.updateDesign).toHaveBeenCalledWith("a".repeat(64), expect.objectContaining({
+      productSlug: "digital-oil-painting-banner", productTypeSlug: "wall-hanging-banners",
+    }), "admin-1");
+  });
+
   it("validates product mapping and creates a decoded managed image", async () => {
     const deps = dependencies();
     const service = createAdminGalleryService(deps);

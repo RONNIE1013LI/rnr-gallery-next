@@ -28,7 +28,8 @@ export type GalleryProductSlug =
   | "custom-themed-canvas"
   | "grave-cover"
   | "roll-up-banner"
-  | "custom-themed-wall-banner";
+  | "custom-themed-wall-banner"
+  | "digital-oil-painting-banner";
 
 export type GalleryManifestRecord = Readonly<{
   id: string;

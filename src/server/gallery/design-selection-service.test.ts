@@ -19,6 +19,15 @@ const row = {
 };
 
 describe("design selection service", () => {
+  it("keeps a reclassified oil banner selection on its matching product", async () => {
+    const service = createDesignSelectionService({
+      findActiveDesign: async () => ({ ...row, productTypeSlug: "wall-hanging-banners", productSlug: "digital-oil-painting-banner" }),
+      imageAvailable: async () => true,
+    });
+    await expect(service.resolve(designId, "digital-oil-painting-banner")).resolves.toMatchObject({ id: designId, productSlug: "digital-oil-painting-banner" });
+    await expect(service.resolve(designId, "custom-themed-wall-banner")).resolves.toBeNull();
+  });
+
   it("returns a safe display selection only for the matching active product", async () => {
     const service = createDesignSelectionService({
       findActiveDesign: async (id) => id === designId ? row : null,
