@@ -1,8 +1,3 @@
-import { eq } from "drizzle-orm";
-
-import { getDatabase } from "@/server/db/client";
-import { verification } from "@/server/db/schema/auth";
-
 export type PasswordResetTokenStatus = "valid" | "invalid";
 export type PasswordResetTokenFinder = (
   identifier: string,
@@ -27,13 +22,10 @@ export async function validatePasswordResetToken(
 }
 
 export function getPasswordResetTokenStatus(token: string) {
-  const database = getDatabase();
   return validatePasswordResetToken(token, async (identifier) => {
-    const [record] = await database
-      .select({ expiresAt: verification.expiresAt })
-      .from(verification)
-      .where(eq(verification.identifier, identifier))
-      .limit(1);
-    return record ?? null;
+    // The auth adapter applies the configured identifier hashing without consuming the token.
+    const { auth } = await import("@/server/auth");
+    const context = await auth.$context;
+    return context.internalAdapter.findVerificationValue(identifier);
   });
 }

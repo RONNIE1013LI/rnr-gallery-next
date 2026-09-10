@@ -17,6 +17,7 @@ import { syntheticAuthenticator } from "./webauthn-test-fixture";
 import { getStaffSecurity, postStaffSecurity } from "./staff-security-http";
 import { createDrizzleAdminEmployeeRepository } from "@/server/admin/admin-employee-service";
 import { changeStaffSecurity } from "./staff-management";
+import { getPasswordResetTokenStatus } from "./password-reset-token";
 
 const dbHolder = vi.hoisted(() => ({ value: null as unknown, auth: null as unknown }));
 vi.mock("@/server/db/client", () => ({ getDatabase: () => dbHolder.value }));
@@ -263,12 +264,15 @@ describe("official authentication library with PostgreSQL staff security", () =>
   it("hashes and consumes reset tokens without bypassing MFA, and revokes old sessions", async () => {
     await testAuth.api.requestPasswordReset({ body: { email: actor.email, redirectTo: `${origin}/account/reset-password` } });
     expect(Boolean(resetToken)).toBe(true);
+    expect(await getPasswordResetTokenStatus(resetToken!)).toBe("valid");
+    expect(await getPasswordResetTokenStatus(resetToken!)).toBe("valid");
     const rows = await db.select({ identifier: schema.verification.identifier }).from(schema.verification);
     expect(rows.some((row) => row.identifier.includes(resetToken!))).toBe(false);
     await expect(testAuth.api.resetPassword({ body: { token: resetToken!, newPassword: "password123456" } })).rejects.toThrow();
     const nextPassword = "another synthetic staff passphrase";
     const reset = await testAuth.api.resetPassword({ body: { token: resetToken!, newPassword: nextPassword }, asResponse: true });
     expect(reset.status).toBe(200);
+    expect(await getPasswordResetTokenStatus(resetToken!)).toBe("invalid");
     expect(await testAuth.api.getSession({ headers: headers(actor.cookie) })).toBeNull();
     const reused = await testAuth.api.resetPassword({ body: { token: resetToken!, newPassword: nextPassword }, asResponse: true });
     expect(reused.status).not.toBe(200);
