@@ -1,4 +1,5 @@
 "use client";
+import { galleryDesignTypeForProduct } from "@/domain/gallery/taxonomy";
 import { fabricBannerDefaults } from "./fabric-banner-3d/defaults";
 import { FabricBannerPreview } from "./fabric-banner-preview";
 
@@ -724,7 +725,7 @@ export function ProductConfigurator({
               <p className={styles.eyebrow}>Made by R&amp;R</p>
               <h2>Design inspiration</h2>
             </div>
-            <Link className={styles.configureRelatedMore} href={`/design-gallery?product=${encodeURIComponent(relatedDesigns[0].productSlug)}`}>
+            <Link className={styles.configureRelatedMore} href={`/design-gallery?design_type=${galleryDesignTypeForProduct(product.slug) ?? ""}`}>
               View all designs
             </Link>
           </header>

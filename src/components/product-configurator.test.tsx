@@ -366,6 +366,26 @@ describe("ProductConfigurator", () => {
     );
   });
 
+  it.each([
+    ["digital-oil-painting-banner", "wall-hanging-banners"],
+    ["custom-themed-wall-banner", "wall-hanging-banners"],
+    ["roll-up-banner", "roll-up-banner"],
+    ["grave-cover", "grave-cover"],
+    ["digital-oil-painting-canvas", "canvas"],
+    ["custom-themed-canvas", "canvas"],
+    ["photo-print-canvas", "canvas"],
+  ])("links %s inspiration to its Gallery family", (slug, designType) => {
+    const configuredProduct = getProductBySlug(slug)!;
+    render(<ProductConfigurator product={configuredProduct}
+      schema={getConfigurationSchema(configuredProduct.key)!} orderDate="2026-09-11"
+      relatedDesigns={[{ id: "a".repeat(64), title: "Family example", altText: "Family example",
+        imageUrl: "/gallery-images/example", width: 1200, height: 1600,
+        productSlug: "custom-themed-wall-banner" }]} />);
+    expect(screen.getByRole("link", { name: "View all designs" })).toHaveAttribute(
+      "href", `/design-gallery?design_type=${designType}`,
+    );
+  });
+
   it("presents related designs as image-only links to the matching configurator", () => {
     render(
       <ProductConfigurator
@@ -395,7 +415,7 @@ describe("ProductConfigurator", () => {
     );
     expect(screen.getByRole("link", { name: "View all designs" })).toHaveAttribute(
       "href",
-      "/design-gallery?product=digital-oil-painting-canvas",
+      "/design-gallery?design_type=canvas",
     );
     expect(screen.queryByRole("heading", { name: "Memorial floral canvas" })).not.toBeInTheDocument();
     expect(screen.queryByText("Configure with this design")).not.toBeInTheDocument();

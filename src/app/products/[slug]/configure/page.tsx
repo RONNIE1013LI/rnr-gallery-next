@@ -1,3 +1,4 @@
+import { galleryDesignTypeForProduct } from "@/domain/gallery/taxonomy";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ProductConfiguratorRelatedDesign } from "@/components/product-configurator";
@@ -32,11 +33,15 @@ function getAucklandOrderDate(): string {
 }
 
 async function getProductDesigns(slug: string): Promise<readonly ProductConfiguratorRelatedDesign[]> {
+  const designType = galleryDesignTypeForProduct(slug);
+  if (!designType) return [];
   const runtime = getGalleryRuntime();
   const candidates = await runtime.repository.listActiveCandidates();
   const relevant = await Promise.all(
     candidates
-      .filter((candidate) => candidate.productSlug === slug)
+      .filter((candidate) => candidate.productTypeSlug === designType)
+      // Product classification is the available style metadata; retain family fallback.
+      .sort((a, b) => Number(b.productSlug === slug) - Number(a.productSlug === slug))
       .map(async (candidate) => {
         const isAvailable = await runtime.store.isAvailable(candidate.storageKey);
         if (!isAvailable) return null;

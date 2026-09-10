@@ -15,6 +15,13 @@ export const galleryProductTypes = Object.freeze({
   "wall-hanging-banners": Object.freeze(["custom-themed-wall-banner", "digital-oil-painting-banner"]),
 } satisfies Record<GalleryProductTypeSlug, readonly GalleryProductSlug[]>);
 
+export function galleryDesignTypeForProduct(slug: string): GalleryProductTypeSlug | undefined {
+  if (slug === "photo-print-canvas") return "canvas";
+  return (Object.keys(galleryProductTypes) as GalleryProductTypeSlug[]).find((type) =>
+    galleryProductTypes[type].some((productSlug) => productSlug === slug),
+  );
+}
+
 export const galleryOccasions = Object.freeze([
   "baby-kids",
   "birthday",
