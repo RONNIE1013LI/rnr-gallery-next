@@ -395,7 +395,7 @@ describe("ProductConfigurator", () => {
     );
     expect(screen.getByRole("link", { name: "View all designs" })).toHaveAttribute(
       "href",
-      "/design-gallery",
+      "/design-gallery?product=digital-oil-painting-canvas",
     );
     expect(screen.queryByRole("heading", { name: "Memorial floral canvas" })).not.toBeInTheDocument();
     expect(screen.queryByText("Configure with this design")).not.toBeInTheDocument();

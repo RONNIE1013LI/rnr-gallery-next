@@ -156,6 +156,7 @@ export function createDrizzleGalleryRepository(
     },
     async listActivePage(query, pageSize) {
       const conditions: SQL[] = [eq(galleryDesigns.status, "active")];
+      if (query.productSlug) conditions.push(eq(galleryDesigns.productSlug, query.productSlug));
       if (query.productTypes.length > 0) {
         conditions.push(inArray(galleryDesigns.productTypeSlug, query.productTypes));
       }

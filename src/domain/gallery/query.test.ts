@@ -5,6 +5,13 @@ import {
 } from "./query";
 
 describe("parseGalleryQuery", () => {
+  it("preserves an approved product filter across gallery pages", () => {
+    const query = parseGalleryQuery({ product: "digital-oil-painting-banner" });
+    expect(query).toMatchObject({ productSlug: "digital-oil-painting-banner" });
+    expect(galleryPageHref(query, 2)).toContain("product=digital-oil-painting-banner");
+    expect(parseGalleryQuery({ product: "invalid-product" })).not.toHaveProperty("productSlug");
+  });
+
   it("keeps only approved repeated filters and clamps invalid pages", () => {
     expect(parseGalleryQuery({
       page: "-2",

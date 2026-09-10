@@ -22,19 +22,19 @@ function createRuntime() {
     ),
     findByPublicSlug: cachePublicData(
       (slug: string) => uncachedPublicService.findByPublicSlug(slug),
-      "gallery-public-slug",
+      "gallery-public-slug-product-classification-v2",
       [PUBLIC_CACHE_TAGS.gallery],
     ),
     findByIds: cachePublicData(
       (designIds: readonly string[]) => uncachedPublicService.findByIds(designIds),
-      "gallery-design-ids",
+      "gallery-design-ids-product-classification-v2",
       [PUBLIC_CACHE_TAGS.gallery],
     ),
     list: cachePublicData(
       (query: Parameters<typeof uncachedPublicService.list>[0], requestedPageSize?: number) => (
         uncachedPublicService.list(query, requestedPageSize)
       ),
-      "gallery-list",
+      "gallery-list-product-classification-v2",
       [PUBLIC_CACHE_TAGS.gallery],
     ),
   });

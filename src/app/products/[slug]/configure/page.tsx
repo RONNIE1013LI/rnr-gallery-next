@@ -52,7 +52,7 @@ async function getProductDesigns(slug: string): Promise<readonly ProductConfigur
       }),
   );
 
-  return Object.freeze(relevant.filter((item): item is ProductConfiguratorRelatedDesign => item !== null));
+  return Object.freeze(relevant.filter((item): item is ProductConfiguratorRelatedDesign => item !== null).slice(0, 8));
 }
 
 export async function generateMetadata({ params }: ConfigurePageProps): Promise<Metadata> {

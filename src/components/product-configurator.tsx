@@ -724,7 +724,7 @@ export function ProductConfigurator({
               <p className={styles.eyebrow}>Made by R&amp;R</p>
               <h2>Design inspiration</h2>
             </div>
-            <Link className={styles.configureRelatedMore} href="/design-gallery">
+            <Link className={styles.configureRelatedMore} href={`/design-gallery?product=${encodeURIComponent(relatedDesigns[0].productSlug)}`}>
               View all designs
             </Link>
           </header>

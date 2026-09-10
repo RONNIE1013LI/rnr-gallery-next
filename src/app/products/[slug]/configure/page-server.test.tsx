@@ -12,7 +12,7 @@ vi.mock("@/server/gallery/gallery-runtime", () => ({ getGalleryRuntime: () => ({
 vi.mock("./page-content", () => ({ ConfigurePageContent: () => null }));
 
 beforeEach(() => { vi.clearAllMocks(); mocks.available.mockResolvedValue(true); });
-it("supplies every available oil banner design, including those after the eighth", async () => {
+it("limits oil banner inspiration to eight available designs", async () => {
   const designs = Array.from({ length: 12 }, (_, index) => ({
     id: String(index).padStart(64, "0"), productSlug: "digital-oil-painting-banner",
     storageKey: `managed/${index}.jpg`, contentHash: "b".repeat(64), width: 1600, height: 800,
@@ -21,7 +21,7 @@ it("supplies every available oil banner design, including those after the eighth
   mocks.candidates.mockResolvedValue([...designs, { ...designs[0], id: "other", productSlug: "custom-themed-wall-banner" }]);
   mocks.available.mockImplementation(async (key: string) => key !== "managed/2.jpg");
   const result = await ConfigurePage({ params: Promise.resolve({ slug: "digital-oil-painting-banner" }), searchParams: Promise.resolve({}) });
-  expect(result.props.relatedDesigns).toHaveLength(11);
-  expect(result.props.relatedDesigns.map((item: { id: string }) => item.id)).toEqual(designs.filter((_, i) => i !== 2).map((item) => item.id));
+  expect(result.props.relatedDesigns).toHaveLength(8);
+  expect(result.props.relatedDesigns.map((item: { id: string }) => item.id)).toEqual(designs.filter((_, i) => i !== 2).slice(0, 8).map((item) => item.id));
   expect(mocks.available).toHaveBeenCalledTimes(12);
 });

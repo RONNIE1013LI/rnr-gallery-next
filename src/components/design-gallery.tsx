@@ -84,7 +84,7 @@ function FilterCheckbox({
 
 export function DesignGallery({ query, result }: Props) {
   const advancedOpen = query.showFilters || query.birthdayAges.length > 0 || query.themes.length > 0;
-  const noSecondaryFilters = query.birthdayAges.length === 0 && query.themes.length === 0;
+  const noSecondaryFilters = !query.productSlug && query.birthdayAges.length === 0 && query.themes.length === 0;
   const onlyOccasion = (occasion: string) => noSecondaryFilters
     && query.productTypes.length === 0
     && sameValues(query.occasions, [occasion]);
@@ -110,6 +110,7 @@ export function DesignGallery({ query, result }: Props) {
     <main id="main-content" className={styles.galleryPage}>
       <header className={styles.galleryIntro}>
         <h1>Designed around your story.</h1>
+        {query.productSlug ? <p>{query.productSlug.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ")} · <Link href="/design-gallery">View all products</Link></p> : null}
         <p>Personalised artwork created for memorials, celebrations, families and life&apos;s most meaningful moments.</p>
       </header>
 
@@ -120,6 +121,7 @@ export function DesignGallery({ query, result }: Props) {
       <details id="browse-by-occasion" className={styles.galleryFilters} open={advancedOpen}>
         <summary>Filters +</summary>
         <form action="/design-gallery" method="get">
+          {query.productSlug ? <input type="hidden" name="product" value={query.productSlug} /> : null}
           <fieldset>
             <legend>Product Type</legend>
             {(Object.keys(productTypeLabels) as GalleryProductTypeSlug[]).map((value) => (

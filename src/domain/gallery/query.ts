@@ -5,6 +5,7 @@ import {
 } from "./taxonomy";
 import type {
   GalleryOccasionSlug,
+  GalleryProductSlug,
   GalleryProductTypeSlug,
   GalleryThemeSlug,
 } from "./types";
@@ -27,6 +28,7 @@ export const galleryBirthdayAges = Object.freeze([
 
 export type GalleryQuery = Readonly<{
   page: number;
+  productSlug?: GalleryProductSlug;
   productTypes: readonly GalleryProductTypeSlug[];
   occasions: readonly GalleryOccasionSlug[];
   birthdayAges: readonly string[];
@@ -61,7 +63,9 @@ export function parseGalleryQuery(input: QueryInput): GalleryQuery {
   const rawPage = values(input, "page")[0];
   const parsedPage = Number.parseInt(rawPage ?? "1", 10);
   const showFilters = values(input, "filters")[0] === "1";
+  const product = approved(values(input, "product"), Object.values(galleryProductTypes).flat())[0];
   return Object.freeze({
+    ...(product ? { productSlug: product } : {}),
     page: Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1,
     productTypes: approved(
       values(input, "design_type"),
@@ -76,6 +80,7 @@ export function parseGalleryQuery(input: QueryInput): GalleryQuery {
 
 export function galleryPageHref(query: GalleryQuery, page: number): string {
   const params = new URLSearchParams();
+  if (query.productSlug) params.set("product", query.productSlug);
   query.productTypes.forEach((value) => params.append("design_type", value));
   query.occasions.forEach((value) => params.append("occasion", value));
   query.birthdayAges.forEach((value) => params.append("birthday_age", value));

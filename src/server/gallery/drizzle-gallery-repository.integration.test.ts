@@ -78,6 +78,23 @@ describe.runIf(hasDedicatedTestDatabase)("createDrizzleGalleryRepository", () =>
     }
   });
 
+  it("paginates the selected banner product without mixing in themed banners", async () => {
+    const designs = Array.from({ length: 27 }, (_, index) => {
+      const id = (index + 10).toString(16).padStart(64, "0");
+      return { ...row, id, contentHash: id, storageKey: `managed/${id}.jpg`, productTypeSlug: "wall-hanging-banners" as const,
+        productSlug: index === 26 ? "custom-themed-wall-banner" as const : "digital-oil-painting-banner" as const };
+    });
+    await database.insert(galleryDesigns).values(designs);
+    const query = { page: 1, productSlug: "digital-oil-painting-banner" as const, productTypes: [], occasions: [], birthdayAges: [], themes: [] };
+    const first = await repository.listActivePage(query, 24);
+    const second = await repository.listActivePage({ ...query, page: 2 }, 24);
+    expect(first).toMatchObject({ total: 26, page: 1, pageCount: 2 });
+    expect(first.items).toHaveLength(24);
+    expect(second.items).toHaveLength(2);
+    expect([...first.items, ...second.items].every((item) => item.productSlug === query.productSlug)).toBe(true);
+    expect(new Set([...first.items, ...second.items].map((item) => item.id)).size).toBe(26);
+  });
+
   it("accepts both wall banner products and rejects oil banner mapped to canvas", async () => {
     await database.insert(galleryDesigns).values({ ...row, productTypeSlug: "wall-hanging-banners", productSlug: "digital-oil-painting-banner" });
     expect(await repository.findActiveDesign(row.id)).toMatchObject({ productSlug: "digital-oil-painting-banner" });
