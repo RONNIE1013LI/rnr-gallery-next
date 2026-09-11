@@ -89,13 +89,13 @@ export const galleryDesigns = pgTable(
     ),
     check(
       "gallery_designs_product_slug_valid",
-      sql`${table.productSlug} in ('digital-oil-painting-canvas', 'custom-themed-canvas', 'grave-cover', 'roll-up-banner', 'custom-themed-wall-banner', 'digital-oil-painting-banner')`,
+      sql`${table.productSlug} in ('photo-print-canvas', 'digital-oil-painting-canvas', 'custom-themed-canvas', 'grave-cover', 'roll-up-banner', 'custom-themed-wall-banner', 'digital-oil-painting-banner')`,
     ),
     check(
       "gallery_designs_product_mapping_valid",
       sql`(
         ${table.productTypeSlug} = 'canvas'
-        and ${table.productSlug} in ('digital-oil-painting-canvas', 'custom-themed-canvas')
+        and ${table.productSlug} in ('photo-print-canvas', 'digital-oil-painting-canvas', 'custom-themed-canvas')
       ) or (
         ${table.productTypeSlug} = 'grave-cover'
         and ${table.productSlug} = 'grave-cover'
