@@ -168,7 +168,6 @@ export const FORM_ACTIVE_FIELDS = [
 export const FORM_LIST_COLUMNS = [
   { key: "submittedAt", label: "Submitted Time", editable: false },
   { key: "reference", label: "Ref No.", editable: false },
-  { key: "webOrderNumber", label: "Web Order No.", editable: false },
   { key: "size", label: "Size", editable: false },
   { key: "urgent", label: "Urgent?", editable: true },
   { key: "neededDate", label: "DlvryDate", editable: true },

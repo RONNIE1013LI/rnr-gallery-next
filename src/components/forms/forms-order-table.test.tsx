@@ -9,7 +9,7 @@ describe("FormsOrderTable", () => {
     render(<FormsOrderTable rows={[formOrderRow]} canViewFinance onOpen={vi.fn()} />);
     const table = screen.getByRole("table", { name: "Orders data list" });
     expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
-      "#", "Submitted Time", "Ref No.", "Web Order No.", "Size", "Urgent?",
+      "#", "Submitted Time", "Ref No.", "Size", "Urgent?",
       "DlvryDate", "DlvryMethod", "Customer Source", "Cust.Name",
       "Assign Artist", "Artist", "File Sent", "Download", "Customer Notified",
       "Printed", "Completed", "Delivered", "BankRecon", "AmtOwe", "AmtPaid",
