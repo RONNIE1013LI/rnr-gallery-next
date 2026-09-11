@@ -32,6 +32,18 @@ describe("AdminGalleryList", () => {
     expect(css).toMatch(/@media \(min-width: 768px\)[\s\S]*?\.adminGalleryFilterDisclosure:not\(\[open\]\) > \.adminGalleryFilters[\s\S]*?display:\s*grid;/);
   });
 
+  it("filters designs by product and occasion classification", () => {
+    const canvasMemorial = { ...activeDesign, id: "c".repeat(64), altText: "Canvas memorial" , productTypeSlug: "canvas", occasionSlug: "memorial" };
+    render(<AdminGalleryList designs={[activeDesign, canvasMemorial]} />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Product type" }), { target: { value: "canvas" } });
+    expect(screen.getByText("Canvas memorial")).toBeInTheDocument();
+    expect(screen.queryByText("Active birthday banner")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Occasion" }), { target: { value: "memorial" } });
+    expect(screen.getByText("Canvas memorial")).toBeInTheDocument();
+  });
+
   it("does not request active-only artwork for trashed designs and handles missing active artwork", () => {
     const { container } = render(<AdminGalleryList designs={[activeDesign, trashedDesign]} />);
 
