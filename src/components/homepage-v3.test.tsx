@@ -33,6 +33,23 @@ function galleryItem(
 }
 
 describe("HomepageV3", () => {
+  it("uses the published recommendation count in the homepage trust highlight", () => {
+    render(<HomepageV3 registry={defaultProductRegistry} reviewSection={{
+      summary: {
+        rating: 4.9,
+        recommendationCount: 315,
+        countIsApproximate: false,
+        reviewsPageUrl: "https://www.facebook.com/RandRgallery/reviews/",
+        lastVerifiedAt: "2026-08-20",
+      },
+      featured: featuredReview,
+      reviews: [secondReview],
+    }} />);
+
+    expect(screen.getByRole("link", { name: "100% Recommended (315 Reviews)" })).toBeInTheDocument();
+    expect(screen.queryByText("100% Recommended (292 Reviews)")).not.toBeInTheDocument();
+  });
+
   it("replaces the hard-coded story with the managed review section", () => {
     render(<HomepageV3 registry={defaultProductRegistry} reviewSection={{
       summary: null,
