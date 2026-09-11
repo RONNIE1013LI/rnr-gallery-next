@@ -48,6 +48,7 @@ describe("AdminGalleryList", () => {
     const canvas = { ...activeDesign, id: "c".repeat(64), altText: "Canvas target", productSlug: "digital-oil-painting-canvas" };
     render(<AdminGalleryList designs={[activeDesign, canvas]} />);
 
+    expect(screen.getByRole("option", { name: "Photo Print Canvas" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "Target product" }), { target: { value: "digital-oil-painting-canvas" } });
     expect(screen.getByText("Canvas target")).toBeInTheDocument();
     expect(screen.queryByText("Active birthday banner")).not.toBeInTheDocument();

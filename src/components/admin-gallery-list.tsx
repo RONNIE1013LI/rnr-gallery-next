@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import styles from "./storefront.module.css";
 
 export type AdminGalleryListItem = Readonly<{
@@ -42,7 +43,11 @@ export function AdminGalleryList({ designs }: Readonly<{ designs: readonly Admin
   const [page, setPage] = useState(1);
   const productTypes = useMemo(() => [...new Set(designs.map((design) => design.productTypeSlug))].sort(), [designs]);
   const occasions = useMemo(() => [...new Set(designs.map((design) => design.occasionSlug))].sort(), [designs]);
-  const targetProducts = useMemo(() => [...new Set(designs.map((design) => design.productSlug))].sort(), [designs]);
+  const targetProducts = useMemo(() => [...new Set([
+    ...defaultProductRegistry.products.map((product) => product.slug),
+    ...designs.map((design) => design.productSlug),
+  ])].sort(), [designs]);
+  const targetProductLabels = useMemo(() => new Map(defaultProductRegistry.products.map((product) => [product.slug, product.title])), []);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return designs.filter((design) => {
@@ -69,7 +74,7 @@ export function AdminGalleryList({ designs }: Readonly<{ designs: readonly Admin
         <label><span>Search designs</span><input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Title, occasion, product or ID" /></label>
         <label><span>Product type</span><select aria-label="Product type" value={productType} onChange={(event) => { setProductType(event.target.value); setPage(1); }}><option value="all">All product types</option>{productTypes.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
         <label><span>Occasion</span><select aria-label="Occasion" value={occasion} onChange={(event) => { setOccasion(event.target.value); setPage(1); }}><option value="all">All occasions</option>{occasions.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
-        <label><span>Target product</span><select aria-label="Target product" value={targetProduct} onChange={(event) => { setTargetProduct(event.target.value); setPage(1); }}><option value="all">All target products</option>{targetProducts.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
+        <label><span>Target product</span><select aria-label="Target product" value={targetProduct} onChange={(event) => { setTargetProduct(event.target.value); setPage(1); }}><option value="all">All target products</option>{targetProducts.map((value) => <option key={value} value={value}>{targetProductLabels.get(value) ?? label(value)}</option>)}</select></label>
         <label><span>Status</span><select value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setPage(1); }}><option value="all">All statuses</option><option value="active">Active</option><option value="trashed">Trashed</option></select></label>
         <span>{filtered.length} shown</span>
       </div>
