@@ -5970,3 +5970,10 @@
   margin: 0 auto;
   border-top: 0;
 }
+
+@media (max-width: 767px) {
+  .catalogueLinks {
+    margin-top: 1rem;
+    padding-block: 0.35rem;
+  }
+}
