@@ -51,10 +51,27 @@ function packageReferences(items: Detail["items"]) {
   });
 }
 
-function UploadList({ uploads }: Readonly<{ uploads: Detail["uploads"] }>) {
+function UploadList({ uploads, photos, amount }: Readonly<{ uploads: Detail["uploads"]; photos?: Detail["items"][number]["photoMetadata"]; amount?: (cents: number) => string }>) {
+  const photoMetadata = photos ?? [];
+  const uploadById = new Map(uploads.map((upload) => [upload.id, upload]));
   return <div className={styles.uploadList}>
-    <strong>Uploads</strong>
-    {uploads.length ? (
+    <strong>{photoMetadata.length ? "Photos / Uploads" : "Uploads"}</strong>
+    {photoMetadata.length ? (
+      <ul>
+        {photoMetadata.map((photo) => {
+          const upload = uploadById.get(photo.fileId);
+          return <li key={photo.fileId}>
+            {upload?.purgedAt === null ? <>
+              <img src={photo.url} alt={photo.originalName} width={72} height={72} />
+              <span><strong>Photo {photo.position} — {photo.isMain ? "MAIN PHOTO" : "Additional Photo"}</strong>
+                <small>Background removal: {photo.backgroundRemovalIncluded ? "Included" : photo.removeBackground && photo.backgroundRemovalChargeInclGstCents > 0 ? `+${amount?.(photo.backgroundRemovalChargeInclGstCents) ?? "Paid"} incl GST` : "No"}</small>
+                <span className={styles.uploadActions}><a href={photo.url} target="_blank" rel="noopener noreferrer">View</a><a href={`${photo.url}?download=1`}>Download</a></span>
+              </span>
+            </> : <span>Original photo deleted after the 5-day storage period.</span>}
+          </li>;
+        })}
+      </ul>
+    ) : uploads.length ? (
       <ul>
         {uploads.map((upload) => (
           <li key={upload.id}>
@@ -153,11 +170,11 @@ export function AdminOrderDetail({
                   </dl>
                   {component.designText ? <div className={styles.customerText}><strong>Artwork direction</strong><p>{component.designText}</p></div> : null}
                   {component.notes ? <div className={styles.customerText}><strong>Customer notes</strong><p>{component.notes}</p></div> : null}
-                  <UploadList uploads={uploads} />
+                  <UploadList uploads={uploads} photos={(item.photoMetadata ?? []).filter((photo) => component.uploadReferences.includes(photo.fileId))} amount={amount} />
                 </section>;
               }) ?? <UploadList uploads={detail.uploads.filter(
                 (upload) => upload.orderItemId === item.id,
-              )} />}
+              )} photos={item.photoMetadata ?? []} amount={amount} />}
             </article>
           ))}
         </section>

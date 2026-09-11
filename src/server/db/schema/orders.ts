@@ -31,6 +31,18 @@ import type { ProviderShippingQuote } from "@/server/shipping/types";
 import { user } from "./auth";
 import { checkoutSessions, shippingQuotes } from "./checkout";
 
+export type OrderItemPhotoMetadata = Readonly<{
+  fileId: string;
+  url: string;
+  originalName: string;
+  position: number;
+  role: "main" | "additional";
+  isMain: boolean;
+  removeBackground: boolean;
+  backgroundRemovalIncluded: boolean;
+  backgroundRemovalChargeInclGstCents: number;
+}>;
+
 export type OrderPaymentStatus =
   | "awaiting_payment"
   | "processing"
@@ -263,6 +275,7 @@ export const orderItems = pgTable(
     quantity: integer("quantity").notNull(),
     priceLines: jsonb("price_lines").$type<readonly PriceLine[]>().notNull(),
     uploadReferences: jsonb("upload_references").$type<readonly string[]>().notNull(),
+    photoMetadata: jsonb("photo_metadata").$type<readonly OrderItemPhotoMetadata[]>().notNull().default([]),
     bundleComponents: jsonb("bundle_components")
       .$type<readonly BannerBundleComponentCustomization[]>(),
     unitSubtotalExGstCents: bigint("unit_subtotal_ex_gst_cents", {

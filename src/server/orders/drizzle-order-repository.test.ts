@@ -4,6 +4,7 @@ import { normalizeAddress } from "@/domain/address/schema";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import {
   buildOrderItemCustomizationSnapshot,
+  buildOrderItemPhotoMetadata,
   buildWebProductionJobSnapshot,
   calculateOrderTotals,
 } from "./drizzle-order-repository";
@@ -23,6 +24,20 @@ describe("atomic order totals", () => {
 });
 
 describe("order item customisation snapshot", () => {
+  it("persists explicit main and paid additional background removal metadata", () => {
+    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    const item = repriceCart({
+      version: 1,
+      items: [{ clientItemId: randomUUID(), productKey: "digital-oil-painting-banner", sizeKey: "160x80", peoplePets: 1, photoSubmissionMethod: "upload", uploadReferences: ids, mainPhotoUploadId: ids[1], extraBackgroundRemovalUploadIds: [ids[2]], designText: "", notes: "", neededDate: "2027-08-10", urgentServiceConfirmed: false, urgentWorkingDays: 5, quantity: 1 }],
+      shipping: { country: "NZ", method: "standard" },
+    });
+    const photos = buildOrderItemPhotoMetadata(item.items[0], ids.map((id, i) => ({ id, originalName: `photo-${i + 1}.png` })));
+    expect(photos.map((photo) => ({ position: photo.position, role: photo.role, removeBackground: photo.removeBackground, backgroundRemovalIncluded: photo.backgroundRemovalIncluded }))).toEqual([
+      { position: 1, role: "additional", removeBackground: false, backgroundRemovalIncluded: false },
+      { position: 2, role: "main", removeBackground: true, backgroundRemovalIncluded: true },
+      { position: 3, role: "additional", removeBackground: true, backgroundRemovalIncluded: false },
+    ]);
+  });
   it("stores null for an ordinary product", () => {
     const [item] = repriceCart({
       version: 1,

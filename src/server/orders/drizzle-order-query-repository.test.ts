@@ -89,6 +89,7 @@ const itemRow: ItemRow = {
     { key: "no-charge", label: "No-charge adjustment", amountExGstCents: 0, amountInclGstCents: 0, internalMetadata: "private" },
   ] as ItemRow["priceLines"],
   uploadReferences: [],
+  photoMetadata: [],
   bundleComponents: null,
   unitSubtotalExGstCents: 6500,
   unitGstCents: 975,

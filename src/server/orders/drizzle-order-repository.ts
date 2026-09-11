@@ -28,6 +28,7 @@ import {
   UnclaimableUploadError,
 } from "./order-repository";
 import { buildOrderPricingSnapshot } from "./order-pricing-snapshot";
+import type { OrderItemPhotoMetadata } from "@/server/db/schema/orders";
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -64,6 +65,33 @@ export function buildOrderItemCustomizationSnapshot(
     throw new AtomicOrderStateError("Bundle upload references changed before ordering");
   }
   return Object.freeze({ bundleComponents, uploadReferences });
+}
+
+export function buildOrderItemPhotoMetadata(
+  item: RepricedCheckoutItem,
+  uploads: readonly { id: string; originalName: string | null }[],
+): readonly OrderItemPhotoMetadata[] {
+  const mainId = item.mainPhotoUploadId;
+  const extraIds = new Set(item.extraBackgroundRemovalUploadIds ?? []);
+  const charge = item.unitPrice.lines.find((line) => /background-removals$/.test(line.key))?.amountInclGstCents ?? 0;
+  if (item.uploadReferences.length > 0 && !mainId) {
+    throw new AtomicOrderStateError("Photo order item is missing an explicit main photo");
+  }
+  return Object.freeze(item.uploadReferences.map((fileId, index) => {
+    const isMain = mainId === fileId;
+    const upload = uploads.find((candidate) => candidate.id === fileId);
+    return Object.freeze({
+      fileId,
+      url: `/api/admin/uploads/${fileId}`,
+      originalName: upload?.originalName ?? "Uploaded photo",
+      position: index + 1,
+      role: isMain ? "main" : "additional",
+      isMain,
+      removeBackground: isMain || extraIds.has(fileId),
+      backgroundRemovalIncluded: isMain,
+      backgroundRemovalChargeInclGstCents: extraIds.has(fileId) ? charge : 0,
+    });
+  }));
 }
 
 function productionAddressText(address: NormalizedAddress) {
@@ -463,6 +491,14 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
 
           for (const [position, item] of input.cart.items.entries()) {
             const customizationSnapshot = buildOrderItemCustomizationSnapshot(item);
+            const itemUploads = item.uploadReferences.length === 0 ? [] : await transaction
+              .select({ id: checkoutUploads.id, originalName: checkoutUploads.originalName })
+              .from(checkoutUploads)
+              .where(and(
+                eq(checkoutUploads.checkoutSessionId, input.sessionId),
+                inArray(checkoutUploads.id, [...item.uploadReferences]),
+              ));
+            const photoMetadata = buildOrderItemPhotoMetadata(item, itemUploads);
             const [orderItem] = await transaction
               .insert(orderItems)
               .values({
@@ -490,6 +526,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
                 quantity: item.quantity,
                 priceLines: item.unitPrice.lines,
                 uploadReferences: customizationSnapshot.uploadReferences,
+                photoMetadata,
                 bundleComponents: customizationSnapshot.bundleComponents,
                 unitSubtotalExGstCents: item.unitPrice.subtotalExGstCents,
                 unitGstCents: item.unitPrice.gstCents,
