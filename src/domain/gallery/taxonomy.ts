@@ -7,6 +7,7 @@ import type {
 
 export const galleryProductTypes = Object.freeze({
   canvas: Object.freeze([
+    "photo-print-canvas",
     "digital-oil-painting-canvas",
     "custom-themed-canvas",
   ]),
@@ -44,6 +45,7 @@ export const galleryThemes = Object.freeze([
 ] satisfies readonly GalleryThemeSlug[]);
 
 export const galleryTargetProducts: Readonly<Record<string, GalleryProductSlug>> = Object.freeze({
+  "/product/photo-print-canvas/": "photo-print-canvas",
   "/product/digital-oil-painting-canvas/": "digital-oil-painting-canvas",
   "/product/custom-themed-canvas/": "custom-themed-canvas",
   "/product/grave-cover/": "grave-cover",

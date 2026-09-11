@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { galleryDesignTypeForProduct } from "./taxonomy";
+import { galleryDesignTypeForProduct, galleryProductTypes, galleryTargetProducts } from "./taxonomy";
 import { parseGalleryQuery } from "./query";
 
 it.each([
@@ -16,4 +16,13 @@ it.each([
 });
 it("does not invent a Gallery type for unknown products", () => {
   expect(galleryDesignTypeForProduct("unknown-product")).toBeUndefined();
+});
+
+it("keeps all three canvas products available as gallery targets", () => {
+  expect(galleryProductTypes.canvas).toEqual([
+    "photo-print-canvas",
+    "digital-oil-painting-canvas",
+    "custom-themed-canvas",
+  ]);
+  expect(galleryTargetProducts["/product/photo-print-canvas/"]).toBe("photo-print-canvas");
 });
