@@ -127,4 +127,13 @@ describe("invoice PDF", () => {
     expect(deliverHeading?.x).toBeGreaterThan(490);
     expect(deliveryStreet?.x).toBeGreaterThan(450);
   });
+
+  it("centers the contact footer like the live preview", async () => {
+    const document = await PDFDocument.load(await createInvoicePdf(invoice));
+    const positions = textPositions(document);
+    const footer = positions.find((entry) => entry.text.includes("customerservice@rnrgallery.com"));
+
+    expect(footer?.y).toBe(29);
+    expect(footer?.x).toBeGreaterThan(100);
+  });
 });

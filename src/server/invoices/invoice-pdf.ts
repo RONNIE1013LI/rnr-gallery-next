@@ -218,7 +218,14 @@ export async function createInvoicePdf(invoice: InvoiceRecord) {
   page.drawLine({ start: { x: MARGIN, y: 43 }, end: { x: right, y: 43 }, thickness: 0.5, color: RULE });
   const footer = [invoice.businessPhone, invoice.businessEmail, invoice.businessWebsite, `GST: ${invoice.gstNumber}`]
     .filter(Boolean).join("  |  ");
-  page.drawText(safeText(footer), { x: MARGIN, y: 29, size: 6.8, font: regular, color: MUTED });
+  const footerText = safeText(footer);
+  page.drawText(footerText, {
+    x: (PAGE_WIDTH - regular.widthOfTextAtSize(footerText, 6.8)) / 2,
+    y: 29,
+    size: 6.8,
+    font: regular,
+    color: MUTED,
+  });
 
   return document.save({ useObjectStreams: false });
 }
