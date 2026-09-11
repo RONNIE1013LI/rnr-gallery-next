@@ -5968,16 +5968,16 @@
 .catalogueLinks {
   width: min(100%, var(--content-width));
   margin: 0 auto;
-  border-top: 0;
+  border-block: 0;
 }
 
 @media (max-width: 767px) {
   .catalogueLinks {
-    margin-top: 1rem;
+    margin-top: 0.5rem;
     padding-block: 1rem;
   }
 
   .catalogueLinks + .productGrid {
-    margin-top: 1rem;
+    margin-top: 0.5rem;
   }
 }
