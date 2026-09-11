@@ -48,7 +48,7 @@ export function CataloguePage({
   } as const;
 
   return (
-    <main id="main-content" className={styles.pageMain}>
+    <main id="main-content" className={`${styles.pageMain} ${styles.catalogueMain}`}>
       <AnalyticsEventTracker
         event={buildItemListEvent("view_item_list", listEventInput)}
         scopeKey={listId}

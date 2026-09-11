@@ -5971,6 +5971,11 @@
   border-block: 0;
 }
 
+.catalogueMain .pageIntro {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 @media (max-width: 767px) {
   .catalogueLinks {
     margin-top: 0.5rem;
