@@ -24,6 +24,7 @@ export type GalleryThemeSlug =
   | "religious-memorial";
 
 export type GalleryProductSlug =
+  | "photo-print-canvas"
   | "digital-oil-painting-canvas"
   | "custom-themed-canvas"
   | "grave-cover"
