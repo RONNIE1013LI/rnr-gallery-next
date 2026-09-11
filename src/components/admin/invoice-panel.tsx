@@ -171,11 +171,62 @@ export function InvoicePanel({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState<"download" | "share" | null>(null);
   const [feedback, setFeedback] = useState("");
   const [voidReason, setVoidReason] = useState("");
   const money = (cents: number) => invoice
     ? formatMarketMoney(cents, invoice.currency)
     : "";
+
+  async function getPdfFile() {
+    if (!invoice) throw new Error("The invoice could not be loaded.");
+    const response = await fetch(`${invoicePdfBase}/${invoice.id}/pdf`);
+    if (!response.ok) throw new Error("The invoice PDF could not be created.");
+    return new File([await response.blob()], `${invoice.invoiceNumber}.pdf`, { type: "application/pdf" });
+  }
+
+  async function downloadPdf() {
+    setPdfBusy("download");
+    try {
+      const file = await getPdfFile();
+      const url = URL.createObjectURL(file);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = file.name;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "The invoice PDF could not be created.");
+    } finally {
+      setPdfBusy(null);
+    }
+  }
+
+  async function sharePdf() {
+    setPdfBusy("share");
+    try {
+      const file = await getPdfFile();
+      if (typeof navigator.share === "function" && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+        await navigator.share({ title: `Invoice ${invoice?.invoiceNumber ?? ""}`, files: [file] });
+      } else {
+        const url = URL.createObjectURL(file);
+        window.open(url, "_blank", "noopener,noreferrer");
+        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        setFeedback("PDF opened. Use your phone's share button to send it.");
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setFeedback(error instanceof Error ? error.message : "The invoice PDF could not be shared.");
+      }
+    } finally {
+      setPdfBusy(null);
+    }
+  }
+
+  const pdfActions = <>
+    <button type="button" className={styles.secondaryAdminButton} onClick={() => void downloadPdf()} disabled={pdfBusy !== null}>{pdfBusy === "download" ? "Preparing…" : "Download PDF"}</button>
+    <button type="button" className={styles.secondaryAdminButton} onClick={() => void sharePdf()} disabled={pdfBusy !== null}>{pdfBusy === "share" ? "Preparing…" : "Share PDF"}</button>
+  </>;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -279,7 +330,7 @@ export function InvoicePanel({
       </div>
       <p className={styles.mutedText}>Persistent GST invoice · prices include GST · all changes are recorded in the audit log.</p>
       {downloadAtTop && !hideDownload ? <div className={styles.invoicePrimaryActions}>
-        <a className={styles.secondaryAdminButton} href={`${invoicePdfBase}/${invoice.id}/pdf`}>Download PDF</a>
+        {pdfActions}
       </div> : null}
 
       <div className={styles.invoiceMetaGrid}>
@@ -325,7 +376,7 @@ export function InvoicePanel({
       </div>
 
       <div className={styles.invoiceActions}>
-        {!downloadAtTop && !hideDownload ? <a className={styles.secondaryAdminButton} href={`${invoicePdfBase}/${invoice.id}/pdf`}>Download PDF</a> : null}
+        {!downloadAtTop && !hideDownload ? pdfActions : null}
         {invoice.status === "draft" && canEdit ? <><button type="button" className={styles.secondaryAdminButton} onClick={saveDraft} disabled={pending}>Save draft</button><button type="button" onClick={issueInvoice} disabled={pending}>Issue invoice</button></> : null}
         {invoice.status === "issued" && canEdit ? <><label><span>Void reason</span><input value={voidReason} onChange={(event) => setVoidReason(event.target.value)} disabled={pending} /></label><button type="button" className={styles.dangerButton} onClick={voidInvoice} disabled={pending}>Void invoice</button></> : null}
       </div>

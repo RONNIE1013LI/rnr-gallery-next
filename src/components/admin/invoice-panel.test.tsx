@@ -94,10 +94,8 @@ describe("InvoicePanel", () => {
     expect(screen.getByLabelText("Delivery address")).toHaveValue("11 Example Street");
     expect(screen.getByLabelText("Item 1 description")).toHaveValue("Digital Oil Painting Canvas — A4");
     expect(screen.getByRole("button", { name: "Add item" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Download PDF" })).toHaveAttribute(
-      "href",
-      `/api/forms/invoices/${invoice.id}/pdf`,
-    );
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Share PDF" })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(`/api/forms/jobs/${invoice.jobId}/invoice`, expect.any(Object));
   });
 
