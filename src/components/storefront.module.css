@@ -5974,6 +5974,10 @@
 @media (max-width: 767px) {
   .catalogueLinks {
     margin-top: 1rem;
-    padding-block: 0.35rem;
+    padding-block: 1rem;
+  }
+
+  .catalogueLinks + .productGrid {
+    margin-top: 1rem;
   }
 }
