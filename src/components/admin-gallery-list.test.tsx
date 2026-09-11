@@ -26,7 +26,7 @@ describe("AdminGalleryList", () => {
   it("keeps mobile filters compact while exposing the live result count", () => {
     render(<AdminGalleryList designs={[activeDesign, trashedDesign]} />);
 
-    const summary = screen.getByText("Search and filters").closest("summary");
+    const summary = screen.getByText("Filter designs").closest("summary");
     expect(summary).toBeInTheDocument();
     expect(summary).toHaveTextContent("2 shown");
     expect(css).toMatch(/@media \(min-width: 768px\)[\s\S]*?\.adminGalleryFilterDisclosure:not\(\[open\]\) > \.adminGalleryFilters[\s\S]*?display:\s*grid;/);
@@ -51,6 +51,13 @@ describe("AdminGalleryList", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Target product" }), { target: { value: "digital-oil-painting-canvas" } });
     expect(screen.getByText("Canvas target")).toBeInTheDocument();
     expect(screen.queryByText("Active birthday banner")).not.toBeInTheDocument();
+  });
+
+  it("shows the classification search bar above the gallery by default", () => {
+    render(<AdminGalleryList designs={[activeDesign]} />);
+
+    expect(screen.getByRole("combobox", { name: "Target product" })).toBeVisible();
+    expect(screen.getByText("Filter designs")).toBeVisible();
   });
 
   it("does not request active-only artwork for trashed designs and handles missing active artwork", () => {

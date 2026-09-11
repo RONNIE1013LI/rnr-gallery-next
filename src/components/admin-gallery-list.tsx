@@ -63,8 +63,8 @@ export function AdminGalleryList({ designs }: Readonly<{ designs: readonly Admin
   }
 
   return (<>
-    <details className={styles.adminGalleryFilterDisclosure}>
-      <summary><span>Search and filters</span><span>{filtered.length} shown</span></summary>
+    <details className={styles.adminGalleryFilterDisclosure} open>
+      <summary><span>Filter designs</span><span>{filtered.length} shown</span></summary>
       <div className={styles.adminGalleryFilters}>
         <label><span>Search designs</span><input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Title, occasion, product or ID" /></label>
         <label><span>Product type</span><select aria-label="Product type" value={productType} onChange={(event) => { setProductType(event.target.value); setPage(1); }}><option value="all">All product types</option>{productTypes.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
