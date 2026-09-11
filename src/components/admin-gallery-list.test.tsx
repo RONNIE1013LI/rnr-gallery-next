@@ -44,6 +44,15 @@ describe("AdminGalleryList", () => {
     expect(screen.getByText("Canvas memorial")).toBeInTheDocument();
   });
 
+  it("filters designs by target product", () => {
+    const canvas = { ...activeDesign, id: "c".repeat(64), altText: "Canvas target", productSlug: "digital-oil-painting-canvas" };
+    render(<AdminGalleryList designs={[activeDesign, canvas]} />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Target product" }), { target: { value: "digital-oil-painting-canvas" } });
+    expect(screen.getByText("Canvas target")).toBeInTheDocument();
+    expect(screen.queryByText("Active birthday banner")).not.toBeInTheDocument();
+  });
+
   it("does not request active-only artwork for trashed designs and handles missing active artwork", () => {
     const { container } = render(<AdminGalleryList designs={[activeDesign, trashedDesign]} />);
 

@@ -38,19 +38,22 @@ export function AdminGalleryList({ designs }: Readonly<{ designs: readonly Admin
   const [status, setStatus] = useState<"all" | "active" | "trashed">("all");
   const [productType, setProductType] = useState("all");
   const [occasion, setOccasion] = useState("all");
+  const [targetProduct, setTargetProduct] = useState("all");
   const [page, setPage] = useState(1);
   const productTypes = useMemo(() => [...new Set(designs.map((design) => design.productTypeSlug))].sort(), [designs]);
   const occasions = useMemo(() => [...new Set(designs.map((design) => design.occasionSlug))].sort(), [designs]);
+  const targetProducts = useMemo(() => [...new Set(designs.map((design) => design.productSlug))].sort(), [designs]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return designs.filter((design) => {
       if (status !== "all" && design.status !== status) return false;
       if (productType !== "all" && design.productTypeSlug !== productType) return false;
       if (occasion !== "all" && design.occasionSlug !== occasion) return false;
+      if (targetProduct !== "all" && design.productSlug !== targetProduct) return false;
       return !needle || [design.altText, design.productTypeSlug, design.occasionSlug, design.subOccasion, design.productSlug, design.id]
         .filter(Boolean).join(" ").toLowerCase().includes(needle);
     });
-  }, [designs, query, status, productType, occasion]);
+  }, [designs, query, status, productType, occasion, targetProduct]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleDesigns = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -66,6 +69,7 @@ export function AdminGalleryList({ designs }: Readonly<{ designs: readonly Admin
         <label><span>Search designs</span><input type="search" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Title, occasion, product or ID" /></label>
         <label><span>Product type</span><select aria-label="Product type" value={productType} onChange={(event) => { setProductType(event.target.value); setPage(1); }}><option value="all">All product types</option>{productTypes.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
         <label><span>Occasion</span><select aria-label="Occasion" value={occasion} onChange={(event) => { setOccasion(event.target.value); setPage(1); }}><option value="all">All occasions</option>{occasions.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
+        <label><span>Target product</span><select aria-label="Target product" value={targetProduct} onChange={(event) => { setTargetProduct(event.target.value); setPage(1); }}><option value="all">All target products</option>{targetProducts.map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
         <label><span>Status</span><select value={status} onChange={(event) => { setStatus(event.target.value as typeof status); setPage(1); }}><option value="all">All statuses</option><option value="active">Active</option><option value="trashed">Trashed</option></select></label>
         <span>{filtered.length} shown</span>
       </div>
