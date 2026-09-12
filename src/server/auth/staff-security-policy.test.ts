@@ -53,9 +53,13 @@ describe("staff security policy", () => {
     expect(evaluateStaffSession({ ...state, sessionExpiresAt: now }, now)).toBe("expired");
   });
   it("preserves pre-rollout sessions until the native session expires", () => {
-    const old = { ...state, sessionCreatedAt: now - 86400_000, rolloutAt: now - 1000, mfaAt: null };
+    const old = { ...state, sessionCreatedAt: now - 86400_000, rolloutAt: now - 1000, mfaAt: null, mfaRequired: false };
     expect(evaluateStaffSession(old, now)).toBe("allowed");
     expect(evaluateStaffSession({ ...old, rolloutAt: now - 12 * 3600_000 }, now)).toBe("allowed");
+  });
+  it("does not grandfather an Owner session when Owner MFA is required", () => {
+    const oldOwner = { ...state, role: "owner" as const, sessionCreatedAt: now - 86400_000, rolloutAt: now - 1000, mfaAt: null, mfaRequired: true };
+    expect(evaluateStaffSession(oldOwner, now)).toBe("mfa_required");
   });
   it("requires a recent strong factor for elevated operations, including old sessions", () => {
     expect(evaluateStaffSession(state, now, true)).toBe("step_up_required");

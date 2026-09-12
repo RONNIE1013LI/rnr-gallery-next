@@ -38,13 +38,14 @@ export function evaluateStaffSession(state: StaffSessionState, now: number, elev
   if (!state.enabled || (state.expiresAt !== null && (!Number.isFinite(state.expiresAt) || state.expiresAt <= now))) return "disabled";
   const timestamps = [now, state.sessionCreatedAt, state.sessionExpiresAt, state.lastActiveAt, state.rolloutAt];
   if (timestamps.some((time) => !Number.isFinite(time))) return "expired";
-  const grandfathered = state.sessionCreatedAt < state.rolloutAt;
   // The native Better Auth session expiry is the sole ordinary session lifetime.
   // Do not impose a second absolute or idle timeout on staff sessions: it caused
   // active operators to be signed out while viewing orders or replying to customers.
   if (state.sessionExpiresAt <= now) return "expired";
   const strong = state.mfaAt !== null && Number.isFinite(state.mfaAt) && state.mfaAt <= now;
-  if (!strong && !grandfathered && state.mfaRequired !== false) return "mfa_required";
+  // The caller decides whether this identity/session requires MFA. A session
+  // being older than rollout must never override an explicit requirement.
+  if (!strong && state.mfaRequired !== false) return "mfa_required";
   if (elevated && (!strong || state.elevatedAt === null || !Number.isFinite(state.elevatedAt) || state.elevatedAt > now || now - state.elevatedAt >= STAFF_ELEVATION_MS)) return "step_up_required";
   return "allowed";
 }

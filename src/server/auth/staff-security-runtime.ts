@@ -68,7 +68,9 @@ export async function assertStaffSecurity(
   )).limit(1);
   if (!security) throw new StaffSecurityError("expired");
   const decision = evaluateStaffSession({
-    mfaRequired: Boolean(policy.enforcedAt) || identity.createdAt.getTime() >= rolloutAt,
+    // Owner protection is independent of the employee rollout. A pre-rollout
+    // Owner session must not be grandfathered without a verified factor.
+    mfaRequired: identity.role === "owner" || Boolean(policy.enforcedAt) || identity.createdAt.getTime() >= rolloutAt,
     enabled: identity.enabled, role: identity.role, expiresAt: identity.expiresAt?.getTime() ?? null,
     sessionCreatedAt: createdAt, sessionExpiresAt: new Date(session.expiresAt).getTime(),
     rolloutAt, lastActiveAt: security.lastActiveAt.getTime(),
