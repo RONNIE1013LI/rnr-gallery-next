@@ -4,12 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FormsJobDrawer } from "./forms-job-drawer";
 
-vi.mock("@/components/admin/production-job-detail", () => ({
-  ProductionJobDetail: ({ files, notifications, assignees, manualEntryLayout }: { files: unknown[]; notifications: unknown[]; assignees: unknown[]; manualEntryLayout?: boolean }) => <div data-testid="drawer-detail" data-files={files.length} data-notifications={notifications.length} data-assignees={assignees.length} data-manual-entry={String(manualEntryLayout)}><label>Internal notes<input aria-label="Internal notes" defaultValue="" /></label></div>,
-}));
-
-vi.mock("./existing-manual-production-job-form", () => ({
-  ExistingManualProductionJobForm: ({ files, assignees, onBack }: { files: unknown[]; assignees: unknown[]; onBack?: () => void }) => <div data-testid="drawer-detail" data-files={files.length} data-notifications="0" data-assignees={assignees.length} data-manual-entry="true"><label>Internal notes<input aria-label="Internal notes" defaultValue="" /></label><button type="button" onClick={onBack}>Back</button></div>,
+vi.mock("./existing-production-job-form", () => ({
+  ExistingProductionJobForm: ({ files, assignees, onBack }: { files: unknown[]; assignees: unknown[]; onBack?: () => void }) => <div data-testid="drawer-detail" data-files={files.length} data-notifications="0" data-assignees={assignees.length} data-manual-entry="true"><label>Internal notes<input aria-label="Internal notes" defaultValue="" /></label><button type="button" onClick={onBack}>Back</button></div>,
 }));
 
 const detail = {
@@ -47,7 +43,7 @@ describe("FormsJobDrawer", () => {
     render(<FormsJobDrawer jobId="job-1" onClose={onClose} assignees={[]} canManageFinance={false} />);
     expect(await screen.findByRole("dialog", { name: "Order Web-07188" })).toBeInTheDocument();
     expect(screen.getByTestId("drawer-detail")).toHaveAttribute("data-files", "1");
-    expect(screen.getByTestId("drawer-detail")).toHaveAttribute("data-notifications", "1");
+    expect(screen.getByTestId("drawer-detail")).toHaveAttribute("data-notifications", "0");
     expect(screen.getByTestId("drawer-detail")).toHaveAttribute("data-assignees", "1");
     expect(screen.getByTestId("drawer-detail")).toHaveAttribute("data-manual-entry", "true");
     expect(screen.getByRole("link", { name: "Open full editor" })).toHaveAttribute("href", "/order-system/jobs/job-1");

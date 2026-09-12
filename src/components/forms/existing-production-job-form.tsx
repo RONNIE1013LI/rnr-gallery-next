@@ -1,7 +1,7 @@
 import { FORM_OPTION_SETS } from "@/domain/forms/forms-parity";
 import {
   ProductionJobForm,
-  type ExistingManualProductionOrder,
+  type ExistingProductionOrder,
 } from "@/components/admin/production-job-form";
 import type { getProductionJobDetail, ProductionAssignee } from "@/server/production/drizzle-production-job-repository";
 import type { ProductionFileSummary } from "@/server/production/production-proof-service";
@@ -20,7 +20,7 @@ function sizeFields(sizeLabel: string) {
   return { size: "Custom Size", sizeOther: sizeLabel };
 }
 
-export function ExistingManualProductionJobForm({
+export function ExistingProductionJobForm({
   detail,
   assignees,
   files,
@@ -56,8 +56,10 @@ export function ExistingManualProductionJobForm({
   const firstItem = detail.items[0];
   const size = sizeFields(firstItem?.sizeLabel || "Other");
   const createdAudit = detail.audit.find((entry) => entry.action === "production_job.created");
-  const existingManualOrder: ExistingManualProductionOrder = {
+  const existingOrder: ExistingProductionOrder = {
     id: detail.job.id,
+    source: detail.job.source,
+    products: detail.items.map((item) => ({ productTitle: item.productTitle, quantity: item.quantity, ...sizeFields(item.sizeLabel || "Other") })),
     jobNumber: detail.job.jobNumber,
     expectedUpdatedAt: detail.job.updatedAt.toISOString(),
     submittedAt: dateTime.format(detail.job.createdAt),
@@ -105,13 +107,14 @@ export function ExistingManualProductionJobForm({
     canEdit={canEdit}
     canUpdateProductionStatus={canUpdateProductionStatus}
     canUpdateDeliveryStatus={canUpdateDeliveryStatus}
-    canDeleteJob={canDeleteJob}
+    canDeleteJob={canDeleteJob && detail.job.source === "manual"}
     endpoint={jobApiBase}
     detailBasePath="/order-system/jobs"
     backHref="/order-system"
     invoicePdfBase={invoicePdfBase}
     manualEntryLayout
-    existingManualOrder={existingManualOrder}
+    canViewInvoice={Boolean(detail.finance)}
+    existingOrder={existingOrder}
     existingPaymentProofs={files}
     onSaved={onSaved}
     onDeleted={onDeleted}

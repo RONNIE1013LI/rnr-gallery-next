@@ -3379,3 +3379,21 @@
     grid-row: 2;
   }
 }
+
+/* Full editors use document scrolling; the data list retains its workbench scroll. */
+.workspace:has(> .orderEditorPage) {
+  height: auto;
+  overflow: visible;
+  padding: 20px 24px;
+}
+
+.orderEditorPage {
+  width: 100%;
+  max-width: 1480px;
+  margin-inline: auto;
+  gap: 24px;
+}
+
+@media (max-width: 720px) {
+  .workspace:has(> .orderEditorPage) { padding: 12px; }
+}

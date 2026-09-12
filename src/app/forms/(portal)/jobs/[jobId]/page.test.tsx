@@ -26,28 +26,8 @@ vi.mock("@/server/notifications/customer-notification-runtime", () => ({
   getCustomerNotificationRuntime: () => ({ listForJob: listNotifications }),
 }));
 vi.mock("next/navigation", () => ({ notFound, useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock("@/components/admin/production-job-detail", () => ({
-  ProductionJobDetail: (props: {
-    detail: { job: { customerEmail: string; customerPhone: string }; finance: unknown; audit: unknown[] };
-    jobApiBase: string;
-    invoicePdfBase: string;
-    notificationRetryEndpoint: string;
-    canManageFinance: boolean;
-  }) => <div
-    data-testid="forms-job-detail"
-    data-email={props.detail.job.customerEmail}
-    data-phone={props.detail.job.customerPhone}
-    data-finance={String(Boolean(props.detail.finance))}
-    data-audit={String(props.detail.audit.length)}
-    data-job-api={props.jobApiBase}
-    data-invoice-api={props.invoicePdfBase}
-    data-notification-api={props.notificationRetryEndpoint}
-    data-finance-edit={String(props.canManageFinance)}
-    data-manual-entry={String((props as { manualEntryLayout?: boolean }).manualEntryLayout)}
-  />,
-}));
-vi.mock("@/components/forms/existing-manual-production-job-form", () => ({
-  ExistingManualProductionJobForm: (props: {
+vi.mock("@/components/forms/existing-production-job-form", () => ({
+  ExistingProductionJobForm: (props: {
     detail: { job: { customerEmail: string; customerPhone: string }; finance: unknown; audit: unknown[] };
     jobApiBase: string;
     invoicePdfBase: string;

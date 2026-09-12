@@ -3,14 +3,12 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { ProductionJobDetail } from "@/components/admin/production-job-detail";
 import { displayFormReference } from "@/domain/forms/forms-parity";
 import { ResizableSeparator } from "@/components/shared/resizable-separator";
 import type { getProductionJobDetail, ProductionAssignee } from "@/server/production/drizzle-production-job-repository";
 import type { ProductionFileSummary } from "@/server/production/production-proof-service";
-import type { CustomerNotificationSummary } from "@/server/notifications/customer-notification-service";
 import styles from "./forms.module.css";
-import { ExistingManualProductionJobForm } from "./existing-manual-production-job-form";
+import { ExistingProductionJobForm } from "./existing-production-job-form";
 import { usePersistentDrawerWidth } from "./forms-order-entry-drawer";
 import { useContainedDialog } from "./use-contained-dialog";
 
@@ -31,7 +29,6 @@ function FormsJobDrawerSession({
   assignees,
   canManageFinance,
   canUpdate = false,
-  canViewFiles = false,
   canUploadFiles = false,
   canReviewProofs = false,
   canUpdateDeliveryStatus = false,
@@ -54,9 +51,7 @@ function FormsJobDrawerSession({
 }>) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [files, setFiles] = useState<readonly ProductionFileSummary[]>([]);
-  const [notifications, setNotifications] = useState<readonly CustomerNotificationSummary[]>([]);
   const [loadedAssignees, setLoadedAssignees] = useState<readonly ProductionAssignee[]>(assignees);
-  const [revision, setRevision] = useState({ changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false });
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
   const { limits, width, chooseWidth } = usePersistentDrawerWidth();
@@ -82,9 +77,7 @@ function FormsJobDrawerSession({
       if (!response.ok || !body?.detail) throw new Error(body?.error || "The order could not be loaded.");
       setDetail(reviveDates(body.detail) as Detail);
       if (Array.isArray(body.files)) setFiles(reviveDates(body.files) as readonly ProductionFileSummary[]);
-      if (Array.isArray(body.notifications)) setNotifications(reviveDates(body.notifications) as readonly CustomerNotificationSummary[]);
       if (Array.isArray(body.assignees)) setLoadedAssignees(body.assignees as readonly ProductionAssignee[]);
-      if (body.revision && typeof body.revision === "object") setRevision(body.revision as typeof revision);
     }).catch((requestError) => {
       if (requestError instanceof DOMException && requestError.name === "AbortError") return;
       setError(requestError instanceof Error ? requestError.message : "The order could not be loaded.");
@@ -137,7 +130,7 @@ function FormsJobDrawerSession({
         <div className={`${styles.orderEntryDrawerContent} ${styles.formsEditor}`} data-forms-editor onChangeCapture={() => setDirty(true)}>
           {error ? <div className={styles.formsErrorState} role="alert"><strong>Order unavailable</strong><p>{error}</p><button type="button" onClick={onClose}>Return to data list</button></div> : null}
           {!detail && !error ? <div className={styles.drawerLoading} role="status">Loading order details…</div> : null}
-          {detail?.job.source === "manual" ? <ExistingManualProductionJobForm
+          {detail ? <ExistingProductionJobForm
             detail={detail}
             assignees={loadedAssignees}
             files={files}
@@ -160,24 +153,6 @@ function FormsJobDrawerSession({
               onClose();
               onSaved?.();
             }}
-          /> : detail ? <ProductionJobDetail
-            detail={detail}
-            assignees={loadedAssignees}
-            canManageFinance={canManageFinance}
-            files={files}
-            notifications={notifications}
-            revision={revision}
-            jobApiBase="/api/forms/jobs"
-            invoicePdfBase="/api/forms/invoices"
-            orderBasePath={null}
-            notificationRetryEndpoint="/api/forms/notifications/retry"
-            canViewFiles={canViewFiles}
-            canUploadFiles={canUploadFiles}
-            canReviewProofs={canReviewProofs}
-            canDeleteFiles={canDeleteFiles}
-            canRetryNotifications={canUploadFiles}
-            canUpdateJob={canUpdate}
-            manualEntryLayout
           /> : null}
         </div>
         </div>

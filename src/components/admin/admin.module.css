@@ -5799,3 +5799,25 @@ button.paymentProofPreviewMedia {
     justify-content: flex-end;
   }
 }
+
+/* Invoice adapts to the shared editor's actual width, including the resizable drawer. */
+.sharedOrderInvoice {
+  container-type: inline-size;
+}
+
+@container (max-width: 980px) {
+  .sharedOrderInvoice .persistedInvoiceWorkspace { grid-template-columns: minmax(0, 1fr); }
+  .sharedOrderInvoice .persistedInvoiceEditor { max-height: none; overflow: visible; padding-right: 0; }
+  .sharedOrderInvoice .persistedInvoicePreview { min-width: 0; }
+}
+
+.manualEntryForm .formSectionHeading h2,
+.manualEntryForm .formRecordSummary dt,
+.manualEntryForm .manualChoiceOption,
+.manualEntryForm .manualFieldRows > label > span:first-child,
+.manualEntryForm .manualChoiceRow > span:first-child,
+.manualEntryForm .manualFileRow > span:first-child {
+  font-size: 13px;
+}
+
+.manualEntryForm .formRecordSummary dd { font-size: 14px; }

@@ -29,8 +29,10 @@ export type ProductionFormField = Readonly<{
   required: boolean;
 }>;
 
-export type ExistingManualProductionOrder = Readonly<{
+export type ExistingProductionOrder = Readonly<{
   id: string;
+  source?: "manual" | "web";
+  products?: readonly Readonly<{ productTitle: string; quantity: number; size: string; sizeOther: string }>[];
   jobNumber: string;
   expectedUpdatedAt: string;
   submittedAt: string;
@@ -83,10 +85,11 @@ type Props = Readonly<{
   submittedBy?: string;
   backHref?: string;
   manualEntryLayout?: boolean;
-  existingManualOrder?: ExistingManualProductionOrder;
+  existingOrder?: ExistingProductionOrder;
   existingPaymentProofs?: readonly ProductionFileSummary[];
   canDeleteFiles?: boolean;
   canEdit?: boolean;
+  canViewInvoice?: boolean;
   canUpdateProductionStatus?: boolean;
   canUpdateDeliveryStatus?: boolean;
   canDeleteJob?: boolean;
@@ -249,7 +252,7 @@ function ManualChoiceRow({
   return <div className={styles.manualChoiceRow}>
     <span>{label}</span>
     <div className={styles.manualChoiceOptions} role="radiogroup" aria-label={label}>
-      {choices.map((choice) => <label
+      {(defaultValue && !choices.some((choice) => choice.value === defaultValue) ? [...choices, { value: defaultValue, label: defaultValue }] : choices).map((choice) => <label
         className={styles.manualChoiceOption}
         data-field={name}
         data-value={choice.value}
@@ -356,7 +359,7 @@ function summaryField(summary: Readonly<Record<string, unknown>> | null | undefi
   return typeof summary?.fieldKey === "string" ? summary.fieldKey : null;
 }
 
-function auditDescription(entry: ExistingManualProductionOrder["audit"][number]) {
+function auditDescription(entry: ExistingProductionOrder["audit"][number]) {
   const beforeField = summaryField(entry.beforeSummary);
   const afterField = summaryField(entry.afterSummary);
   if (beforeField && beforeField === afterField) {
@@ -393,10 +396,11 @@ export function ProductionJobForm({
   submittedBy = "Current operator",
   backHref = "/admin/jobs",
   manualEntryLayout = false,
-  existingManualOrder,
+  existingOrder,
   existingPaymentProofs = [],
   canDeleteFiles = false,
   canEdit = true,
+  canViewInvoice = canManageFinance,
   canUpdateProductionStatus = true,
   canUpdateDeliveryStatus = true,
   canDeleteJob = false,
@@ -405,6 +409,7 @@ export function ProductionJobForm({
   onDeleted,
   onBack,
 }: Props) {
+  const isWebOrder = existingOrder?.source === "web";
   const router = useRouter();
   const [itemKeys, setItemKeys] = useState([0]);
   const [nextItemKey, setNextItemKey] = useState(1);
@@ -417,13 +422,13 @@ export function ProductionJobForm({
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [persistedInvoiceId, setPersistedInvoiceId] = useState("");
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceWorkspaceDraft | null>(null);
-  const [amountPayableCents, setAmountPayableCents] = useState(existingManualOrder?.amountPayableCents ?? 0);
-  const [amountPaidCents, setAmountPaidCents] = useState(existingManualOrder?.amountPaidCents ?? 0);
+  const [amountPayableCents, setAmountPayableCents] = useState(existingOrder?.amountPayableCents ?? 0);
+  const [amountPaidCents, setAmountPaidCents] = useState(existingOrder?.amountPaidCents ?? 0);
   const [artistFeeCents, setArtistFeeCents] = useState(0);
-  const [materialCostCents, setMaterialCostCents] = useState(existingManualOrder?.materialCostCents ?? 0);
+  const [materialCostCents, setMaterialCostCents] = useState(existingOrder?.materialCostCents ?? 0);
   const [savedPaymentProofs, setSavedPaymentProofs] = useState(() => existingPaymentProofs.filter((file) => file.kind === "payment_proof"));
   const [viewingPaymentProofKey, setViewingPaymentProofKey] = useState<string | null>(null);
-  const [expectedUpdatedAt, setExpectedUpdatedAt] = useState(existingManualOrder?.expectedUpdatedAt ?? "");
+  const [expectedUpdatedAt, setExpectedUpdatedAt] = useState(existingOrder?.expectedUpdatedAt ?? "");
   const [visibleAuditCount, setVisibleAuditCount] = useState(5);
   const formRef = useRef<HTMLFormElement>(null);
   const customerNameRef = useRef<HTMLInputElement>(null);
@@ -436,9 +441,9 @@ export function ProductionJobForm({
   const focusedValues = useRef(new WeakMap<EventTarget, string>());
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextPaymentProofId = useRef(1);
-  const operatorName = existingManualOrder?.submittedBy ?? submittedBy;
+  const operatorName = existingOrder?.submittedBy ?? submittedBy;
   const visibleSubmittedBy = operatorName.includes("@") ? "Current operator" : operatorName.trim() || "Current operator";
-  const formDisabled = pending || Boolean(existingManualOrder && !canEdit);
+  const formDisabled = pending || Boolean(existingOrder && !canEdit);
 
   useEffect(() => () => {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -454,7 +459,7 @@ export function ProductionJobForm({
   }
 
   function requestAutoSave(delay = 0) {
-    if (!existingManualOrder || !canEdit || pending || paymentRecovery) return;
+    if (!existingOrder || !canEdit || pending || paymentRecovery) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
       autoSaveTimer.current = null;
@@ -472,15 +477,15 @@ export function ProductionJobForm({
     const parsed = parseCustomerBlock(textValue, deliveryMethod);
     if (deliveryAddressRef.current) deliveryAddressRef.current.value = textValue;
     const filled: string[] = [];
-    if (parsed.customerName && customerNameRef.current && !customerNameRef.current.value.trim()) {
+    if (!isWebOrder && parsed.customerName && customerNameRef.current && !customerNameRef.current.value.trim()) {
       customerNameRef.current.value = parsed.customerName;
       filled.push("name");
     }
-    if (parsed.customerPhone && customerPhoneRef.current && !customerPhoneRef.current.value.trim()) {
+    if (!isWebOrder && parsed.customerPhone && customerPhoneRef.current && !customerPhoneRef.current.value.trim()) {
       customerPhoneRef.current.value = parsed.customerPhone;
       filled.push("phone");
     }
-    if (parsed.customerEmail && customerEmailRef.current && !customerEmailRef.current.value.trim()) {
+    if (!isWebOrder && parsed.customerEmail && customerEmailRef.current && !customerEmailRef.current.value.trim()) {
       customerEmailRef.current.value = parsed.customerEmail;
       filled.push("email");
     }
@@ -503,17 +508,17 @@ export function ProductionJobForm({
       paymentProofsRef.current = next;
       return next;
     });
-    if (existingManualOrder && additions.length) {
+    if (existingOrder && additions.length) {
       void saveExistingPaymentProofs(additions);
     }
   }
 
   async function saveExistingPaymentProofs(proofs: readonly PendingPaymentProof[]) {
-    if (!existingManualOrder) return;
+    if (!existingOrder) return;
     setPending(true);
     for (const proof of proofs) {
       try {
-        const [saved] = await uploadProofFiles(existingManualOrder.id, [{
+        const [saved] = await uploadProofFiles(existingOrder.id, [{
           proof: proof.file,
           uploadIdempotencyKey: createClientId(),
         }]);
@@ -545,7 +550,7 @@ export function ProductionJobForm({
   }
 
   function openInvoice() {
-    if (existingManualOrder) {
+    if (existingOrder) {
       setInvoiceOpen(true);
       return;
     }
@@ -577,11 +582,11 @@ export function ProductionJobForm({
   }
 
   async function deleteSavedPaymentProof(file: ProductionFileSummary) {
-    if (!existingManualOrder || !window.confirm("Delete this payment proof? This cannot be undone.")) return;
+    if (!existingOrder || !window.confirm("Delete this payment proof? This cannot be undone.")) return;
     setPending(true);
     setPaymentProofError("");
     try {
-      const response = await fetch(`${endpoint}/${existingManualOrder.id}/files/${file.id}`, {
+      const response = await fetch(`${endpoint}/${existingOrder.id}/files/${file.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: "{}",
@@ -597,18 +602,18 @@ export function ProductionJobForm({
   }
 
   async function deleteExistingManualOrder() {
-    if (!existingManualOrder || !canDeleteJob) return;
+    if (!existingOrder || !canDeleteJob) return;
     if (!window.confirm(
-      `Permanently delete manual order ${existingManualOrder.jobNumber}? Its invoice and attached files will also be deleted.`,
+      `Permanently delete manual order ${existingOrder.jobNumber}? Its invoice and attached files will also be deleted.`,
     )) return;
     setPending(true);
     setFeedback("");
     try {
-      const response = await fetch(`${endpoint}/${existingManualOrder.id}`, {
+      const response = await fetch(`${endpoint}/${existingOrder.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          expectedJobNumber: existingManualOrder.jobNumber,
+          expectedJobNumber: existingOrder.jobNumber,
           idempotencyKey: createClientId(),
         }),
       });
@@ -739,7 +744,7 @@ export function ProductionJobForm({
         : canManageFinance
           ? String(form.get("manualPaymentStatus") ?? "awaiting_payment")
           : "awaiting_payment";
-      const requiresPaymentProof = finalPaymentStatus === "processing" || finalPaymentStatus === "paid";
+      const requiresPaymentProof = !isWebOrder && (finalPaymentStatus === "processing" || finalPaymentStatus === "paid");
       if (requiresPaymentProof && !hasPaymentProof) {
         setPaymentProofError(`Attach the payment proof before marking this order as ${finalPaymentStatus}.`);
         setPending(false);
@@ -779,9 +784,9 @@ export function ProductionJobForm({
         : form.get(name) === "on";
       const deliveredSelection = canUpdateDeliveryStatus
         ? String(form.get("delivered") ?? "no")
-        : existingManualOrder?.manualStatus === "on_hold"
+        : existingOrder?.manualStatus === "on_hold"
           ? "hold"
-          : existingManualOrder?.milestones.delivered
+          : existingOrder?.milestones.delivered
             ? "yes"
             : "no";
       const body = {
@@ -803,9 +808,9 @@ export function ProductionJobForm({
         internalNotes: String(form.get("internalNotes") ?? ""),
         manualStatus: manualEntryLayout && deliveredSelection === "hold"
           ? "on_hold"
-          : existingManualOrder?.manualStatus === "on_hold"
+          : existingOrder?.manualStatus === "on_hold"
             ? "new"
-            : existingManualOrder?.manualStatus ?? String(form.get("manualStatus") ?? "new"),
+            : existingOrder?.manualStatus ?? String(form.get("manualStatus") ?? "new"),
         manualPaymentStatus: requiresPaymentProof ? "awaiting_payment" : finalPaymentStatus,
         amountPayableCents: desiredFinance.amountPayableCents,
         amountPaidCents: desiredFinance.amountPaidCents,
@@ -834,14 +839,16 @@ export function ProductionJobForm({
         })),
         ...(submittedInvoice ? { invoiceDraft: submittedInvoice } : {}),
       };
-      if (existingManualOrder) {
-        await uploadProofFiles(existingManualOrder.id, proofUploads);
+      if (existingOrder) {
+        await uploadProofFiles(existingOrder.id, proofUploads);
         const updateBody = {
           expectedUpdatedAt,
           idempotencyKey: createIdempotencyKey,
-          customerName: body.customerName,
-          customerEmail: body.customerEmail,
-          customerPhone: body.customerPhone,
+          ...(!isWebOrder ? {
+            customerName: body.customerName,
+            customerEmail: body.customerEmail,
+            customerPhone: body.customerPhone,
+          } : {}),
           customerSource: body.customerSource,
           urgent: body.urgent,
           neededDate: body.neededDate,
@@ -849,10 +856,10 @@ export function ProductionJobForm({
           deliveryAddress: body.deliveryAddress,
           assignedUserId: body.assignedUserId,
           internalNotes: body.internalNotes,
-          ...(canUpdateDeliveryStatus ? { manualStatus: body.manualStatus } : {}),
+          ...(canUpdateDeliveryStatus && !isWebOrder ? { manualStatus: body.manualStatus } : {}),
           ...(canManageFinance ? {
             paymentReconciliationStatus: body.paymentReconciliationStatus,
-            finance: desiredFinance,
+            ...(!isWebOrder ? { finance: desiredFinance } : {}),
           } : {}),
           ...((canUpdateProductionStatus || canUpdateDeliveryStatus) ? { milestones: {
             ...(canUpdateProductionStatus ? {
@@ -864,15 +871,15 @@ export function ProductionJobForm({
             } : {}),
             ...(canUpdateDeliveryStatus ? { delivered: body.delivered } : {}),
           } } : {}),
-          items: body.items,
+          ...(!isWebOrder ? { items: body.items } : {}),
         };
-        const updateResponse = await fetch(`${endpoint}/${existingManualOrder.id}`, {
+        const updateResponse = await fetch(`${endpoint}/${existingOrder.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updateBody),
         });
         const updateResult = await updateResponse.json().catch(() => null) as { error?: string; version?: string } | null;
-        if (!updateResponse.ok) throw new Error(updateResult?.error || "The manual order could not be saved.");
+        if (!updateResponse.ok) throw new Error(updateResult?.error || "The order could not be saved.");
         if (updateResult?.version) setExpectedUpdatedAt(updateResult.version);
         for (const proof of paymentProofsRef.current) {
           if (proof.previewUrl) URL.revokeObjectURL(proof.previewUrl);
@@ -925,10 +932,10 @@ export function ProductionJobForm({
   }
 
   const paymentProofViewerImages: readonly PaymentProofViewerItem[] = [
-    ...savedPaymentProofs.flatMap((proof) => proof.mediaType.startsWith("image/") && existingManualOrder ? [{
+    ...savedPaymentProofs.flatMap((proof) => proof.mediaType.startsWith("image/") && existingOrder ? [{
       key: `saved:${proof.id}`,
       name: proof.originalName,
-      src: `${endpoint}/${existingManualOrder.id}/files/${proof.id}`,
+      src: `${endpoint}/${existingOrder.id}/files/${proof.id}`,
     }] : []),
     ...paymentProofs.flatMap((proof) => proof.previewUrl ? [{
       key: `pending:${proof.id}`,
@@ -941,13 +948,13 @@ export function ProductionJobForm({
     <>
     <form
       ref={formRef}
-      className={`${styles.productionForm} ${manualEntryLayout ? styles.manualEntryForm : ""} ${manualEntryLayout && !existingManualOrder ? styles.manualEntryCreateForm : ""}`}
+      className={`${styles.productionForm} ${manualEntryLayout ? styles.manualEntryForm : ""} ${manualEntryLayout && !existingOrder ? styles.manualEntryCreateForm : ""}`}
       onSubmit={submit}
       onFocusCapture={(event) => {
-        if (existingManualOrder) focusedValues.current.set(event.target, fieldValue(event.target));
+        if (existingOrder) focusedValues.current.set(event.target, fieldValue(event.target));
       }}
       onBlurCapture={(event) => {
-        if (!existingManualOrder || event.target instanceof HTMLSelectElement ||
+        if (!existingOrder || event.target instanceof HTMLSelectElement ||
           (event.target instanceof HTMLInputElement && ["checkbox", "file", "radio"].includes(event.target.type))) return;
         if (focusedValues.current.get(event.target) !== fieldValue(event.target)) requestAutoSave();
       }}
@@ -959,7 +966,7 @@ export function ProductionJobForm({
       <div className={styles.formUtilityBar}>
         <span>Data entry</span>
         <div>
-          {canManageFinance ? <button type="button" onClick={openInvoice} disabled={pending}>Invoice</button> : null}
+          {canViewInvoice && !isWebOrder ? <button type="button" onClick={openInvoice} disabled={pending}>Invoice</button> : null}
           {onBack ? <button type="button" onClick={onBack}>Back</button> : <Link href={backHref}>Back</Link>}
         </div>
       </div>
@@ -971,9 +978,9 @@ export function ProductionJobForm({
         </div> : null}
         <dl className={styles.formRecordSummary}>
           <div><dt>Submitted by</dt><dd>{visibleSubmittedBy}</dd></div>
-          <div><dt>Ref No.</dt><dd>{existingManualOrder?.jobNumber ?? "—"}</dd></div>
-          <div><dt>Submitted at</dt><dd>{existingManualOrder?.submittedAt ?? "—"}</dd></div>
-          <div><dt>Updated at</dt><dd>{existingManualOrder?.updatedAt ?? "—"}</dd></div>
+          <div><dt>Ref No.</dt><dd>{existingOrder?.jobNumber ?? "—"}</dd></div>
+          <div><dt>Submitted at</dt><dd>{existingOrder?.submittedAt ?? "—"}</dd></div>
+          <div><dt>Updated at</dt><dd>{existingOrder?.updatedAt ?? "—"}</dd></div>
         </dl>
       </section>
 
@@ -981,26 +988,24 @@ export function ProductionJobForm({
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Product / Size</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <ManualChoiceRow
-              label="Size"
-              name="item-0-size"
-              defaultValue={existingManualOrder?.size ?? ""}
-              choices={FORM_OPTION_SETS.size.map((size) => ({ value: size, label: size }))}
-              required
-              disabled={formDisabled}
-            />
-            <label><span>Size Other</span><input name="item-0-size-other" defaultValue={existingManualOrder?.sizeOther ?? ""} maxLength={190} disabled={formDisabled} /></label>
+            {(isWebOrder ? existingOrder.products ?? [] : [{ size: existingOrder?.size ?? "", sizeOther: existingOrder?.sizeOther ?? "" }]).map((product, index) => <div key={index} className={styles.manualFieldRows}>
+              {isWebOrder && "productTitle" in product ? <p className={styles.fieldHint}>{product.productTitle} × {product.quantity}</p> : null}
+              <ManualChoiceRow label="Size" name={`item-${index}-size`} defaultValue={product.size}
+                choices={FORM_OPTION_SETS.size.map((size) => ({ value: size, label: size }))}
+                required disabled={formDisabled || isWebOrder} />
+              <label><span>Size Other</span><input name={`item-${index}-size-other`} defaultValue={product.sizeOther} maxLength={190} disabled={formDisabled || isWebOrder} /></label>
+            </div>)}
           </div>
         </section>
 
-        {canManageFinance ? <section className={styles.formPanel}>
+        {canManageFinance || (isWebOrder && canViewInvoice) ? <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Payment</h2></div></div>
           <div className={styles.manualFieldRows}>
             {canUploadFiles ? <div className={styles.manualFileRow}><span>PaymtProved</span><div>
               <input className={styles.paymentProofFileInput} ref={paymentProofRef} name="paymentProof" type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" aria-label="PaymtProved" aria-describedby="payment-proof-help payment-proof-error" onChange={(event) => selectPaymentProofs(event.currentTarget.files ?? [])} disabled={formDisabled} />
               {savedPaymentProofs.length || paymentProofs.length ? <div className={styles.paymentProofPreviewGrid}>
                 {savedPaymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
-                  {proof.mediaType.startsWith("image/") && existingManualOrder ? <button type="button" className={styles.paymentProofPreviewMedia} aria-label={`View payment proof ${proof.originalName}`} onClick={() => setViewingPaymentProofKey(`saved:${proof.id}`)}><Image src={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /></button> : <div className={styles.paymentProofPreviewMedia}><span>PDF</span></div>}
+                  {proof.mediaType.startsWith("image/") && existingOrder ? <button type="button" className={styles.paymentProofPreviewMedia} aria-label={`View payment proof ${proof.originalName}`} onClick={() => setViewingPaymentProofKey(`saved:${proof.id}`)}><Image src={`${endpoint}/${existingOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /></button> : <div className={styles.paymentProofPreviewMedia}><span>PDF</span></div>}
                   {canDeleteFiles && canEdit ? <button type="button" className={styles.paymentProofDeleteButton} aria-label={`Delete ${proof.originalName}`} disabled={pending} onClick={(event) => { event.preventDefault(); void deleteSavedPaymentProof(proof); }}><span aria-hidden="true">×</span></button> : null}
                 </article>)}
                 {paymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
@@ -1013,37 +1018,37 @@ export function ProductionJobForm({
               <small id="payment-proof-help" className={styles.fieldHint}>Choose any number of JPG, PNG, WebP, HEIC, HEIF or PDF files. Maximum 25 MB each.</small>
               {paymentProofError ? <p id="payment-proof-error" className={styles.fieldHint} role="alert">{paymentProofError}</p> : null}
             </div></div> : null}
-            <label><span>AmtPayable</span><MoneyCentsInput ariaLabel="AmtPayable" name="amountPayable" cents={amountPayableCents} onCentsChange={setAmountPayableCents} required disabled={formDisabled} /></label>
-            <label><span>AmtPaid</span><MoneyCentsInput ariaLabel="AmtPaid" name="amountPaid" cents={amountPaidCents} onCentsChange={setAmountPaidCents} required disabled={formDisabled} /></label>
+            <label><span>AmtPayable</span><MoneyCentsInput ariaLabel="AmtPayable" name="amountPayable" cents={amountPayableCents} onCentsChange={setAmountPayableCents} required disabled={formDisabled || isWebOrder} /></label>
+            <label><span>AmtPaid</span><MoneyCentsInput ariaLabel="AmtPaid" name="amountPaid" cents={amountPaidCents} onCentsChange={setAmountPaidCents} required disabled={formDisabled || isWebOrder} /></label>
             <label><span>AmtOwe</span><input value={(Math.max(0, amountPayableCents - amountPaidCents) / 100).toFixed(2)} readOnly aria-readonly="true" /></label>
-            <ManualChoiceRow label="BankRecon" name="paymentReconciliationStatus" defaultValue={existingManualOrder?.paymentReconciliationStatus ?? "Not checked"} choices={manualBankChoices} disabled={formDisabled} />
+            <ManualChoiceRow label="BankRecon" name="paymentReconciliationStatus" defaultValue={existingOrder?.paymentReconciliationStatus ?? "Not checked"} choices={manualBankChoices} disabled={formDisabled || !canManageFinance} />
           </div>
         </section> : null}
 
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Design &amp; Notes</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <label><span>Remark</span><textarea name="internalNotes" defaultValue={existingManualOrder?.internalNotes ?? ""} rows={5} maxLength={10000} disabled={formDisabled} /></label>
+            <label><span>Remark</span><textarea name="internalNotes" defaultValue={existingOrder?.internalNotes ?? ""} rows={5} maxLength={10000} disabled={formDisabled} /></label>
           </div>
         </section>
 
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Delivery</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <ManualChoiceRow label="Urgent?" name="urgent" defaultValue={existingManualOrder?.urgent ? "on" : "no"} choices={[{ value: "no", label: "Normal" }, { value: "on", label: "Urgent" }]} disabled={formDisabled} />
-            <ManualChoiceRow label="DlvryMethod" name="deliveryMethod" defaultValue={existingManualOrder?.deliveryMethod ?? "post"} choices={manualDeliveryChoices} disabled={formDisabled} />
-            <label><span>DlvryDate</span><input className={styles.manualContentControl} name="neededDate" type="date" defaultValue={existingManualOrder?.neededDate ?? defaultNeededDate()} required disabled={formDisabled} /></label>
-            <label><span>DlvryAddr</span><div><textarea ref={deliveryAddressRef} name="deliveryAddress" defaultValue={existingManualOrder?.deliveryAddress ?? ""} rows={5} maxLength={5000} onPaste={pasteCustomerDetails} disabled={formDisabled} />{pasteFeedback ? <p className={styles.fieldHint} role="status">{pasteFeedback}</p> : null}</div></label>
+            <ManualChoiceRow label="Urgent?" name="urgent" defaultValue={existingOrder?.urgent ? "on" : "no"} choices={[{ value: "no", label: "Normal" }, { value: "on", label: "Urgent" }]} disabled={formDisabled} />
+            <ManualChoiceRow label="DlvryMethod" name="deliveryMethod" defaultValue={existingOrder?.deliveryMethod ?? "post"} choices={manualDeliveryChoices} disabled={formDisabled} />
+            <label><span>DlvryDate</span><input className={styles.manualContentControl} name="neededDate" type="date" defaultValue={existingOrder?.neededDate ?? defaultNeededDate()} required disabled={formDisabled} /></label>
+            <label><span>DlvryAddr</span><div><textarea ref={deliveryAddressRef} name="deliveryAddress" defaultValue={existingOrder?.deliveryAddress ?? ""} rows={5} maxLength={5000} onPaste={pasteCustomerDetails} disabled={formDisabled} />{pasteFeedback ? <p className={styles.fieldHint} role="status">{pasteFeedback}</p> : null}</div></label>
           </div>
         </section>
 
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Customer info</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <ManualChoiceRow label="CustSource" name="customerSource" defaultValue={existingManualOrder?.customerSource ?? "messenger"} choices={manualCustomerSourceChoices} disabled={formDisabled} />
-            <label><span>Cust.Name</span><input ref={customerNameRef} name="customerName" defaultValue={existingManualOrder?.customerName ?? ""} required maxLength={190} disabled={formDisabled} /></label>
-            <label><span>PhoneNo.</span><input ref={customerPhoneRef} name="customerPhone" defaultValue={existingManualOrder?.customerPhone ?? ""} type="tel" maxLength={80} disabled={formDisabled} /></label>
-            <label><span>Email</span><input ref={customerEmailRef} name="customerEmail" defaultValue={existingManualOrder?.customerEmail ?? ""} type="email" maxLength={320} disabled={formDisabled} /></label>
+            <ManualChoiceRow label="CustSource" name="customerSource" defaultValue={existingOrder?.customerSource ?? "messenger"} choices={manualCustomerSourceChoices} disabled={formDisabled} />
+            <label><span>Cust.Name</span><input ref={customerNameRef} name="customerName" defaultValue={existingOrder?.customerName ?? ""} required maxLength={190} disabled={formDisabled || isWebOrder} /></label>
+            <label><span>PhoneNo.</span><input ref={customerPhoneRef} name="customerPhone" defaultValue={existingOrder?.customerPhone ?? ""} type="tel" maxLength={80} disabled={formDisabled || isWebOrder} /></label>
+            <label><span>Email</span><input ref={customerEmailRef} name="customerEmail" defaultValue={existingOrder?.customerEmail ?? ""} type="email" maxLength={320} disabled={formDisabled || isWebOrder} /></label>
           </div>
           <p className={styles.fieldHint}>Enter at least an email address or phone number.</p>
         </section>
@@ -1051,29 +1056,29 @@ export function ProductionJobForm({
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Internal Production Status</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <ManualChoiceRow label="Assign Artist" name="assignedUserId" defaultValue={existingManualOrder?.assignedUserId ?? ""} choices={[{ value: "", label: "NO" }, ...assignees.map((person) => ({ value: person.id, label: person.name }))]} disabled={formDisabled} />
-            {([ ["fileSent", "File Sent"], ["downloaded", "Download"], ["printed", "Printed"], ["completed", "Completed"], ["customerNotified", "Cust.Notified"] ] as const).map(([name, text]) => <ManualChoiceRow key={name} label={text} name={name} defaultValue={existingManualOrder?.milestones[name] ? "yes" : "no"} choices={manualYesNoChoices} disabled={formDisabled || !canUpdateProductionStatus} />)}
-            <ManualChoiceRow label="Delivered" name="delivered" defaultValue={existingManualOrder?.manualStatus === "on_hold" ? "hold" : existingManualOrder?.milestones.delivered ? "yes" : "no"} choices={[...manualYesNoChoices, { value: "hold", label: "HOLD" }]} disabled={formDisabled || !canUpdateDeliveryStatus} />
+            <ManualChoiceRow label="Assign Artist" name="assignedUserId" defaultValue={existingOrder?.assignedUserId ?? ""} choices={[{ value: "", label: "NO" }, ...assignees.map((person) => ({ value: person.id, label: person.name }))]} disabled={formDisabled} />
+            {([ ["fileSent", "File Sent"], ["downloaded", "Download"], ["printed", "Printed"], ["completed", "Completed"], ["customerNotified", "Cust.Notified"] ] as const).map(([name, text]) => <ManualChoiceRow key={name} label={text} name={name} defaultValue={existingOrder?.milestones[name] ? "yes" : "no"} choices={manualYesNoChoices} disabled={formDisabled || !canUpdateProductionStatus} />)}
+            <ManualChoiceRow label="Delivered" name="delivered" defaultValue={existingOrder?.manualStatus === "on_hold" ? "hold" : existingOrder?.milestones.delivered ? "yes" : "no"} choices={isWebOrder ? manualYesNoChoices : [...manualYesNoChoices, { value: "hold", label: "HOLD" }]} disabled={formDisabled || !canUpdateDeliveryStatus} />
           </div>
         </section>
 
-        {canManageFinance ? <section className={styles.formPanel}>
+        {canManageFinance || (isWebOrder && canViewInvoice) ? <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Cost / Profit</h2></div></div>
-          <div className={styles.manualFieldRows}><label><span>Material Cost</span><MoneyCentsInput ariaLabel="Material Cost" name="materialCost" cents={materialCostCents} onCentsChange={setMaterialCostCents} required disabled={formDisabled} /></label></div>
+          <div className={styles.manualFieldRows}><label><span>Material Cost</span><MoneyCentsInput ariaLabel="Material Cost" name="materialCost" cents={materialCostCents} onCentsChange={setMaterialCostCents} required disabled={formDisabled || isWebOrder} /></label></div>
           <input name="artistFee" type="hidden" value="0" />
         </section> : null}
 
-        <section className={styles.formPanel}>
+        {!isWebOrder ? <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Change log</h2></div></div>
-          {existingManualOrder?.audit.length ? <>
-            <div className={styles.timeline}>{existingManualOrder.audit.slice(0, visibleAuditCount).map((entry) => <article key={entry.id}><strong>{auditDescription(entry)}</strong><small>{entry.actorName} · {entry.createdAt}</small></article>)}</div>
-            {visibleAuditCount < existingManualOrder.audit.length ? <button
+          {existingOrder?.audit.length ? <>
+            <div className={styles.timeline}>{existingOrder.audit.slice(0, visibleAuditCount).map((entry) => <article key={entry.id}><strong>{auditDescription(entry)}</strong><small>{entry.actorName} · {entry.createdAt}</small></article>)}</div>
+            {visibleAuditCount < existingOrder.audit.length ? <button
               type="button"
               className={styles.historyLoadMore}
               onClick={() => setVisibleAuditCount((count) => count + 5)}
             >LOAD MORE</button> : null}
           </> : <p className={styles.mutedText}>Change history will appear after this manual order is submitted.</p>}
-        </section>
+        </section> : null}
       </> : <>
 
       <section className={styles.formPanel}>
@@ -1204,10 +1209,10 @@ export function ProductionJobForm({
 
       <div className={styles.formSubmitBar}>
         <p aria-live="polite">{feedback}</p>
-        {existingManualOrder && canDeleteJob ? <button
+        {existingOrder && canDeleteJob ? <button
           type="button"
           className={styles.dangerButton}
-          aria-label={`Delete order ${existingManualOrder.jobNumber}`}
+          aria-label={`Delete order ${existingOrder.jobNumber}`}
           disabled={pending}
           onClick={() => void deleteExistingManualOrder()}
         >Delete order</button> : null}
@@ -1216,24 +1221,27 @@ export function ProductionJobForm({
             ? "Retrying…"
             : paymentRecovery.phase === "upload_proof" ? "Retry payment proof" : "Retry payment status"}
         </button> : null}
-        {canEdit && !existingManualOrder ? <button type="submit" disabled={pending || Boolean(paymentRecovery)}>{pending ? "Creating…" : manualEntryLayout ? "Submit order" : "Create production job"}</button> : null}
+        {canEdit && !existingOrder ? <button type="submit" disabled={pending || Boolean(paymentRecovery)}>{pending ? "Creating…" : manualEntryLayout ? "Submit order" : "Create production job"}</button> : null}
       </div>
     </form>
+    {isWebOrder && canViewInvoice ? <div className={`${styles.productionDetail} ${styles.sharedOrderInvoice}`}>
+      <InvoicePanel jobId={existingOrder.id} jobApiBase={endpoint} invoicePdfBase={invoicePdfBase} canEdit={canManageFinance} />
+    </div> : null}
     {viewingPaymentProofKey ? <PaymentProofLightbox
       key={viewingPaymentProofKey}
       images={paymentProofViewerImages}
       initialKey={viewingPaymentProofKey}
       onClose={() => setViewingPaymentProofKey(null)}
     /> : null}
-    {!existingManualOrder && invoiceOpen && invoiceDraft ? <InvoiceWorkspace draft={invoiceDraft} onChange={setInvoiceDraft} onClose={() => setInvoiceOpen(false)} /> : null}
-    {existingManualOrder && invoiceOpen ? <div
+    {!existingOrder && invoiceOpen && invoiceDraft ? <InvoiceWorkspace draft={invoiceDraft} onChange={setInvoiceDraft} onClose={() => setInvoiceOpen(false)} /> : null}
+    {existingOrder && invoiceOpen ? <div
       className={`${styles.invoiceWorkspaceOverlay} ${styles.persistedInvoiceOverlay}`}
       role="dialog"
       aria-modal="true"
-      aria-label={`Edit invoice INV-${existingManualOrder.jobNumber}`}
+      aria-label={`Edit invoice INV-${existingOrder.jobNumber}`}
     >
       <header className={styles.invoiceWorkspaceHeader}>
-        <div><strong>Invoice</strong><span>INV-{existingManualOrder.jobNumber}</span></div>
+        <div><strong>Invoice</strong><span>INV-{existingOrder.jobNumber}</span></div>
         <div>
           {persistedInvoiceId ? <a className={styles.invoiceWorkspaceDownload} href={`${invoicePdfBase}/${persistedInvoiceId}/pdf`}>Download PDF</a> : null}
           <button type="button" onClick={() => setInvoiceOpen(false)}>Close</button>
@@ -1241,7 +1249,7 @@ export function ProductionJobForm({
       </header>
       <div className={styles.persistedInvoiceOverlayBody}>
         <InvoicePanel
-          jobId={existingManualOrder.id}
+          jobId={existingOrder.id}
           jobApiBase={endpoint}
           invoicePdfBase={invoicePdfBase}
           canEdit={canManageFinance && canEdit}

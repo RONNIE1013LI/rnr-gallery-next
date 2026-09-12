@@ -18,7 +18,7 @@ describe("ProductionJobForm", () => {
     { id: "staff-1", name: "Studio Artist", email: "artist@example.test" },
   ];
   const ExistingManualEditor = ProductionJobForm as unknown as ComponentType<Record<string, unknown>>;
-  const existingManualOrder = {
+  const existingOrder = {
     id: "5b25574f-e1e4-4b29-927d-c24c5efc4d8b",
     jobNumber: "08000",
     expectedUpdatedAt: "2026-08-21T08:00:00.000Z",
@@ -87,7 +87,7 @@ describe("ProductionJobForm", () => {
       canManageFinance={false}
       manualEntryLayout
       endpoint="/api/forms/jobs"
-      existingManualOrder={existingManualOrder}
+      existingOrder={existingOrder}
     />);
 
     expect(container.querySelector("form")?.className).not.toContain("manualEntryCreateForm");
@@ -107,7 +107,7 @@ describe("ProductionJobForm", () => {
       canUploadFiles
       manualEntryLayout
       endpoint="/api/forms/jobs"
-      existingManualOrder={existingManualOrder}
+      existingOrder={existingOrder}
       onSaved={onSaved}
     />);
 
@@ -122,12 +122,12 @@ describe("ProductionJobForm", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/forms/jobs/${existingManualOrder.id}`,
+      `/api/forms/jobs/${existingOrder.id}`,
       expect.objectContaining({ method: "PATCH" }),
     );
     const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(payload).toMatchObject({
-      expectedUpdatedAt: existingManualOrder.expectedUpdatedAt,
+      expectedUpdatedAt: existingOrder.expectedUpdatedAt,
       customerName: "Updated Customer",
       customerEmail: "saved@example.test",
       customerPhone: "+64210000000",
@@ -152,7 +152,7 @@ describe("ProductionJobForm", () => {
       canUpdateDeliveryStatus={false}
       manualEntryLayout
       endpoint="/api/forms/jobs"
-      existingManualOrder={existingManualOrder}
+      existingOrder={existingOrder}
     />);
 
     expect(within(manualGroup("File Sent")).getByRole("radio", { name: "YES" })).toBeDisabled();
@@ -167,6 +167,48 @@ describe("ProductionJobForm", () => {
     expect(payload).not.toHaveProperty("paymentReconciliationStatus");
     expect(payload).not.toHaveProperty("milestones");
     expect(payload).not.toHaveProperty("manualStatus");
+  });
+
+  it.each([
+    ["paid", "post", 15000], ["partially paid", "pickup", 5000], ["unpaid", "post", 0],
+  ])("saves %s web production fields without overwriting checkout-owned data (%s)", async (_status, deliveryMethod, paid) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: "updated", version: "2026-08-21T09:00:00.000Z" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const onSaved = vi.fn();
+    render(<ExistingManualEditor assignees={assignees} canManageFinance canViewInvoice={false}
+      manualEntryLayout endpoint="/api/forms/jobs" onSaved={onSaved}
+      existingOrder={{ ...existingOrder, source: "web", deliveryMethod, amountPaidCents: paid,
+        customerSource: "web", products: [
+          { productTitle: "Original Canvas", quantity: 2, size: "A2", sizeOther: "" },
+          { productTitle: "Original Banner", quantity: 3, size: "Custom Size", sizeOther: "850 x 2000 mm" },
+        ] }} />);
+    expect(screen.getByText("Original Canvas × 2")).toBeInTheDocument();
+    expect(screen.getByText("Original Banner × 3")).toBeInTheDocument();
+    for (const label of ["Cust.Name", "Email", "PhoneNo.", "AmtPaid", "AmtPayable", "Material Cost"]) {
+      expect(screen.getByRole("textbox", { name: label })).toBeDisabled();
+    }
+    expect(screen.queryByRole("heading", { name: "Change log" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Remark")).toHaveValue("Saved remark");
+    fireEvent.change(screen.getByLabelText("Remark"), { target: { value: "Updated production note" } });
+    fireEvent.blur(screen.getByLabelText("Remark"));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload).toMatchObject({ internalNotes: "Updated production note", customerSource: "web", deliveryMethod,
+      paymentReconciliationStatus: "Afterpay", milestones: { fileSent: true } });
+    for (const field of ["items", "finance", "manualStatus", "customerName", "customerEmail", "customerPhone", "orderId", "webOrderNumber", "designRequirements"]) {
+      expect(payload).not.toHaveProperty(field);
+    }
+  });
+
+  it("preserves finance visibility for read-only Web operators", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ invoice: null }), { status: 200 })));
+    render(<ExistingManualEditor assignees={assignees} canManageFinance={false} canViewInvoice
+      canEdit={false} manualEntryLayout existingOrder={{ ...existingOrder, source: "web", products: [] }} />);
+    expect(screen.getByRole("textbox", { name: "AmtPaid" })).toHaveValue("50.00");
+    expect(screen.getByRole("textbox", { name: "AmtPayable" })).toBeDisabled();
+    expect(within(manualGroup("BankRecon")).getByRole("radio", { name: "Afterpay" })).toBeDisabled();
+    expect(await screen.findByRole("heading", { name: "Invoice" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create invoice" })).not.toBeInTheDocument();
   });
 
   it("normalizes every manual-entry money editor to two decimal places on blur", () => {
@@ -185,7 +227,7 @@ describe("ProductionJobForm", () => {
     const invoiceId = "00000000-0000-4000-8000-000000000010";
     const persistedInvoice = {
       id: invoiceId,
-      jobId: existingManualOrder.id,
+      jobId: existingOrder.id,
       invoiceNumber: "INV-08000",
       status: "draft",
       invoiceDate: "2026-08-21",
@@ -240,7 +282,7 @@ describe("ProductionJobForm", () => {
       manualEntryLayout
       endpoint="/api/forms/jobs"
       invoicePdfBase="/api/forms/invoices"
-      existingManualOrder={existingManualOrder}
+      existingOrder={existingOrder}
     />);
     fireEvent.click(screen.getByRole("button", { name: "Invoice" }));
 
@@ -474,7 +516,7 @@ describe("ProductionJobForm", () => {
       result: "created",
       file: {
         id: proofId,
-        jobId: existingManualOrder.id,
+        jobId: existingOrder.id,
         kind: "payment_proof",
         version: null,
         originalName: "saved-receipt.jpg",
@@ -495,7 +537,7 @@ describe("ProductionJobForm", () => {
       canUploadFiles
       manualEntryLayout
       endpoint="/api/forms/jobs"
-      existingManualOrder={existingManualOrder}
+      existingOrder={existingOrder}
     />);
 
     const proof = new File([new Uint8Array([0xff, 0xd8, 0xff])], "saved-receipt.jpg", { type: "image/jpeg" });
@@ -503,7 +545,7 @@ describe("ProductionJobForm", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/forms/jobs/${existingManualOrder.id}/files`,
+      `/api/forms/jobs/${existingOrder.id}/files`,
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
@@ -515,14 +557,14 @@ describe("ProductionJobForm", () => {
     fireEvent.click(previewButton);
     expect(within(screen.getByRole("dialog", { name: "Payment proof viewer" })).getByRole("img", { name: "Payment proof saved-receipt.jpg" })).toHaveAttribute(
       "src",
-      `/api/forms/jobs/${existingManualOrder.id}/files/${proofId}`,
+      `/api/forms/jobs/${existingOrder.id}/files/${proofId}`,
     );
   });
 
   it("deletes a saved payment proof with the JSON mutation contract", async () => {
     const savedProof = {
       id: "6f99f301-f798-4cde-b1f1-44d6c08bdf2d",
-      jobId: existingManualOrder.id,
+      jobId: existingOrder.id,
       kind: "payment_proof" as const,
       version: null,
       originalName: "saved-receipt.jpg",
@@ -542,7 +584,7 @@ describe("ProductionJobForm", () => {
       canDeleteFiles
       manualEntryLayout
       endpoint="/api/forms/jobs"
-      existingManualOrder={existingManualOrder}
+      existingOrder={existingOrder}
       existingPaymentProofs={[savedProof]}
     />);
 
@@ -550,7 +592,7 @@ describe("ProductionJobForm", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/forms/jobs/${existingManualOrder.id}/files/${savedProof.id}`,
+      `/api/forms/jobs/${existingOrder.id}/files/${savedProof.id}`,
       {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -575,7 +617,7 @@ describe("ProductionJobForm", () => {
       canUploadFiles
       manualEntryLayout
       endpoint="/api/forms/jobs"
-      existingManualOrder={existingManualOrder}
+      existingOrder={existingOrder}
     />);
 
     fireEvent.change(screen.getByLabelText("PaymtProved"), { target: { files: [
@@ -590,7 +632,7 @@ describe("ProductionJobForm", () => {
   it("lets an administrator delete a manual order after one confirmation", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: "deleted",
-      jobNumber: existingManualOrder.jobNumber,
+      jobNumber: existingOrder.jobNumber,
       storageCleanupFailed: 0,
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
     const confirm = vi.fn(() => true);
@@ -606,20 +648,20 @@ describe("ProductionJobForm", () => {
       canDeleteJob
       manualEntryLayout
       endpoint="/api/forms/jobs"
-      existingManualOrder={existingManualOrder}
+      existingOrder={existingOrder}
       onDeleted={onDeleted}
     />);
 
-    const deleteButton = screen.getByRole("button", { name: `Delete order ${existingManualOrder.jobNumber}` });
+    const deleteButton = screen.getByRole("button", { name: `Delete order ${existingOrder.jobNumber}` });
     fireEvent.click(deleteButton);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(confirm).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/forms/jobs/${existingManualOrder.id}`,
+      `/api/forms/jobs/${existingOrder.id}`,
       expect.objectContaining({
         method: "DELETE",
         body: JSON.stringify({
-          expectedJobNumber: existingManualOrder.jobNumber,
+          expectedJobNumber: existingOrder.jobNumber,
           idempotencyKey: "delete-manual-order-0001",
         }),
       }),
@@ -880,7 +922,7 @@ describe("ProductionJobForm", () => {
       canUpdateDeliveryStatus
       manualEntryLayout
       endpoint="/api/forms/jobs"
-      existingManualOrder={existingManualOrder}
+      existingOrder={existingOrder}
     />);
 
     expect(screen.getByText("Delivered: NO → HOLD")).toBeInTheDocument();
@@ -910,7 +952,7 @@ describe("ProductionJobForm", () => {
       canManageFinance={false}
       manualEntryLayout
       endpoint="/api/forms/jobs"
-      existingManualOrder={{ ...existingManualOrder, audit }}
+      existingOrder={{ ...existingOrder, audit }}
     />);
 
     expect(screen.getByRole("heading", { name: "Change log" })).toBeInTheDocument();
