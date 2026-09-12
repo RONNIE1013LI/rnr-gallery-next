@@ -13,6 +13,9 @@ describe("Production governance wiring", () => {
     expect(packageJson.scripts?.["production:guard"]).toBe(
       "tsx scripts/production-guard.ts",
     );
+    expect(packageJson.scripts?.["staging:isolation:check"]).toBe(
+      "tsx scripts/staging-isolation-guard.ts",
+    );
     expect(packageJson.scripts?.["release:test:isolated"]).toBe(
       "tsx scripts/release-test-database.ts",
     );
@@ -28,6 +31,9 @@ describe("Production governance wiring", () => {
     expect(workflow).toMatch(/workflow_dispatch:/);
     expect(workflow).toMatch(/schedule:[\s\S]*cron:/);
     expect(workflow).toContain("npm run production:guard");
+    expect(workflow).toMatch(
+      /for attempt[\s\S]*npm run staging:isolation:check[\s\S]*if npm run production:guard/,
+    );
     expect(workflow).toContain("secrets.PRODUCTION_GUARD_GITHUB_TOKEN");
     expect(workflow).toContain("secrets.DATABASE_ENVIRONMENT_METADATA_FINGERPRINT");
     expect(workflow).toMatch(/Check out authoritative main[\s\S]*ref:\s*main/);

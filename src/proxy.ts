@@ -14,6 +14,7 @@ const canonicalRedirectHosts = new Set([
   "rrgallery.co.nz",
   "www.rrgallery.co.nz",
 ]);
+const stagingHost = "staging.rnrgallery.com";
 const currentProductSlugs = new Set(products.map((product) => product.slug));
 const retiredLegacyPaths = new Set([
   "/elementor-5897",
@@ -100,7 +101,22 @@ function resolveMarket(request: NextRequest) {
   });
 }
 
+function usesStagingHost(request: NextRequest) {
+  const hostHeader = request.headers.get("host")?.split(":", 1)[0].toLowerCase();
+  return request.nextUrl.hostname.toLowerCase() === stagingHost
+    || hostHeader === stagingHost;
+}
+
 export function proxy(request: NextRequest) {
+  if (
+    usesStagingHost(request)
+    && process.env.VERCEL_ENV !== "preview"
+  ) {
+    return NextResponse.json({ error: "Staging environment is unavailable." }, {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   const pathname = request.nextUrl.pathname;
   const isIdentityOrStaffApi = ["/api/auth", "/api/admin", "/api/forms"].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),

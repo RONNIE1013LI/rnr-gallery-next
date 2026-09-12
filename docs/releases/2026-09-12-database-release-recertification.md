@@ -11,6 +11,12 @@ User-authorized ledger-only reconciliation; no migration SQL was executed and no
 - Vercel project: `prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO`; Production branch `main`.
 - Pre-release deployment/rollback point: `dpl_48cTfqbQyxCEZumsQYxcD4AKvjjx`, SHA `065f1cce4a0ae545c40191364efb2e7029984c74`.
 
+## Authorized rollback baseline
+
+Production baseline re-certified after authorized rollback. Git main remains ahead intentionally pending controlled redeployment.
+
+This records the known rollback deployment `dpl_48cTfqbQyxCEZumsQYxcD4AKvjjx` at SHA `065f1cce4a0ae545c40191364efb2e7029984c74`. It does not make a mismatched Git or Production SHA pass the normal guard and does not change any database certification baseline.
+
 Vercel Production PGHOST fingerprint and PGDATABASE match the Neon connection metadata. All Production database environment entries predate the last successful Production guard (run `34568758066`, PASS at `2026-09-11T06:12:12Z`). The subsequent read-only guard `34687444857` reported only environment-metadata drift after ledger reconciliation; its database identity and migration checks did not report failures.
 
 ## 0065: fully applied in schema

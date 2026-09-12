@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { NextRequest } from "next/server";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import nextConfig from "../next.config";
 import { australianCommerceDestination } from "@/domain/markets/market";
 import { config, proxy } from "./proxy";
@@ -21,6 +21,51 @@ function activeLegacyRedirects() {
 }
 
 describe("protected request proxy", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("allows the pinned Staging host on a Preview deployment", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+
+    const response = proxy(new NextRequest("https://staging.rnrgallery.com/shop"));
+
+    expect(response.status).toBe(200);
+  });
+
+  it.each(["GET", "POST"])(
+    "blocks %s requests before a Production deployment can serve the Staging host",
+    (method) => {
+      vi.stubEnv("VERCEL_ENV", "production");
+
+      const response = proxy(new NextRequest("https://staging.rnrgallery.com/api/forms/jobs", {
+        method,
+      }));
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    },
+  );
+
+  it("fails closed when the Staging host has no deployment environment identity", () => {
+    vi.stubEnv("VERCEL_ENV", "");
+
+    const response = proxy(new NextRequest("https://staging.rnrgallery.com/shop"));
+
+    expect(response.status).toBe(503);
+  });
+
+  it("blocks a direct Production deployment request routed with the Staging Host header", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+
+    const response = proxy(new NextRequest(
+      "https://rnr-gallery-staging-production.vercel.app/api/admin/users",
+      { headers: { host: "staging.rnrgallery.com" } },
+    ));
+
+    expect(response.status).toBe(503);
+  });
+
   it.each(["/api/auth/get-session", "/api/auth/callback/google", "/api/admin/users"])(
     "redirects safe alias requests for %s to the authentication domain with all query parameters", (path) => {
       const query = "utm_source=facebook&fbclid=test&gclid=test&state=encoded%2Bvalue";

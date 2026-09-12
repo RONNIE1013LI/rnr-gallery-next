@@ -3,11 +3,52 @@ import * as productionGuard from "./production-guard";
 import {
   assertReadOnlyGuardRequest,
   classifyMigrationLineage,
+  collectStagingIsolationSnapshot,
   evaluateProductionGuard,
+  evaluateStagingIsolation,
   type ProductionGuardSnapshot,
+  type StagingIsolationSnapshot,
 } from "./production-guard";
 
 const sha = "a".repeat(40);
+
+function validStagingIsolationSnapshot(): StagingIsolationSnapshot {
+  return {
+    domain: {
+      name: "staging.rnrgallery.com",
+      projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+      gitBranch: "codex/invoice-email-release-20260912",
+      verified: true,
+    },
+    alias: {
+      name: "staging.rnrgallery.com",
+      projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+      deploymentId: "dpl_staging",
+    },
+    deployment: {
+      id: "dpl_staging",
+      projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+      branch: "codex/invoice-email-release-20260912",
+      ready: true,
+      target: null,
+    },
+    productionDeploymentId: "dpl_production",
+    previewDatabaseEnvironment: {
+      id: "7X3hipGyZA6v6xEA",
+      key: "DATABASE_URL",
+      targets: ["preview"],
+    },
+    branchScopedDatabaseOverrides: [],
+    databaseFingerprints: {
+      production: "1".repeat(64),
+      preview: "a6a953b4a05ac513468276f6d0283cc7dffc59554f0aa415dd8fded304a30bb3",
+    },
+    databaseEnvironmentMetadata: {
+      actual: "5".repeat(64),
+      expected: "5".repeat(64),
+    },
+  };
+}
 
 function validSnapshot(): ProductionGuardSnapshot {
   return {
@@ -64,6 +105,7 @@ function validSnapshot(): ProductionGuardSnapshot {
       actual: "5".repeat(64),
       expected: "5".repeat(64),
     },
+    stagingIsolation: validStagingIsolationSnapshot(),
     migration: {
       status: "MATCH",
       localCount: 62,
@@ -80,6 +122,14 @@ describe("Production guard invariants", () => {
 
     expect(result.passed).toBe(true);
     expect(result.findings).toEqual([]);
+  });
+
+  it("includes Staging isolation failures in the normal Production guard", () => {
+    const snapshot = validSnapshot();
+    snapshot.stagingIsolation.deployment.target = "production";
+
+    expect(evaluateProductionGuard(snapshot).findings.map(({ code }) => code))
+      .toContain("STAGING_DEPLOYMENT_NOT_PREVIEW");
   });
 
   it.each([
@@ -306,6 +356,139 @@ describe("Production guard network boundary", () => {
 });
 
 describe("Vercel Production adapter", () => {
+  it("collects Staging domain, alias, Preview deployment, and certified database metadata", async () => {
+    const fetcher = async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/v9/projects/prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO") {
+        return Response.json({
+          id: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+          name: "rnr-gallery-staging",
+          link: { productionBranch: "main" },
+          targets: {
+            production: {
+              id: "dpl_production",
+              readyState: "READY",
+              alias: ["rnrgallery.com"],
+              meta: { githubCommitRef: "main", githubCommitSha: "a".repeat(40) },
+            },
+          },
+        });
+      }
+      if (url.pathname.endsWith("/domains/staging.rnrgallery.com")) {
+        return Response.json({
+          name: "staging.rnrgallery.com",
+          apexName: "rnrgallery.com",
+          projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+          gitBranch: "codex/invoice-email-release-20260912",
+          verified: true,
+        });
+      }
+      if (url.pathname === "/v4/aliases/staging.rnrgallery.com") {
+        return Response.json({
+          alias: "staging.rnrgallery.com",
+          created: "2026-09-12T10:00:00.000Z",
+          uid: "alias_staging",
+          projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+          deploymentId: "dpl_staging",
+        });
+      }
+      if (url.pathname === "/v13/deployments/dpl_staging") {
+        return Response.json({
+          id: "dpl_staging",
+          projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+          target: null,
+          readyState: "READY",
+          meta: {
+            githubCommitRef: "codex/invoice-email-release-20260912",
+            githubCommitSha: "b".repeat(40),
+          },
+        });
+      }
+      if (url.pathname.endsWith("/env")) {
+        return Response.json({ envs: [
+          {
+            id: "7X3hipGyZA6v6xEA",
+            key: "DATABASE_URL",
+            target: ["preview"],
+            type: "encrypted",
+            updatedAt: 1788,
+          },
+          {
+            id: "prod-db",
+            key: "DATABASE_URL",
+            target: ["production"],
+            type: "encrypted",
+            updatedAt: 1787,
+          },
+        ] });
+      }
+      return new Response(null, { status: 404 });
+    };
+
+    const snapshot = await collectStagingIsolationSnapshot({
+      env: {
+        VERCEL_TOKEN: "test-token",
+        VERCEL_ORG_ID: "team_test",
+        VERCEL_PROJECT_ID: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+        PRODUCTION_DATABASE_TARGET_FINGERPRINT: "1".repeat(64),
+        PREVIEW_DATABASE_TARGET_FINGERPRINT:
+          "a6a953b4a05ac513468276f6d0283cc7dffc59554f0aa415dd8fded304a30bb3",
+        DATABASE_ENVIRONMENT_METADATA_FINGERPRINT:
+          "3e015eeb1aabea6200e10e3723c38203ec752cee9405fb47d51c408dff1177ca",
+      },
+      fetcher: fetcher as typeof fetch,
+    });
+
+    expect(snapshot.deployment).toMatchObject({
+      target: null,
+      branch: "codex/invoice-email-release-20260912",
+    });
+    expect(snapshot.productionDeploymentId).toBe("dpl_production");
+    expect(snapshot.databaseEnvironmentMetadata.actual)
+      .toBe("3e015eeb1aabea6200e10e3723c38203ec752cee9405fb47d51c408dff1177ca");
+  });
+
+  it("accepts only the certified pinned Preview Staging deployment", () => {
+    expect(evaluateStagingIsolation(validStagingIsolationSnapshot()).passed).toBe(true);
+  });
+
+  it.each([
+    ["an unpinned domain", (snapshot: ReturnType<typeof validStagingIsolationSnapshot>) => {
+      snapshot.domain.gitBranch = undefined;
+    }, "STAGING_BRANCH_UNPINNED"],
+    ["a Production target", (snapshot: ReturnType<typeof validStagingIsolationSnapshot>) => {
+      snapshot.deployment.target = "production";
+    }, "STAGING_DEPLOYMENT_NOT_PREVIEW"],
+    ["an unknown target", (snapshot: ReturnType<typeof validStagingIsolationSnapshot>) => {
+      snapshot.deployment.target = undefined;
+    }, "STAGING_DEPLOYMENT_NOT_PREVIEW"],
+    ["unknown custom environment metadata", (snapshot: ReturnType<typeof validStagingIsolationSnapshot>) => {
+      Object.assign(snapshot.deployment, { customEnvironmentPresent: true });
+    }, "STAGING_DEPLOYMENT_NOT_PREVIEW"],
+    ["a wrong deployment project", (snapshot: ReturnType<typeof validStagingIsolationSnapshot>) => {
+      snapshot.deployment.projectId = "prj_wrong";
+    }, "STAGING_PROJECT_MISMATCH"],
+    ["the current Production deployment", (snapshot: ReturnType<typeof validStagingIsolationSnapshot>) => {
+      snapshot.deployment.id = snapshot.productionDeploymentId;
+      snapshot.alias.deploymentId = snapshot.productionDeploymentId;
+    }, "STAGING_REUSES_PRODUCTION_DEPLOYMENT"],
+    ["an unknown Production deployment identity", (snapshot: ReturnType<typeof validStagingIsolationSnapshot>) => {
+      snapshot.productionDeploymentId = "UNKNOWN";
+    }, "STAGING_PRODUCTION_IDENTITY_UNKNOWN"],
+    ["a changed database metadata baseline", (snapshot: ReturnType<typeof validStagingIsolationSnapshot>) => {
+      snapshot.databaseEnvironmentMetadata.actual = "6".repeat(64);
+    }, "STAGING_DATABASE_METADATA_CHANGED"],
+    ["a branch-scoped database override", (snapshot: ReturnType<typeof validStagingIsolationSnapshot>) => {
+      snapshot.branchScopedDatabaseOverrides.push({ id: "branch-db", key: "DATABASE_URL" });
+    }, "STAGING_BRANCH_DATABASE_OVERRIDE"],
+  ])("fails closed for %s", (_label, mutate, expectedCode) => {
+    const snapshot = validStagingIsolationSnapshot();
+    mutate(snapshot);
+
+    expect(evaluateStagingIsolation(snapshot).findings.map(({ code }) => code))
+      .toContain(expectedCode);
+  });
+
   it("uses the project Production target because deployment listings omit aliases", () => {
     const parseCurrentProductionDeployment = (
       productionGuard as Record<string, unknown>

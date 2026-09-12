@@ -18,6 +18,11 @@ const execFile = promisify(execFileCallback);
 export const EXPECTED_GITHUB_REPOSITORY = "RONNIE1013LI/rnr-gallery-next";
 export const EXPECTED_VERCEL_PROJECT_ID = "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO";
 export const EXPECTED_VERCEL_PROJECT_NAME = "rnr-gallery-staging";
+export const EXPECTED_STAGING_DOMAIN = "staging.rnrgallery.com";
+export const EXPECTED_STAGING_BRANCH = "codex/invoice-email-release-20260912";
+export const EXPECTED_PREVIEW_DATABASE_ENV_ID = "7X3hipGyZA6v6xEA";
+export const EXPECTED_PREVIEW_DATABASE_TARGET_FINGERPRINT =
+  "a6a953b4a05ac513468276f6d0283cc7dffc59554f0aa415dd8fded304a30bb3";
 export const EXPECTED_PRODUCTION_DOMAINS = Object.freeze([
   "rnrgallery.com",
   "www.rnrgallery.com",
@@ -55,6 +60,43 @@ export type MigrationAudit = {
   appliedCount: number;
   lastLocalTimestamp?: string;
   lastAppliedTimestamp?: string;
+};
+
+export type StagingIsolationSnapshot = {
+  domain: {
+    name: string;
+    projectId: string | undefined;
+    gitBranch: string | undefined;
+    verified: boolean;
+  };
+  alias: {
+    name: string;
+    projectId: string | undefined;
+    deploymentId: string | undefined;
+  };
+  deployment: {
+    id: string;
+    projectId: string | undefined;
+    branch: string | undefined;
+    ready: boolean;
+    target: "production" | "staging" | null | undefined;
+    customEnvironmentPresent?: boolean;
+    customEnvironmentType?: "production" | "preview" | "development";
+  };
+  productionDeploymentId: string;
+  previewDatabaseEnvironment: ProductionGuardEnvironmentVariable | undefined;
+  branchScopedDatabaseOverrides: Array<Pick<
+    ProductionGuardEnvironmentVariable,
+    "id" | "key"
+  >>;
+  databaseFingerprints: {
+    production: string | undefined;
+    preview: string | undefined;
+  };
+  databaseEnvironmentMetadata: {
+    actual: string | undefined;
+    expected: string | undefined;
+  };
 };
 
 export type ProductionGuardSnapshot = {
@@ -100,6 +142,7 @@ export type ProductionGuardSnapshot = {
     actual: string | undefined;
     expected: string | undefined;
   };
+  stagingIsolation: StagingIsolationSnapshot;
   migration: MigrationAudit;
 };
 
@@ -121,6 +164,160 @@ function finding(code: string, subject: string, message: string): ProductionGuar
 function normalizedSha256(value: string | undefined) {
   const normalized = value?.trim().toLowerCase();
   return normalized && /^[0-9a-f]{64}$/.test(normalized) ? normalized : undefined;
+}
+
+export function evaluateStagingIsolation(
+  snapshot: StagingIsolationSnapshot,
+): ProductionGuardResult {
+  const findings: ProductionGuardFinding[] = [];
+  const add = (code: string, subject: string, message: string) => {
+    findings.push(finding(code, subject, message));
+  };
+
+  if (snapshot.domain.name !== EXPECTED_STAGING_DOMAIN) {
+    add("STAGING_DOMAIN_MISMATCH", snapshot.domain.name, "Unexpected Staging domain");
+  }
+  if (!snapshot.domain.verified) {
+    add("STAGING_DOMAIN_UNVERIFIED", snapshot.domain.name, "Staging domain is not verified");
+  }
+  if (snapshot.domain.gitBranch !== EXPECTED_STAGING_BRANCH) {
+    add(
+      "STAGING_BRANCH_UNPINNED",
+      snapshot.domain.gitBranch ?? "UNSET",
+      "Staging domain is not pinned to the certified branch",
+    );
+  }
+  for (const [source, projectId] of [
+    ["domain", snapshot.domain.projectId],
+    ["alias", snapshot.alias.projectId],
+    ["deployment", snapshot.deployment.projectId],
+  ] as const) {
+    if (projectId !== EXPECTED_VERCEL_PROJECT_ID) {
+      add(
+        "STAGING_PROJECT_MISMATCH",
+        `${source}:${projectId ?? "UNKNOWN"}`,
+        "Staging identity does not belong to the governed Vercel project",
+      );
+    }
+  }
+  if (snapshot.alias.name !== EXPECTED_STAGING_DOMAIN) {
+    add("STAGING_ALIAS_MISMATCH", snapshot.alias.name, "Unexpected Staging alias");
+  }
+  if (
+    !snapshot.alias.deploymentId
+    || snapshot.alias.deploymentId !== snapshot.deployment.id
+  ) {
+    add(
+      "STAGING_ALIAS_DEPLOYMENT_MISMATCH",
+      snapshot.alias.deploymentId ?? "UNKNOWN",
+      "Staging alias does not resolve to the inspected deployment",
+    );
+  }
+  if (!snapshot.deployment.ready) {
+    add(
+      "STAGING_DEPLOYMENT_NOT_READY",
+      snapshot.deployment.id,
+      "Staging deployment is not READY",
+    );
+  }
+  if (
+    snapshot.deployment.target !== null
+    || (
+      snapshot.deployment.customEnvironmentPresent === true
+      && snapshot.deployment.customEnvironmentType !== "preview"
+    )
+  ) {
+    add(
+      "STAGING_DEPLOYMENT_NOT_PREVIEW",
+      snapshot.deployment.id,
+      "Staging alias is not backed by a Preview deployment environment",
+    );
+  }
+  if (snapshot.deployment.branch !== EXPECTED_STAGING_BRANCH) {
+    add(
+      "STAGING_DEPLOYMENT_BRANCH_MISMATCH",
+      snapshot.deployment.branch ?? "UNKNOWN",
+      "Staging deployment did not originate from the certified branch",
+    );
+  }
+  if (snapshot.deployment.id === snapshot.productionDeploymentId) {
+    add(
+      "STAGING_REUSES_PRODUCTION_DEPLOYMENT",
+      snapshot.deployment.id,
+      "Staging and Production resolve to the same deployment",
+    );
+  }
+  if (snapshot.productionDeploymentId === "UNKNOWN") {
+    add(
+      "STAGING_PRODUCTION_IDENTITY_UNKNOWN",
+      "Production",
+      "Current Production deployment identity is unavailable",
+    );
+  }
+
+  const previewDatabaseEnvironment = snapshot.previewDatabaseEnvironment;
+  if (
+    previewDatabaseEnvironment?.id !== EXPECTED_PREVIEW_DATABASE_ENV_ID
+    || previewDatabaseEnvironment.key !== "DATABASE_URL"
+    || previewDatabaseEnvironment.gitBranch !== undefined
+    || previewDatabaseEnvironment.targets.length !== 1
+    || previewDatabaseEnvironment.targets[0] !== "preview"
+  ) {
+    add(
+      "STAGING_PREVIEW_DATABASE_ENV_UNCERTIFIED",
+      previewDatabaseEnvironment?.id ?? "UNKNOWN",
+      "Preview DATABASE_URL metadata does not match the certified environment record",
+    );
+  }
+  for (const override of snapshot.branchScopedDatabaseOverrides) {
+    add(
+      "STAGING_BRANCH_DATABASE_OVERRIDE",
+      `${override.key}:${override.id}`,
+      "Branch-scoped database credentials are not permitted for Staging",
+    );
+  }
+
+  const productionFingerprint = normalizedSha256(
+    snapshot.databaseFingerprints.production,
+  );
+  const previewFingerprint = normalizedSha256(snapshot.databaseFingerprints.preview);
+  if (
+    previewFingerprint !== EXPECTED_PREVIEW_DATABASE_TARGET_FINGERPRINT
+    || !productionFingerprint
+  ) {
+    add(
+      "STAGING_DATABASE_ISOLATION_UNPROVEN",
+      "Preview",
+      "Staging database target fingerprints are not certified",
+    );
+  } else if (previewFingerprint === productionFingerprint) {
+    add(
+      "STAGING_DATABASE_REUSES_PRODUCTION",
+      "Preview",
+      "Staging and Production resolve to the same database target fingerprint",
+    );
+  }
+
+  const actualMetadata = normalizedSha256(snapshot.databaseEnvironmentMetadata.actual);
+  const expectedMetadata = normalizedSha256(snapshot.databaseEnvironmentMetadata.expected);
+  if (!actualMetadata || !expectedMetadata) {
+    add(
+      "STAGING_DATABASE_METADATA_UNPROVEN",
+      "Vercel",
+      "Certified database environment metadata is unavailable",
+    );
+  } else if (actualMetadata !== expectedMetadata) {
+    add(
+      "STAGING_DATABASE_METADATA_CHANGED",
+      "Vercel",
+      "Database environment metadata changed after isolation certification",
+    );
+  }
+
+  return Object.freeze({
+    passed: findings.length === 0,
+    findings: Object.freeze(findings),
+  });
 }
 
 function isCriticalEnvironmentKey(key: string) {
@@ -208,6 +405,10 @@ export function evaluateProductionGuard(
   const add = (code: string, subject: string, message: string) => {
     findings.push(finding(code, subject, message));
   };
+
+  for (const item of evaluateStagingIsolation(snapshot.stagingIsolation).findings) {
+    findings.push(item);
+  }
 
   if (snapshot.github.repository !== EXPECTED_GITHUB_REPOSITORY) {
     add("GITHUB_REPOSITORY_MISMATCH", snapshot.github.repository, "Unexpected GitHub repository");
@@ -451,6 +652,24 @@ function targetArray(value: unknown): EnvironmentTarget[] {
   ));
 }
 
+function parseEnvironmentVariables(value: unknown): ProductionGuardEnvironmentVariable[] {
+  const response = record(value, "Vercel environment metadata");
+  return (Array.isArray(response.envs) ? response.envs : [])
+    .map((item): ProductionGuardEnvironmentVariable => {
+      const variable = record(item, "Vercel environment variable metadata");
+      return {
+        id: stringValue(variable.id) ?? "UNKNOWN",
+        key: stringValue(variable.key) ?? "UNKNOWN",
+        targets: targetArray(variable.target),
+        gitBranch: stringValue(variable.gitBranch),
+        type: stringValue(variable.type),
+        updatedAt: typeof variable.updatedAt === "number"
+          ? String(variable.updatedAt)
+          : stringValue(variable.updatedAt),
+      };
+    });
+}
+
 async function jsonFetch(
   url: string,
   token: string,
@@ -560,6 +779,121 @@ export function parseCurrentProductionDeployment(value: unknown) {
   return deploymentRecord(targets.production);
 }
 
+function parseStagingDeployment(value: unknown): StagingIsolationSnapshot["deployment"] {
+  const deployment = record(value, "Vercel Staging deployment");
+  const meta = record(deployment.meta ?? {}, "Vercel Staging deployment metadata");
+  const gitSource = deployment.gitSource === undefined
+    ? undefined
+    : record(deployment.gitSource, "Vercel Staging Git source");
+  const customEnvironment = deployment.customEnvironment === undefined
+    ? undefined
+    : record(deployment.customEnvironment, "Vercel custom environment");
+  const target = deployment.target === null
+    ? null
+    : deployment.target === "production" || deployment.target === "staging"
+      ? deployment.target
+      : undefined;
+  const customEnvironmentType = customEnvironment?.type === "production"
+    || customEnvironment?.type === "preview"
+    || customEnvironment?.type === "development"
+    ? customEnvironment.type
+    : undefined;
+
+  return {
+    id: stringValue(deployment.id) ?? stringValue(deployment.uid) ?? "UNKNOWN",
+    projectId: stringValue(deployment.projectId),
+    branch: stringValue(meta.githubCommitRef)
+      ?? stringValue(meta.gitCommitRef)
+      ?? stringValue(gitSource?.ref),
+    ready: deployment.readyState === "READY" || deployment.state === "READY",
+    target,
+    customEnvironmentPresent: customEnvironment !== undefined,
+    customEnvironmentType,
+  };
+}
+
+export async function collectStagingIsolationSnapshot(input: Readonly<{
+  env: Readonly<Record<string, string | undefined>>;
+  fetcher?: typeof fetch;
+}>): Promise<StagingIsolationSnapshot> {
+  const fetcher = input.fetcher ?? fetch;
+  const vercelToken = requiredEnvironment(input.env, "VERCEL_TOKEN");
+  const vercelOrgId = requiredEnvironment(input.env, "VERCEL_ORG_ID");
+  const vercelProjectId = requiredEnvironment(input.env, "VERCEL_PROJECT_ID");
+  if (vercelProjectId !== EXPECTED_VERCEL_PROJECT_ID) {
+    throw new Error("VERCEL_PROJECT_ID does not identify the governed project");
+  }
+  const teamQuery = `teamId=${encodeURIComponent(vercelOrgId)}`;
+  const projectResponse = await jsonFetch(
+    `https://api.vercel.com/v9/projects/${encodeURIComponent(vercelProjectId)}?${teamQuery}`,
+    vercelToken,
+    "Vercel project",
+    fetcher,
+  );
+  const productionDeployment = parseCurrentProductionDeployment(projectResponse);
+  const domainResponse = await jsonFetch(
+    `https://api.vercel.com/v9/projects/${encodeURIComponent(vercelProjectId)}/domains/${encodeURIComponent(EXPECTED_STAGING_DOMAIN)}?${teamQuery}`,
+    vercelToken,
+    "Vercel Staging domain",
+    fetcher,
+  );
+  const aliasResponse = await jsonFetch(
+    `https://api.vercel.com/v4/aliases/${encodeURIComponent(EXPECTED_STAGING_DOMAIN)}?projectId=${encodeURIComponent(vercelProjectId)}&${teamQuery}`,
+    vercelToken,
+    "Vercel Staging alias",
+    fetcher,
+  );
+  const aliasDeploymentId = stringValue(aliasResponse.deploymentId)
+    ?? (aliasResponse.deployment === undefined
+      ? undefined
+      : stringValue(record(aliasResponse.deployment, "Vercel alias deployment").id));
+  if (!aliasDeploymentId) {
+    throw new Error("Vercel Staging alias deployment identity is missing");
+  }
+  const deploymentResponse = await jsonFetch(
+    `https://api.vercel.com/v13/deployments/${encodeURIComponent(aliasDeploymentId)}?withGitRepoInfo=true&${teamQuery}`,
+    vercelToken,
+    "Vercel Staging deployment",
+    fetcher,
+  );
+  const environmentVariables = parseEnvironmentVariables(await jsonFetch(
+    `https://api.vercel.com/v10/projects/${encodeURIComponent(vercelProjectId)}/env?limit=100&${teamQuery}`,
+    vercelToken,
+    "Vercel environment metadata",
+    fetcher,
+  ));
+
+  return {
+    domain: {
+      name: stringValue(domainResponse.name) ?? "UNKNOWN",
+      projectId: stringValue(domainResponse.projectId),
+      gitBranch: stringValue(domainResponse.gitBranch),
+      verified: booleanValue(domainResponse.verified),
+    },
+    alias: {
+      name: stringValue(aliasResponse.alias) ?? "UNKNOWN",
+      projectId: stringValue(aliasResponse.projectId),
+      deploymentId: aliasDeploymentId,
+    },
+    deployment: parseStagingDeployment(deploymentResponse),
+    productionDeploymentId: productionDeployment.id,
+    previewDatabaseEnvironment: environmentVariables.find(
+      ({ id }) => id === EXPECTED_PREVIEW_DATABASE_ENV_ID,
+    ),
+    branchScopedDatabaseOverrides: environmentVariables
+      .filter(({ key, gitBranch }) => isDatabaseCredentialKey(key) && gitBranch !== undefined)
+      .map(({ id, key }) => ({ id, key })),
+    databaseFingerprints: {
+      production: input.env.PRODUCTION_DATABASE_TARGET_FINGERPRINT?.trim(),
+      preview: input.env.PREVIEW_DATABASE_TARGET_FINGERPRINT?.trim(),
+    },
+    databaseEnvironmentMetadata: {
+      actual: databaseEnvironmentMetadataFingerprint(environmentVariables),
+      expected: input.env.DATABASE_ENVIRONMENT_METADATA_FINGERPRINT?.trim(),
+    },
+  };
+}
+
 export async function auditProductionMigration(input: Readonly<{
   connectionString: string;
   expectedDatabase: string;
@@ -605,6 +939,11 @@ export async function collectProductionGuardSnapshot(input: Readonly<{
   if (vercelProjectId !== EXPECTED_VERCEL_PROJECT_ID) {
     throw new Error("VERCEL_PROJECT_ID does not identify the governed project");
   }
+
+  const stagingIsolation = await collectStagingIsolationSnapshot({
+    env: input.env,
+    fetcher,
+  });
 
   await execFile("git", ["fetch", "origin", "--prune"], { cwd: input.rootDir });
   const { stdout: originMainOutput } = await execFile(
@@ -668,20 +1007,7 @@ export async function collectProductionGuardSnapshot(input: Readonly<{
     "Vercel environment metadata",
     fetcher,
   );
-  const environmentVariables = (Array.isArray(envResponse.envs) ? envResponse.envs : [])
-    .map((value): ProductionGuardEnvironmentVariable => {
-      const variable = record(value, "Vercel environment variable metadata");
-      return {
-        id: stringValue(variable.id) ?? "UNKNOWN",
-        key: stringValue(variable.key) ?? "UNKNOWN",
-        targets: targetArray(variable.target),
-        gitBranch: stringValue(variable.gitBranch),
-        type: stringValue(variable.type),
-        updatedAt: typeof variable.updatedAt === "number"
-          ? String(variable.updatedAt)
-          : stringValue(variable.updatedAt),
-      };
-    });
+  const environmentVariables = parseEnvironmentVariables(envResponse);
 
   const migration = await auditProductionMigration({
     connectionString: requiredEnvironment(input.env, "PRODUCTION_DATABASE_AUDIT_URL"),
@@ -724,6 +1050,7 @@ export async function collectProductionGuardSnapshot(input: Readonly<{
       actual: databaseEnvironmentMetadataFingerprint(environmentVariables),
       expected: input.env.DATABASE_ENVIRONMENT_METADATA_FINGERPRINT?.trim(),
     },
+    stagingIsolation,
     migration,
   };
 }

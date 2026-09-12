@@ -47,11 +47,14 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Wait for automatic Production deploy and run read-only guard
+      - name: Check Staging isolation and wait for automatic Production deploy
         if: github.event_name == 'push'
         shell: bash
         run: |
           for attempt in {1..45}; do
+            if ! npm run staging:isolation:check; then
+              exit 1
+            fi
             if npm run production:guard; then
               exit 0
             fi
