@@ -3,11 +3,13 @@ import { APIError } from "better-auth/api";
 
 export function staffPasskeyOptions(origin: string): PasskeyOptions {
   const url = new URL(origin);
-  if (url.origin !== "https://rnrgallery.com" && !(url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname))) {
-    throw new Error("Staff Passkeys require https://rnrgallery.com or local development");
+  const controlledOrigin = url.origin === "https://rnrgallery.com" || url.origin === "https://staging.rnrgallery.com";
+  const localOrigin = url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname);
+  if (!controlledOrigin && !localOrigin) {
+    throw new Error("Staff Passkeys require a controlled R&R Gallery origin or local development");
   }
   return {
-    rpID: url.hostname,
+    rpID: controlledOrigin ? "rnrgallery.com" : url.hostname,
     rpName: "R&R Gallery Staff",
     origin: url.origin,
     authenticatorSelection: { residentKey: "required", userVerification: "required" },

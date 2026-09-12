@@ -20,4 +20,10 @@ describe("staff WebAuthn policy", () => {
   it("does not accept the unrelated legacy RP domain", () => {
     expect(() => staffPasskeyOptions("https://rrgallery.co.nz")).toThrow();
   });
+  it("accepts only the controlled HTTPS staging origin and rejects Vercel previews", () => {
+    const options = staffPasskeyOptions("https://staging.rnrgallery.com");
+    expect(options.rpID).toBe("rnrgallery.com");
+    expect(options.origin).toBe("https://staging.rnrgallery.com");
+    expect(() => staffPasskeyOptions("https://example.vercel.app")).toThrow();
+  });
 });
