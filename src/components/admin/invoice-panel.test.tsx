@@ -151,6 +151,7 @@ describe("InvoicePanel", () => {
   it("recalculates GST-inclusive totals and persists the draft", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ invoice }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ attempt: null }), { status: 200, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ invoice: { ...invoice, discountCents: 2300, totalInclGstCents: 20700, subtotalExGstCents: 18000, gstCents: 2700 } }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", { randomUUID: () => "invoice-update-0001" });
@@ -161,8 +162,8 @@ describe("InvoicePanel", () => {
     expect(within(totals).getByText("NZ$207.00")).toBeInTheDocument();
     expect(within(totals).getByText("NZ$27.00")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const payload = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const payload = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
     expect(payload).toMatchObject({
       invoiceId: invoice.id,
       expectedUpdatedAt: invoice.updatedAt,
@@ -195,6 +196,7 @@ describe("InvoicePanel", () => {
     const issued = { ...invoice, status: "issued", issuedAt: "2026-08-05T02:00:00.000Z", updatedAt: "2026-08-05T02:00:00.000Z" };
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ invoice }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ attempt: null }), { status: 200, headers: { "Content-Type": "application/json" } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ invoice: issued }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", { randomUUID: () => "invoice-issue-0001" });
@@ -204,8 +206,26 @@ describe("InvoicePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Issue invoice" }));
     expect(await screen.findByText("Issued")).toBeInTheDocument();
     expect(screen.getByLabelText("Invoice date")).toBeDisabled();
-    const payload = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    const payload = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
     expect(payload.action).toBe("issue");
+  });
+
+  it("shows persisted resend details from the latest successful audit", async () => {
+    const attempt = {
+      result: "success",
+      afterSummary: { recipientEmail: "internal@example.test" },
+      actorEmail: "owner@example.test",
+      createdAt: "2026-09-12T08:50:27.000Z",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ invoice }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ attempt }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<InvoicePanel jobId={invoice.jobId} />);
+
+    expect(await screen.findByRole("button", { name: "Resend invoice" })).toBeInTheDocument();
+    expect(screen.getByText(/to internal@example\.test by owner@example\.test/)).toBeInTheDocument();
   });
 
   it("keeps invoice details read-only without finance edit permission", async () => {

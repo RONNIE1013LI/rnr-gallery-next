@@ -54,6 +54,12 @@ type Invoice = Readonly<{
 }>;
 
 type EditableItem = Omit<InvoiceItem, "lineTotalInclGstCents"> & { key: string };
+type EmailAttempt = Readonly<{
+  result: "success";
+  afterSummary: Readonly<{ recipientEmail?: string }> | null;
+  actorEmail: string;
+  createdAt: string;
+}>;
 type Draft = Readonly<{
   invoiceDate: string;
   dueDate: string;
@@ -178,11 +184,24 @@ export function InvoicePanel({
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
-  const [emailLatest, setEmailLatest] = useState<string>("");
+  const [emailLatest, setEmailLatest] = useState<EmailAttempt | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const money = (cents: number) => invoice
     ? formatMarketMoney(cents, invoice.currency)
     : "";
+
+  async function refreshEmailLatest(invoiceId: string, signal?: AbortSignal) {
+    try {
+      const response = await fetch(`/api/admin/invoices/${invoiceId}/email`, {
+        headers: { Accept: "application/json" },
+        signal,
+      });
+      const body = await response.json().catch(() => null) as { attempt?: EmailAttempt | null } | null;
+      if (response.ok) setEmailLatest(body?.attempt ?? null);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) return;
+    }
+  }
 
   async function getPdfFile() {
     if (!invoice) throw new Error("The invoice could not be loaded.");
@@ -236,7 +255,8 @@ export function InvoicePanel({
       const response = await fetch(`/api/admin/invoices/${invoice.id}/email`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipientEmail: emailRecipient, subject: emailSubject, body: emailBody, idempotencyKey: createClientId() }) });
       const result = await response.json().catch(() => null) as { result?: string; error?: string } | null;
       if (!response.ok || result?.result !== "sent") throw new Error(result?.error || "Invoice email could not be sent.");
-      setFeedback("Invoice email sent."); setEmailLatest("Last sent just now"); setEmailOpen(false);
+      setFeedback("Invoice email sent."); setEmailOpen(false);
+      await refreshEmailLatest(invoice.id);
     } catch (error) { setFeedback(error instanceof Error ? error.message : "Invoice email could not be sent."); }
     finally { setEmailBusy(false); }
   }
@@ -257,6 +277,7 @@ export function InvoicePanel({
       setInvoice(body.invoice);
       setDraft(editable(body.invoice));
       onInvoiceLoaded?.(body.invoice.id);
+      if (canEdit) void refreshEmailLatest(body.invoice.id, controller.signal);
     }).catch((error) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setFeedback(error instanceof Error ? error.message : "The invoice could not be loaded.");
@@ -264,7 +285,7 @@ export function InvoicePanel({
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [jobId, jobApiBase, onInvoiceLoaded]);
+  }, [jobId, jobApiBase, onInvoiceLoaded, canEdit]);
 
   const calculated = useMemo(() => draft && invoice ? totals(draft, invoice) : null, [draft, invoice]);
   const locked = !canEdit || invoice?.status !== "draft" || pending;
@@ -395,14 +416,14 @@ export function InvoicePanel({
 
       <div className={styles.invoiceActions}>
         {!downloadAtTop && !hideDownload ? pdfActions : null}
-        {canEdit ? <button type="button" className={styles.secondaryAdminButton} onClick={() => { setEmailRecipient(invoice.customerEmail); setEmailOpen(true); }}>Send invoice by email</button> : null}
-        {emailLatest ? <span className={styles.mutedText}>{emailLatest}</span> : null}
+        {canEdit ? <button type="button" className={styles.secondaryAdminButton} onClick={() => { setEmailRecipient(invoice.customerEmail); setEmailOpen(true); }}>{emailLatest ? "Resend invoice" : "Send invoice by email"}</button> : null}
+        {emailLatest ? <span className={styles.mutedText}>Last sent {new Intl.DateTimeFormat("en-NZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(emailLatest.createdAt))} to {emailLatest.afterSummary?.recipientEmail ?? "unknown recipient"} by {emailLatest.actorEmail}</span> : null}
         {invoice.status === "draft" && canEdit ? <><button type="button" className={styles.secondaryAdminButton} onClick={saveDraft} disabled={pending}>Save draft</button><button type="button" onClick={issueInvoice} disabled={pending}>Issue invoice</button></> : null}
         {invoice.status === "issued" && canEdit ? <><label><span>Void reason</span><input value={voidReason} onChange={(event) => setVoidReason(event.target.value)} disabled={pending} /></label><button type="button" className={styles.dangerButton} onClick={voidInvoice} disabled={pending}>Void invoice</button></> : null}
       </div>
       {invoice.status === "void" ? <p className={styles.authorityBanner}><strong>Voided:</strong> {invoice.voidReason}</p> : null}
       <p className={styles.formFeedback} aria-live="polite">{feedback}</p>
-      {emailOpen ? <div role="dialog" aria-modal="true" className={styles.modalBackdrop}><div className={styles.modalCard}><h3>Send invoice by email</h3><label><span>Recipient</span><input type="email" value={emailRecipient} onChange={(event) => setEmailRecipient(event.target.value)} /></label><label><span>Subject (optional)</span><input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} /></label><label><span>Message (optional)</span><textarea rows={8} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} placeholder="Use the published invoice template" /></label><p className={styles.mutedText}>Invoice {invoice.invoiceNumber} PDF will be attached. Order and totals are read-only.</p><div className={styles.invoiceActions}><button type="button" className={styles.secondaryAdminButton} onClick={() => setEmailOpen(false)} disabled={emailBusy}>Cancel</button><button type="button" onClick={() => void sendInvoiceEmail()} disabled={emailBusy}>{emailBusy ? "Sending…" : "Send invoice"}</button></div></div></div> : null}
+      {emailOpen ? <div role="dialog" aria-modal="true" className={styles.modalBackdrop}><div className={styles.modalCard}><h3>{emailLatest ? "Resend invoice" : "Send invoice by email"}</h3><label><span>Recipient</span><input type="email" value={emailRecipient} onChange={(event) => setEmailRecipient(event.target.value)} /></label><label><span>Subject (optional)</span><input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} /></label><label><span>Message (optional)</span><textarea rows={8} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} placeholder="Use the published invoice template" /></label><p className={styles.mutedText}>Invoice {invoice.invoiceNumber} PDF will be attached. Order and totals are read-only.</p><div className={styles.invoiceActions}><button type="button" className={styles.secondaryAdminButton} onClick={() => setEmailOpen(false)} disabled={emailBusy}>Cancel</button><button type="button" onClick={() => void sendInvoiceEmail()} disabled={emailBusy}>{emailBusy ? "Sending…" : emailLatest ? "Resend invoice" : "Send invoice"}</button></div></div></div> : null}
         </div>
         <div className={styles.persistedInvoicePreview}>
           <InvoicePreview invoiceNumber={invoice.invoiceNumber} draft={draft} currency={invoice.currency} gstRateBasisPoints={invoice.gstRateBasisPoints} totals={calculated} />

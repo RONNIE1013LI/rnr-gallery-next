@@ -57,7 +57,7 @@ export function getAdminInvoiceRuntime() {
       });
     },
     async latestEmailAttempt(invoiceId: string) {
-      const [row] = await database.select({ result: adminAuditLogs.result, afterSummary: adminAuditLogs.afterSummary, createdAt: adminAuditLogs.createdAt }).from(adminAuditLogs).where(and(eq(adminAuditLogs.resourceType, "invoice"), eq(adminAuditLogs.resourceId, invoiceId), eq(adminAuditLogs.action, "invoice.email.sent"))).orderBy(desc(adminAuditLogs.createdAt)).limit(1);
+      const [row] = await database.select({ result: adminAuditLogs.result, afterSummary: adminAuditLogs.afterSummary, actorEmail: adminAuditLogs.actorEmail, createdAt: adminAuditLogs.createdAt }).from(adminAuditLogs).where(and(eq(adminAuditLogs.resourceType, "invoice"), eq(adminAuditLogs.resourceId, invoiceId), eq(adminAuditLogs.action, "invoice.email.sent"), eq(adminAuditLogs.result, "success"))).orderBy(desc(adminAuditLogs.createdAt)).limit(1);
       return row ?? null;
     },
   });
