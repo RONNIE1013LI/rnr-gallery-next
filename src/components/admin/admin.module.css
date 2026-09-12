@@ -3262,8 +3262,10 @@
 }
 
 .productionDetail .invoicePaper {
-  width: 100%;
-  min-height: 840px;
+  box-sizing: border-box;
+  width: min(100%, 794px);
+  min-height: 0;
+  aspect-ratio: 210 / 297;
   padding: 24px;
   gap: 24px;
   font-size: 13px;
