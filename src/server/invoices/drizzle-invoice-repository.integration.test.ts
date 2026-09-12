@@ -1,8 +1,10 @@
+import { PDFDocument } from "pdf-lib";
+import { deliverNewOrderInvoiceEmail, getAdminInvoiceRuntime } from "@/server/admin/admin-invoice-runtime";
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { adminAuditLogs, invoices, productionJobs, user } from "@/server/db/schema";
 import { createDrizzleProductionJobRepository } from "@/server/production/drizzle-production-job-repository";
 import { createProductionJobService } from "@/server/production/production-job-service";
@@ -177,4 +179,76 @@ describe("drizzle invoice repository", () => {
       "invoice.voided",
     ]);
   });
+
+
+describe("automatic manual invoice committed delivery", () => {
+  it.each(["valid", "missing", "provider_failure"])("handles %s and retains manual recovery", async (scenario) => {
+    const email = scenario === "missing" ? "" : "persisted@example.test";
+    const scheduled: string[] = [];
+    const provider = { configured: true, send: vi.fn().mockResolvedValue({ providerMessageId: "auto-test-mail" }) };
+    if (scenario === "provider_failure") provider.send.mockRejectedValueOnce(new Error("unavailable"));
+    const create = createProductionJobService(createDrizzleProductionJobRepository(database, { onNewInvoiceOrder: (id) => { scheduled.push(id); } }), { createJobNumber: () => `AUTO-${randomUUID()}` });
+    const input = {
+      idempotencyKey: `auto-${randomUUID()}`,
+      customerName: "Invoice Customer",
+      customerEmail: email,
+      customerPhone: "021 111 2222",
+      customerSource: "rnr",
+      webOrderNumber: "",
+      urgent: false,
+      neededDate: "2026-08-20",
+      deliveryMethod: "courier",
+      deliveryAddress: "11 Test Road\nAuckland 0632",
+      paymentReconciliationStatus: "Arrive",
+      assignedUserId: null,
+      designRequirements: "Blue background",
+      internalNotes: "Invoice integration test",
+      manualStatus: "new",
+      manualPaymentStatus: "processing",
+      amountPayableCents: 23_000,
+      amountPaidCents: 10_000,
+      artistFeeCents: 4_000,
+      materialCostCents: 2_000,
+      artistPaid: false,
+      completed: false,
+      items: [{
+        productTitle: "Digital Oil Painting Canvas",
+        sizeLabel: "A4",
+        quantity: 1,
+        designText: "",
+        notes: "",
+      }],
+
+      invoiceDraft: { invoiceDate: "2026-09-13", dueDate: "2026-09-20", reference: "DRAFT", customerName: "Test", customerEmail: "invoice-snapshot@example.test", customerAddress: "Test address", deliveryAddress: "Test address", discountCents: 0, notes: "Test", terms: "Test", items: [{ code: "TEST", description: "Test Canvas", quantityMilli: 1000, rateInclGstCents: 23000 }] },
+    };
+    const result = await create.createManual(actor, input, { canUpdateFinance: true });
+    jobIds.push(result.job.id);
+    const doc = await createDrizzleInvoiceRepository(database).findByJobId(result.job.id);
+    expect(doc).not.toBeNull();
+    invoiceIds.push(doc!.id);
+    expect(scheduled).toEqual([result.job.id]);
+    await Promise.all([deliverNewOrderInvoiceEmail(result.job.id, database, provider), deliverNewOrderInvoiceEmail(result.job.id, database, provider)]);
+    await create.createManual(actor, input, { canUpdateFinance: true });
+    expect(scheduled).toHaveLength(1);
+    expect(provider.send).toHaveBeenCalledTimes(scenario === "missing" ? 0 : 1);
+    const history = await database.select().from(adminAuditLogs).where(eq(adminAuditLogs.resourceId, doc!.id));
+    expect(history).toEqual(expect.arrayContaining([expect.objectContaining({ afterSummary: expect.objectContaining({ source: "automatic", trigger: "manual_order_created" }) })]));
+    if (scenario === "missing") expect(history.some(x => x.action === "invoice.email.skipped")).toBe(true);
+    if (scenario === "provider_failure") expect(history.some(x => x.result === "failure")).toBe(true);
+    const runtime = getAdminInvoiceRuntime(database, provider);
+    expect(Boolean(await runtime.latestEmailAttempt(doc!.id))).toBe(scenario === "valid");
+    if (scenario === "valid") {
+      const message = provider.send.mock.calls[0][0];
+      expect(message.to).toBe(email);
+      expect(message.text).not.toContain("/orders/");
+      expect(message.html.match(/Kind regards/g)).toHaveLength(1);
+      expect((await PDFDocument.load(message.attachments[0].content)).getPageCount()).toBeGreaterThan(0);
+    }
+    await runtime.createEmailService(actor, { source: "manual", trigger: "manual_resend" }).send(doc!, { recipientEmail: "alternate@example.test", idempotencyKey: `resend-${randomUUID()}` });
+    expect(provider.send).toHaveBeenCalledTimes(scenario === "missing" ? 1 : 2);
+    const finalHistory = await database.select().from(adminAuditLogs).where(eq(adminAuditLogs.resourceId, doc!.id));
+    expect(finalHistory).toEqual(expect.arrayContaining([expect.objectContaining({ result: "success", afterSummary: expect.objectContaining({ source: "manual", trigger: "manual_resend" }) })]));
+  });
+});
+
 });

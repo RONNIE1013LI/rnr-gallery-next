@@ -1,3 +1,7 @@
+import { scheduleNewOrderInvoiceEmail, automaticInvoiceActor } from "@/server/admin/admin-invoice-runtime";
+import { createDrizzleInvoiceRepository } from "@/server/invoices/drizzle-invoice-repository";
+import { createInvoiceService } from "@/server/invoices/invoice-service";
+import { getInvoiceBusinessSettings } from "@/server/invoices/invoice-business";
 import { createHash, randomUUID } from "node:crypto";
 import {
   and,
@@ -274,6 +278,7 @@ async function ensurePaidWebOrderProductionJob(
   transaction: Transaction,
   order: OrderRow,
   now: Date,
+  newInvoiceJobs?: string[],
 ) {
   if (order.paymentStatus !== "paid" && order.paymentStatus !== "refunded") return;
   const [existing] = await transaction.select({ id: productionJobs.id })
@@ -316,6 +321,17 @@ async function ensurePaidWebOrderProductionJob(
     ...item,
     jobId: job.id,
   })));
+  // Repair of an already-paid historical order keeps the previous lifecycle only.
+  if (!newInvoiceJobs) return;
+  try {
+    // Savepoint keeps invoice creation failure from reversing verified payment.
+    await transaction.transaction(async (invoiceTransaction) => {
+      await createInvoiceService(createDrizzleInvoiceRepository(invoiceTransaction, { systemActor: true }), { business: getInvoiceBusinessSettings(), now: () => now }).getOrCreateDraft(automaticInvoiceActor, job.id);
+    });
+  } catch {
+    console.error("new formal order invoice creation failed", { jobId: job.id });
+  }
+  newInvoiceJobs.push(job.id);
 }
 
 async function loadDirectPaymentEvidence(
@@ -631,6 +647,7 @@ async function applyLockedVerifiedResult(
     source: PaymentVerificationSource;
   }>,
   websiteAnalyticsV2Enabled: boolean,
+  newInvoiceJobs: string[],
 ): Promise<AppliedVerifiedResult> {
   const { order, attempt } = await lockOrderThenAttempt(
     transaction,
@@ -713,7 +730,7 @@ async function applyLockedVerifiedResult(
     .where(eq(orders.id, order.id))
     .returning();
   if (updatedOrder.paymentStatus === "paid" || order.paymentStatus === "paid") {
-    await ensurePaidWebOrderProductionJob(transaction, updatedOrder, now);
+    await ensurePaidWebOrderProductionJob(transaction, updatedOrder, now, newInvoiceJobs);
   }
   if (orderStatus === "paid") {
     await transaction.delete(orderNotificationOutbox).where(and(
@@ -769,6 +786,7 @@ function postgresCode(error: unknown): string | undefined {
 export function createDrizzlePaymentRepository(
   database: Database,
   options: Readonly<{
+    onNewInvoiceOrder?: (jobId: string) => void;
     leaseDurationMs?: number;
     analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordDirectPaymentTransition">
       & Partial<Pick<WebsiteAnalyticsV2BusinessRecorder, "recordLedgerEntry">>;
@@ -784,6 +802,14 @@ export function createDrizzlePaymentRepository(
     ?? analyticsConfig.v2Enabled;
   const analyticsRecorder = options.analyticsRecorder
     ?? createWebsiteAnalyticsV2BusinessRecorder(database, { config: analyticsConfig });
+
+  function scheduleInvoices(ids: string[]) {
+    for (const id of ids) {
+      try { (options.onNewInvoiceOrder ?? scheduleNewOrderInvoiceEmail)(id); } catch {
+        console.error("invoice automatic scheduling failed", { jobId: id });
+      }
+    }
+  }
 
   async function recordDirectPaymentEvidence(
     evidence: Readonly<{
@@ -1098,14 +1124,17 @@ export function createDrizzlePaymentRepository(
       ) {
         throw new PaymentVerificationMismatchError();
       }
+      const newInvoiceJobs: string[] = [];
       const applied = await database.transaction((transaction) =>
-        applyLockedVerifiedResult(transaction, input, websiteAnalyticsV2Enabled),
+        applyLockedVerifiedResult(transaction, input, websiteAnalyticsV2Enabled, newInvoiceJobs),
       );
+      scheduleInvoices(newInvoiceJobs);
       await recordDirectPaymentEvidence(applied);
       return applied.value;
     },
 
     async applyVerifiedWebhookEventAtomically(input: VerifiedEventInput) {
+      const newInvoiceJobs: string[] = [];
       const outcome = await database.transaction(async (transaction) => {
         const inserted = await transaction
           .insert(webhookEvents)
@@ -1177,6 +1206,7 @@ export function createDrizzlePaymentRepository(
             source: "verified_webhook",
           },
           websiteAnalyticsV2Enabled,
+          newInvoiceJobs,
         );
         if (input.faultAt === "after_transition") {
           throw new PaymentRepositoryFaultError();
@@ -1200,6 +1230,7 @@ export function createDrizzlePaymentRepository(
           analyticsLedgerEntryId: applied.analyticsLedgerEntryId,
         };
       });
+      scheduleInvoices(newInvoiceJobs);
       await recordDirectPaymentEvidence("analyticsTransition" in outcome
         ? {
             analyticsTransition: outcome.analyticsTransition ?? null,
@@ -1271,6 +1302,7 @@ export function createDrizzlePaymentRepository(
     },
 
     async applyReconciliationResult(input) {
+      const newInvoiceJobs: string[] = [];
       const applied = await database.transaction(async (transaction) => {
         const { attempt } = await lockOrderThenAttempt(transaction, input.attemptId);
         const now = await databaseNow(transaction);
@@ -1285,7 +1317,7 @@ export function createDrizzlePaymentRepository(
           attemptId: input.attemptId,
           result: input.result,
           source: "reconciliation",
-        }, websiteAnalyticsV2Enabled);
+        }, websiteAnalyticsV2Enabled, newInvoiceJobs);
         await transaction
           .update(paymentAttempts)
           .set({
@@ -1298,6 +1330,7 @@ export function createDrizzlePaymentRepository(
           ));
         return applied;
       });
+      scheduleInvoices(newInvoiceJobs);
       await recordDirectPaymentEvidence(applied);
       return applied.value;
     },

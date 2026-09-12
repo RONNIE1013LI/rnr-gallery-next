@@ -1,9 +1,12 @@
+import { deliverNewOrderInvoiceEmail } from "@/server/admin/admin-invoice-runtime";
+import { createDrizzleInvoiceRepository } from "@/server/invoices/drizzle-invoice-repository";
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  adminAuditLogs,
   internalNotificationOutbox,
   internalNotificationRecipients,
   internalNotificationSubscriptions,
@@ -487,6 +490,35 @@ describe("Drizzle payment repository", () => {
     expect(ledger).toHaveLength(2);
   });
 
+  it("emails only a newly admitted website order, after commit, with persisted recipient and paid balance", async () => {
+    const scheduled: string[] = [];
+    const repo = createDrizzlePaymentRepository(database, { onNewInvoiceOrder: (id) => { scheduled.push(id); } });
+    const order = await createOrder();
+    const claim = await repo.createOrClaimNonterminalAttempt(claimInput(order.orderId));
+    expect(scheduled).toHaveLength(0);
+    expect(await database.select().from(productionJobs).where(eq(productionJobs.orderId, order.orderId))).toHaveLength(0);
+    const providerReference = `auto-${randomUUID()}`;
+    await repo.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference, returnStateDigest: null, status: "processing" });
+    const input = { attemptId: claim.attempt.id, result: { providerReference, providerStatus: "CAPTURED", amountCents: 7475, currency: "NZD" as const, orderNumber: order.orderNumber, status: "paid" as const }, source: "server_capture" as const };
+    await repo.applyVerifiedResult(input);
+    expect(scheduled).toHaveLength(1);
+    const doc = await createDrizzleInvoiceRepository(database).findByJobId(scheduled[0]);
+    expect(doc).toMatchObject({ amountPaidCents: 7475, totalInclGstCents: 7475 });
+    const provider = { configured: true, send: vi.fn().mockResolvedValue({ providerMessageId: "website-mail" }) };
+    await Promise.all(scheduled.map(id => deliverNewOrderInvoiceEmail(id, database, provider)));
+    await repo.applyVerifiedResult(input);
+    await deliverNewOrderInvoiceEmail(scheduled[0], database, provider);
+    expect(scheduled).toHaveLength(1);
+    expect(provider.send).toHaveBeenCalledTimes(1);
+    const message = provider.send.mock.calls[0][0];
+    expect(message.to).toBe("payer@example.test");
+    expect(message.text).toContain("Balance due: NZ$0.00");
+    expect(message.text).toContain(`/orders/${order.orderNumber}?access=`);
+    expect(message.html.match(/Kind regards/g)).toHaveLength(1);
+    const audits = await database.select().from(adminAuditLogs).where(eq(adminAuditLogs.resourceId, doc!.id));
+    expect(audits).toEqual(expect.arrayContaining([expect.objectContaining({ result: "success", action: "invoice.email.sent", afterSummary: expect.objectContaining({ source: "automatic", trigger: "website_order_created" }) })]));
+  });
+
   afterAll(async () => {
     await database.delete(websiteAnalyticsFinancialEvents)
       .where(inArray(websiteAnalyticsFinancialEvents.orderId, orderIds));
@@ -497,6 +529,7 @@ describe("Drizzle payment repository", () => {
       [orderIds],
     );
     await pool.query("delete from payment_attempts where order_id = any($1::uuid[])", [orderIds]);
+    await pool.query("delete from invoices where job_id in (select id from production_jobs where order_id = any($1::uuid[]))", [orderIds]);
     await database.delete(productionJobs).where(inArray(productionJobs.orderId, orderIds));
     await pool.query("delete from orders where id = any($1::uuid[])", [orderIds]);
     await pool.query("delete from checkout_sessions where id = any($1::uuid[])", [sessionIds]);
@@ -1690,6 +1723,8 @@ describe("Drizzle payment repository", () => {
   it.each(["after_event_insert", "after_transition", "before_processed_result"] as const)(
     "rolls back webhook fault at %s and permits replay",
     async (faultAt) => {
+      const scheduled = vi.fn();
+      const repository = createDrizzlePaymentRepository(database, { onNewInvoiceOrder: scheduled });
       await withWebOrderPaidRecipient(async (recipient) => {
       const order = await createOrder();
       const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
@@ -1715,6 +1750,7 @@ describe("Drizzle payment repository", () => {
       });
       await expect(repository.applyVerifiedWebhookEventAtomically({ ...input, faultAt }))
         .rejects.toThrow("Injected payment repository fault");
+      expect(scheduled).not.toHaveBeenCalled();
       expect(await database.select().from(webhookEvents)
         .where(eq(webhookEvents.providerEventId, input.providerEventId))).toHaveLength(0);
       await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(beforeFault);
@@ -1732,6 +1768,7 @@ describe("Drizzle payment repository", () => {
       ))).resolves.toEqual([]);
       await expect(repository.applyVerifiedWebhookEventAtomically(input)).resolves.toBe("applied");
       await expect(repository.applyVerifiedWebhookEventAtomically(input)).resolves.toBe("duplicate");
+      expect(scheduled).toHaveBeenCalledTimes(1);
       await expect(repository.applyVerifiedWebhookEventAtomically({
         ...input, payloadSha256: "d".repeat(64),
       })).resolves.toBe("hash_mismatch");

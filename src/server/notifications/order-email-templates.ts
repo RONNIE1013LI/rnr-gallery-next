@@ -6,7 +6,7 @@ type EmailVariable =
   | "amount"
   | "tracking_number"
   | "tracking_carrier";
-type InvoiceEmailVariable = EmailVariable | "invoice_number" | "invoice_date" | "due_date" | "amount_paid" | "balance_due" | "invoice_url" | "business_name" | "customer_email";
+type InvoiceEmailVariable = EmailVariable | "total" | "invoice_number" | "invoice_date" | "due_date" | "amount_paid" | "balance_due" | "invoice_url" | "business_name" | "customer_email";
 
 type EmailTemplateDefinition = Readonly<{
   key: string;
@@ -23,7 +23,7 @@ type EmailTemplateDefinition = Readonly<{
 const orderVariables = ["customer_name", "order_number"] as const;
 const paidVariables = [...orderVariables, "amount"] as const;
 const shippedVariables = [...orderVariables, "tracking_number", "tracking_carrier"] as const;
-const invoiceVariables = ["customer_name", "customer_email", "order_number", "invoice_number", "invoice_date", "due_date", "amount", "amount_paid", "balance_due", "invoice_url", "business_name"] as const;
+const invoiceVariables = ["customer_name", "customer_email", "order_number", "invoice_number", "invoice_date", "due_date", "total", "amount", "amount_paid", "balance_due", "invoice_url", "business_name"] as const;
 
 export const orderEmailTemplateDefinitions = Object.freeze([
   { key: "email.admin_order_received.subject", surface: "email", group: "Admin new paid order", label: "Subject", description: "Subject for the internal paid-order notification.", maxLength: 200, multiline: false, defaultValue: "New paid order — {{order_number}}", allowedVariables: paidVariables },
@@ -107,6 +107,7 @@ function substitute(template: string, variables: OrderEmailTemplateVariables) {
     customer_name: variables.customerName,
     order_number: variables.orderNumber,
     amount: variables.amount,
+    total: variables.amount,
     tracking_number: variables.trackingNumber ?? "",
     tracking_carrier: variables.trackingCarrier ?? "",
     invoice_number: variables.invoiceNumber ?? "",
@@ -135,6 +136,7 @@ export function renderOrderEmailTemplate(
     .split(/\n\s*\n/)
     .map((paragraph) => paragraph.trim())
     .filter((paragraph) => hasTracking || !/{{\s*tracking_(?:number|carrier)\s*}}/.test(paragraph))
+    .filter((paragraph) => kind !== "invoice_sent" || variables.invoiceUrl || !/{{\s*invoice_url\s*}}/.test(paragraph))
     .map((paragraph) => substitute(paragraph, variables).trim())
     .filter(Boolean);
 

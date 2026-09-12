@@ -56,7 +56,7 @@ type Invoice = Readonly<{
 type EditableItem = Omit<InvoiceItem, "lineTotalInclGstCents"> & { key: string };
 type EmailAttempt = Readonly<{
   result: "success";
-  afterSummary: Readonly<{ recipientEmail?: string }> | null;
+  afterSummary: Readonly<{ recipientEmail?: string; source?: string }> | null;
   actorEmail: string;
   createdAt: string;
 }>;
@@ -421,7 +421,7 @@ export function InvoicePanel({
       <div className={styles.invoiceActions}>
         {!downloadAtTop && !hideDownload ? pdfActions : null}
         {canEdit ? <button type="button" className={styles.secondaryAdminButton} onClick={() => { setEmailRecipient(invoice.customerEmail); setEmailOpen(true); }}>{emailLatest ? "Resend invoice" : "Send invoice by email"}</button> : null}
-        {emailLatest ? <span className={styles.mutedText}>Last sent {new Intl.DateTimeFormat("en-NZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(emailLatest.createdAt))} to {emailLatest.afterSummary?.recipientEmail ?? "unknown recipient"} by {emailLatest.actorEmail}</span> : null}
+        {emailLatest ? <span className={styles.mutedText}>Last sent {new Intl.DateTimeFormat("en-NZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(emailLatest.createdAt))} to {emailLatest.afterSummary?.recipientEmail ?? "unknown recipient"} by {emailLatest.afterSummary?.source === "automatic" ? "System" : emailLatest.actorEmail}</span> : null}
         {invoice.status === "draft" && canEdit ? <><button type="button" className={styles.secondaryAdminButton} onClick={saveDraft} disabled={pending}>Save draft</button><button type="button" onClick={issueInvoice} disabled={pending}>Issue invoice</button></> : null}
         {invoice.status === "issued" && canEdit ? <><label><span>Void reason</span><input value={voidReason} onChange={(event) => setVoidReason(event.target.value)} disabled={pending} /></label><button type="button" className={styles.dangerButton} onClick={voidInvoice} disabled={pending}>Void invoice</button></> : null}
       </div>

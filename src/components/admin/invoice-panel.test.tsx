@@ -228,6 +228,15 @@ describe("InvoicePanel", () => {
     expect(screen.getByText(/to internal@example\.test by owner@example\.test/)).toBeInTheDocument();
   });
 
+  it("shows System and Resend for a successful automatic send", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ invoice })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ attempt: { result: "success", afterSummary: { recipientEmail: "internal@example.test", source: "automatic" }, actorEmail: "system@rrgallery.co.nz", createdAt: "2026-09-13T00:00:00.000Z" } }))));
+    render(<InvoicePanel jobId={invoice.jobId} />);
+    expect(await screen.findByRole("button", { name: "Resend invoice" })).toBeInTheDocument();
+    expect(screen.getByText(/to internal@example.test by System/)).toBeInTheDocument();
+  });
+
   it("keeps invoice details read-only without finance edit permission", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ invoice }), {
       status: 200,

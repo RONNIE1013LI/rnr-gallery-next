@@ -1,3 +1,4 @@
+import { scheduleNewOrderInvoiceEmail } from "@/server/admin/admin-invoice-runtime";
 import { createHash } from "node:crypto";
 import {
   and,
@@ -564,6 +565,7 @@ export async function getProductionJobDetail(
 export function createDrizzleProductionJobRepository(
   database: Database,
   options: Readonly<{
+    onNewInvoiceOrder?: (jobId: string) => void;
     conversionPolicy?: ConversionActivationPolicy;
     enqueueDeliveries?: typeof enqueueConversionDeliveries;
     analyticsRecorder?: Pick<
@@ -597,6 +599,7 @@ export function createDrizzleProductionJobRepository(
     },
 
     async createManual(input) {
+      let inserted = false;
       const created = await database.transaction(async (transaction) => {
         const availableFields = await transaction.select().from(productionFieldDefinitions)
           .where(and(
@@ -806,6 +809,7 @@ export function createDrizzleProductionJobRepository(
           payload: { version: 1, adminPath: `/admin/jobs/${job.id}` },
           createdAt: input.createdAt,
         });
+        inserted = true;
         return {
           id: job.id,
           jobNumber: job.jobNumber,
@@ -829,6 +833,11 @@ export function createDrizzleProductionJobRepository(
         }
         return { ...existing, requestDigest: existing.requestDigest };
       });
+      if (inserted && input.invoice) {
+        try { (options.onNewInvoiceOrder ?? scheduleNewOrderInvoiceEmail)(created.id); } catch {
+          console.error("invoice automatic scheduling failed", { jobId: created.id });
+        }
+      }
       try {
         await analyticsRecorder.recordManualOrder({
           jobId: created.id,

@@ -19,7 +19,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ inv
     assertTrustedMutationRequest(request);
     const body = await parseBoundedJson(request) as Record<string, unknown>;
     const invoice = await getAdminInvoiceRuntime().getDocument((await params).invoiceId);
-    const service = getAdminInvoiceRuntime().createEmailService({ userId: access.user.id, email: access.user.email ?? "unknown@invalid.local" });
+    const prior = await getAdminInvoiceRuntime().latestEmailAttempt(invoice.id);
+    const service = getAdminInvoiceRuntime().createEmailService({ userId: access.user.id, email: access.user.email ?? "unknown@invalid.local" }, { source: "manual", trigger: prior ? "manual_resend" : "manual_send" });
     const result = await service.send(invoice, { recipientEmail: typeof body.recipientEmail === "string" ? body.recipientEmail : undefined, subject: typeof body.subject === "string" ? body.subject : undefined, body: typeof body.body === "string" ? body.body : undefined, idempotencyKey: typeof body.idempotencyKey === "string" ? body.idempotencyKey : "" });
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

@@ -19,6 +19,7 @@ export type InvoiceItemRecord = Readonly<{
 export type InvoiceRecord = Readonly<{
   id: string;
   jobId: string;
+  orderNumber?: string;
   invoiceNumber: string;
   status: "draft" | "issued" | "void";
   invoiceDate: string;

@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { projectWebOrderFinance } from "@/server/production/production-job-finance";
 import { and, asc, eq } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
@@ -18,7 +20,8 @@ import type {
   UpdateInvoiceDraft,
 } from "./invoice-service";
 
-type Database = ReturnType<typeof getDatabase>;
+type RootDatabase = ReturnType<typeof getDatabase>;
+type Database = RootDatabase | Parameters<Parameters<RootDatabase["transaction"]>[0]>[0];
 
 function addressText(address: typeof orderAddresses.$inferSelect | undefined) {
   if (!address) return "";
@@ -37,13 +40,14 @@ async function loadInvoice(database: Database, invoiceId: string): Promise<Invoi
   const [invoice] = await database.select().from(invoices)
     .where(eq(invoices.id, invoiceId)).limit(1);
   if (!invoice) return null;
-  const [job] = await database.select({ amountPaidCents: productionJobs.amountPaidCents }).from(productionJobs).where(eq(productionJobs.id, invoice.jobId)).limit(1);
+  const [job] = await database.select({ source: productionJobs.source, jobNumber: productionJobs.jobNumber, amountPaidCents: productionJobs.amountPaidCents, total: orders.totalInclGstCents, paymentStatus: orders.paymentStatus }).from(productionJobs).leftJoin(orders, eq(orders.id, productionJobs.orderId)).where(eq(productionJobs.id, invoice.jobId)).limit(1);
   const items = await database.select().from(invoiceItems)
     .where(eq(invoiceItems.invoiceId, invoice.id))
     .orderBy(asc(invoiceItems.position));
   return Object.freeze({
     ...invoice,
-    amountPaidCents: job?.amountPaidCents ?? null,
+    orderNumber: job?.jobNumber,
+    amountPaidCents: job?.source === "web" && job.paymentStatus ? projectWebOrderFinance(job.total ?? 0, job.paymentStatus).amountPaidCents : job?.amountPaidCents ?? null,
     pricesIncludeGst: true as const,
     items: Object.freeze(items.map((item) => Object.freeze({
       position: item.position,
@@ -94,7 +98,7 @@ function itemValues(invoiceId: string, items: CreateInvoiceDraft["items"]) {
   }));
 }
 
-export function createDrizzleInvoiceRepository(database: Database): InvoiceRepository {
+export function createDrizzleInvoiceRepository(database: Database, options: { systemActor?: boolean } = {}): InvoiceRepository {
   return {
     async findByJobId(jobId) {
       const [record] = await database.select({ id: invoices.id }).from(invoices)
@@ -160,7 +164,7 @@ export function createDrizzleInvoiceRepository(database: Database): InvoiceRepos
           jobNumber: job.jobNumber,
           webOrderNumber: job.orderNumber ?? job.webOrderNumber,
           customerName: job.customerName,
-          customerEmail: job.customerEmail,
+          customerEmail: options.systemActor && !z.string().email().safeParse(job.customerEmail).success ? "" : job.customerEmail,
           customerAddress: addressText(billing),
           deliveryAddress: addressText(delivery ?? billing),
           currency: job.currency ?? "NZD",
@@ -183,7 +187,7 @@ export function createDrizzleInvoiceRepository(database: Database): InvoiceRepos
         jobNumber: job.jobNumber,
         webOrderNumber: job.webOrderNumber,
         customerName: job.customerName,
-        customerEmail: job.customerEmail,
+        customerEmail: options.systemActor && !z.string().email().safeParse(job.customerEmail).success ? "" : job.customerEmail,
         customerAddress: job.deliveryAddress,
         deliveryAddress: job.deliveryAddress,
         items: Object.freeze([Object.freeze({
@@ -206,8 +210,8 @@ export function createDrizzleInvoiceRepository(database: Database): InvoiceRepos
           gstRateBasisPoints: input.gstRateBasisPoints,
           pricesIncludeGst: input.pricesIncludeGst,
           ...invoiceValues(input),
-          createdByUserId: input.actor.userId,
-          updatedByUserId: input.actor.userId,
+          createdByUserId: options.systemActor ? null : input.actor.userId,
+          updatedByUserId: options.systemActor ? null : input.actor.userId,
           createdAt: input.createdAt,
           updatedAt: input.createdAt,
         }).returning({ id: invoices.id });
