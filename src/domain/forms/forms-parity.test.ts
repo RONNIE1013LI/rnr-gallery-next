@@ -20,7 +20,6 @@ describe("forms source parity", () => {
     expect(FORM_LIST_COLUMNS.map((column) => column.label)).toEqual([
       "Submitted Time",
       "Ref No.",
-      "Web Order No.",
       "Size",
       "Urgent?",
       "DlvryDate",

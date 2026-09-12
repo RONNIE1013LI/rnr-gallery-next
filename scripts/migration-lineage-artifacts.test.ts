@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -48,6 +48,47 @@ function sha256(path: string): string {
 }
 
 describe("migration lineage artifacts", () => {
+  it("keeps every snapshot in a single connected non-branching chain", () => {
+    const snapshots = readdirSync("drizzle/meta")
+      .filter((name) => name.endsWith("_snapshot.json"))
+      .map((name) => loadJson<Snapshot>(`drizzle/meta/${name}`));
+    expect(new Set(snapshots.map(({ id }) => id)).size).toBe(snapshots.length);
+    expect(new Set(snapshots.map(({ prevId }) => prevId)).size).toBe(snapshots.length);
+    const visited = new Set<string>();
+    let parent = "00000000-0000-0000-0000-000000000000";
+    for (let index = 0; index < snapshots.length; index++) {
+      const next = snapshots.find(({ prevId }) => prevId === parent);
+      expect(next, `missing child after ${parent}`).toBeDefined();
+      expect(visited.has(next!.id)).toBe(false);
+      visited.add(next!.id);
+      parent = next!.id;
+    }
+    expect(visited.size).toBe(snapshots.length);
+  });
+
+  it("extends 0064 only with the photo metadata column defined by 0065 SQL", () => {
+    const previous = loadJson<Snapshot>("drizzle/meta/0064_snapshot.json");
+    const current = loadJson<Snapshot>("drizzle/meta/0065_snapshot.json");
+    expect(current.prevId).toBe(previous.id);
+    expect(current.tables["public.order_items"].columns.photo_metadata).toEqual({
+      name: "photo_metadata", type: "jsonb", primaryKey: false,
+      notNull: true, default: "'[]'::jsonb",
+    });
+    const normalized = structuredClone(current);
+    normalized.id = previous.id;
+    normalized.prevId = previous.prevId;
+    delete normalized.tables["public.order_items"].columns.photo_metadata;
+    // Drizzle regenerated whitespace in this equivalent SQL expression.
+    const constraint = "customer_service_conversation_identities_channel_kind_valid";
+    for (const snapshot of [normalized, previous]) {
+      const check = snapshot.tables["public.customer_service_conversation_identities"].checkConstraints[constraint];
+      snapshot.tables["public.customer_service_conversation_identities"].checkConstraints[constraint] = {
+        ...check, value: check.value.replace(/\s+/g, " "),
+      };
+    }
+    expect(normalized).toEqual(previous);
+  });
+
   it("extends only the two wall banner product checks in migration 0064", () => {
     const previous = loadJson<Snapshot>("drizzle/meta/0063_snapshot.json");
     const current = loadJson<Snapshot>("drizzle/meta/0064_snapshot.json");

@@ -227,10 +227,11 @@ describe("ProductionJobForm", () => {
         lineTotalInclGstCents: 15_000,
       }],
     };
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ invoice: persistedInvoice }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
+    const fetchMock = vi.fn().mockImplementation(async (url: string) => new Response(JSON.stringify(
+      url === `/api/admin/invoices/${invoiceId}/email`
+        ? { attempt: null }
+        : { invoice: persistedInvoice },
+    ), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<ExistingManualEditor
@@ -254,7 +255,8 @@ describe("ProductionJobForm", () => {
     expect(download.compareDocumentPosition(customerAddress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(dialog).getByRole("link", { name: "Download PDF" })).toBe(download);
     expect(within(dialog.querySelector("header")!).getByRole("link", { name: "Download PDF" })).toBe(download);
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledWith(`/api/admin/invoices/${invoiceId}/email`, expect.any(Object));
   });
 
   it("shows manual finance fields only to administrators with finance permission", () => {

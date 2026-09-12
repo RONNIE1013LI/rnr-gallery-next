@@ -1,6 +1,6 @@
 {
   "id": "7592cad9-fcc1-48f0-929a-8cadb8dddaac",
-  "prevId": "4738db94-f86d-4451-8dc6-c3090f51a1dd",
+  "prevId": "e8e922d9-37b3-470e-8016-23dc94a507a5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -11114,7 +11114,8 @@
           "name": "photo_metadata",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'[]'::jsonb"
         },
         "bundle_components": {
           "name": "bundle_components",
