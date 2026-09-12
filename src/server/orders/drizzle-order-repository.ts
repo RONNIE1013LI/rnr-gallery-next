@@ -74,7 +74,8 @@ export function buildOrderItemPhotoMetadata(
   const mainId = item.mainPhotoUploadId;
   const extraIds = new Set(item.extraBackgroundRemovalUploadIds ?? []);
   const charge = item.unitPrice.lines.find((line) => /background-removals$/.test(line.key))?.amountInclGstCents ?? 0;
-  if (item.uploadReferences.length > 0 && !mainId) {
+  // Photo Print Canvas does not offer main-photo/background-removal selections.
+  if (item.productKey !== "photo-print-canvas" && item.uploadReferences.length > 0 && !mainId) {
     throw new AtomicOrderStateError("Photo order item is missing an explicit main photo");
   }
   return Object.freeze(item.uploadReferences.map((fileId, index) => {

@@ -24,6 +24,20 @@ describe("atomic order totals", () => {
 });
 
 describe("order item customisation snapshot", () => {
+  it("persists Photo Print Canvas uploads without requiring background removal selections", () => {
+    const id = randomUUID();
+    const [item] = repriceCart({ version: 1, items: [{
+      clientItemId: randomUUID(), productKey: "photo-print-canvas", sizeKey: "a4",
+      orientation: "landscape", peoplePets: 0, photoSubmissionMethod: "upload",
+      uploadReferences: [id], designText: "", notes: "", neededDate: "2027-08-10",
+      urgentServiceConfirmed: false, quantity: 1,
+    }] }).items;
+    expect(buildOrderItemPhotoMetadata(item, [{ id, originalName: "family.jpg" }]))
+      .toEqual([expect.objectContaining({ fileId: id, originalName: "family.jpg",
+        removeBackground: false, backgroundRemovalIncluded: false,
+        backgroundRemovalChargeInclGstCents: 0 })]);
+  });
+
   it("persists explicit main and paid additional background removal metadata", () => {
     const ids = [randomUUID(), randomUUID(), randomUUID()];
     const item = repriceCart({
@@ -32,6 +46,8 @@ describe("order item customisation snapshot", () => {
       shipping: { country: "NZ", method: "standard" },
     });
     const photos = buildOrderItemPhotoMetadata(item.items[0], ids.map((id, i) => ({ id, originalName: `photo-${i + 1}.png` })));
+    expect(() => buildOrderItemPhotoMetadata({ ...item.items[0], mainPhotoUploadId: undefined }, []))
+      .toThrow("Photo order item is missing an explicit main photo");
     expect(photos.map((photo) => ({ position: photo.position, role: photo.role, removeBackground: photo.removeBackground, backgroundRemovalIncluded: photo.backgroundRemovalIncluded }))).toEqual([
       { position: 1, role: "additional", removeBackground: false, backgroundRemovalIncluded: false },
       { position: 2, role: "main", removeBackground: true, backgroundRemovalIncluded: true },

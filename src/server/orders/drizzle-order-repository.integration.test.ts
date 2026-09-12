@@ -62,7 +62,6 @@ function cart(uploadReferences: string[] = [], neededDate = "2026-08-10") {
       photoSubmissionMethod: uploadReferences.length ? "upload" : "later",
       designText: "Family", notes: "", neededDate,
       urgentServiceConfirmed: false, quantity: 1, uploadReferences,
-      mainPhotoUploadId: uploadReferences[0],
     }],
   }, { now });
 }
