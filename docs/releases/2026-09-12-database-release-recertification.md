@@ -39,9 +39,11 @@ Read-only remote Preview audit deployment `dpl_9WoLm8XfyrML6Lo71VQFmffBiTGc` que
 
 Both use the separate Neon project `withered-dust-81915222`, branch `br-sparkling-feather-a7jo8m7f`, host fingerprint `0ee6cff18e66be371765b572021f9e767a59ca4d4abc8ea20f2afe378a192bfd`. Development DATABASE_URL names `rnr_gallery_test` on that non-Production project. These are distinct targets and do not point at Production.
 
-At `2026-09-12T10:04:48Z`, only GitHub's `DATABASE_ENVIRONMENT_METADATA_FINGERPRINT` was updated using the existing guard's fingerprint function:
+At `2026-09-12T10:07:16Z`, only GitHub's `DATABASE_ENVIRONMENT_METADATA_FINGERPRINT` was updated using the existing guard's fingerprint function and its string normalization of API timestamps:
 
-`7fd295eecaf967aa40225ee7196c979a74f03221b81143cd2a438b4e67829c6a`
+`9f1231768f67efb1838c14a7963468263a77119118b45b4cbf8be01b87ce279b`
+
+The initial 10:04 certification used numeric API timestamps without the guard's string normalization and remained blocked by run `34687499000`. The timestamp representation was corrected; the guard itself was not changed or bypassed.
 
 Reason: **Production database identity re-certified after environment metadata drift; authoritative database identity unchanged.**
 
