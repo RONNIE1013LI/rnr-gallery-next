@@ -235,10 +235,10 @@ describe("official authentication library with PostgreSQL staff security", () =>
       await db.update(schema.staffSecurity).set({ role: "owner" }).where(eq(schema.staffSecurity.userId, actor.id));
     }
   });
-  it("revokes a native session when the staff idle limit expires", async () => {
+  it("revokes a native session only when the native session itself expires", async () => {
     const current = await testAuth.api.getSession({ headers: headers(actor.cookie) });
-    await db.update(schema.staffSessionSecurity).set({ lastActiveAt: new Date(Date.now() - 3600_000) }).where(eq(schema.staffSessionSecurity.sessionId, current!.session.id));
-    await expect(assertStaffSecurity(current!, "view_orders")).rejects.toMatchObject({ reason: "expired" });
+    const expired = { ...current!, session: { ...current!.session, expiresAt: new Date(Date.now() - 1000) } };
+    await expect(assertStaffSecurity(expired, "view_orders")).rejects.toMatchObject({ reason: "expired" });
     expect(await testAuth.api.getSession({ headers: headers(actor.cookie) })).toBeNull();
     const authentication = await testAuth.api.generatePasskeyAuthenticationOptions({ asResponse: true });
     const options = await authentication.json();

@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import { getDatabase } from "@/server/db/client";
 import { adminAuditLogs, staffSecurity, staffSecurityPolicy, user } from "@/server/db/schema";
 import { STAFF_ROLES, type StaffRole } from "./staff-security-policy";

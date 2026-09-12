@@ -47,15 +47,15 @@ describe("staff security policy", () => {
     expect(evaluateStaffSession({ ...state, enabled: false }, now)).toBe("disabled");
     expect(evaluateStaffSession({ ...state, expiresAt: now }, now)).toBe("disabled");
   });
-  it("rejects absolute and idle expiry", () => {
-    expect(evaluateStaffSession({ ...state, sessionCreatedAt: now - 12 * 3600_000, rolloutAt: now - 24 * 3600_000 }, now)).toBe("expired");
-    expect(evaluateStaffSession({ ...state, lastActiveAt: now - 3600_000 }, now)).toBe("expired");
+  it("does not impose the withdrawn absolute or idle staff limits", () => {
+    expect(evaluateStaffSession({ ...state, sessionCreatedAt: now - 12 * 3600_000, rolloutAt: now - 24 * 3600_000 }, now)).toBe("allowed");
+    expect(evaluateStaffSession({ ...state, lastActiveAt: now - 3600_000 }, now)).toBe("allowed");
     expect(evaluateStaffSession({ ...state, sessionExpiresAt: now }, now)).toBe("expired");
   });
-  it("preserves pre-rollout sessions only within a bounded transition window", () => {
+  it("preserves pre-rollout sessions until the native session expires", () => {
     const old = { ...state, sessionCreatedAt: now - 86400_000, rolloutAt: now - 1000, mfaAt: null };
     expect(evaluateStaffSession(old, now)).toBe("allowed");
-    expect(evaluateStaffSession({ ...old, rolloutAt: now - 12 * 3600_000 }, now)).toBe("expired");
+    expect(evaluateStaffSession({ ...old, rolloutAt: now - 12 * 3600_000 }, now)).toBe("allowed");
   });
   it("requires a recent strong factor for elevated operations, including old sessions", () => {
     expect(evaluateStaffSession(state, now, true)).toBe("step_up_required");

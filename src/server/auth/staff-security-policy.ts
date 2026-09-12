@@ -3,8 +3,6 @@ import { ADMIN_PERMISSION_KEYS } from "./admin-permissions";
 
 export const STAFF_ROLES = ["owner", "admin", "staff", "customer_service", "designer", "production", "temporary"] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
-export const STAFF_ABSOLUTE_MS = 12 * 3600_000;
-export const STAFF_IDLE_MS = 3600_000;
 export const STAFF_ELEVATION_MS = 5 * 60_000;
 
 const grants: Record<Exclude<StaffRole, "owner">, readonly string[]> = {
@@ -41,8 +39,10 @@ export function evaluateStaffSession(state: StaffSessionState, now: number, elev
   const timestamps = [now, state.sessionCreatedAt, state.sessionExpiresAt, state.lastActiveAt, state.rolloutAt];
   if (timestamps.some((time) => !Number.isFinite(time))) return "expired";
   const grandfathered = state.sessionCreatedAt < state.rolloutAt;
-  const absoluteStart = grandfathered ? state.rolloutAt : state.sessionCreatedAt;
-  if (state.sessionExpiresAt <= now || now - absoluteStart >= STAFF_ABSOLUTE_MS || now - state.lastActiveAt >= STAFF_IDLE_MS) return "expired";
+  // The native Better Auth session expiry is the sole ordinary session lifetime.
+  // Do not impose a second absolute or idle timeout on staff sessions: it caused
+  // active operators to be signed out while viewing orders or replying to customers.
+  if (state.sessionExpiresAt <= now) return "expired";
   const strong = state.mfaAt !== null && Number.isFinite(state.mfaAt) && state.mfaAt <= now;
   if (!strong && !grandfathered && state.mfaRequired !== false) return "mfa_required";
   if (elevated && (!strong || state.elevatedAt === null || !Number.isFinite(state.elevatedAt) || state.elevatedAt > now || now - state.elevatedAt >= STAFF_ELEVATION_MS)) return "step_up_required";
