@@ -58,7 +58,9 @@ describe("admin content service", () => {
     const storefront = contentDefinitions.filter((entry) => entry.surface === "storefront");
     const email = contentDefinitions.filter((entry) => entry.surface === "email");
     expect(storefront.some((entry) => entry.key.startsWith("email."))).toBe(false);
-    expect(email).toHaveLength(18);
+    expect(email).toHaveLength(21);
+    expect(email.filter((entry) => entry.key.startsWith("email.invoice_sent.")).map((entry) => entry.key))
+      .toEqual(["email.invoice_sent.subject", "email.invoice_sent.body", "email.invoice_sent.action_label"]);
     expect(email.every((entry) => entry.key.startsWith("email."))).toBe(true);
     expect(contentDefinitions.filter((entry) => entry.surface === "system").map((entry) => entry.key))
       .toEqual(["advertising.meta.enabled"]);
