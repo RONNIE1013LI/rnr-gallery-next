@@ -168,8 +168,7 @@ export function ProductionJobDetail({
     );
   }
   return (
-    <div className={styles.orderDetailLayout}>
-      <div className={styles.detailMain}>
+    <div className={styles.productionDetail}>
         <section className={styles.summaryGrid}>
           <div><span>Status</span><strong>{label(detail.status)}</strong></div>
           <div><span>Payment</span><strong>{label(detail.paymentStatus)}</strong></div>
@@ -177,6 +176,8 @@ export function ProductionJobDetail({
           <div><span>Assigned</span><strong>{detail.assignee?.name ?? "Unassigned"}</strong></div>
         </section>
 
+      <div className={styles.productionWorkspace} data-has-actions={canUpdateJob}>
+      <div className={styles.detailMain}>
         {job.source === "web" && job.orderId ? <section className={styles.authorityBanner}><div><strong>Linked online order</strong><p>Checkout pricing, payment and order status remain authoritative in {detail.orderNumber}.</p></div></section> : null}
 
         <section className={styles.panel}>
@@ -195,6 +196,19 @@ export function ProductionJobDetail({
             <div className={styles.orderItemHeading}><div><h3>{item.productTitle}</h3><p>{item.sizeLabel}</p></div><strong>Qty {item.quantity}</strong></div>
           </article>)}
         </section>
+
+        {canViewFiles ? <ProductionFilesPanel
+          jobId={job.id}
+          files={files}
+          notifications={notifications}
+          revision={revision}
+          canManageFinance={canManageFinance}
+          jobApiBase={jobApiBase}
+          notificationRetryEndpoint={notificationRetryEndpoint}
+          canUploadFiles={canUploadFiles}
+          canReviewProofs={canReviewProofs}
+          canRetryNotifications={canRetryNotifications}
+        /> : null}
 
         {detail.finance ? <section className={styles.panel}>
           <div className={styles.panelHeading}><h2>Payment</h2><span>{job.source === "web" ? "Read-only online total" : "Administrator only"}</span></div>
@@ -239,19 +253,6 @@ export function ProductionJobDetail({
           </dl>
         </section>
 
-        {canViewFiles ? <ProductionFilesPanel
-          jobId={job.id}
-          files={files}
-          notifications={notifications}
-          revision={revision}
-          canManageFinance={canManageFinance}
-          jobApiBase={jobApiBase}
-          notificationRetryEndpoint={notificationRetryEndpoint}
-          canUploadFiles={canUploadFiles}
-          canReviewProofs={canReviewProofs}
-          canRetryNotifications={canRetryNotifications}
-        /> : null}
-
         <section className={styles.panel}>
           <div className={styles.panelHeading}><h2>Internal Production Status</h2><span>{label(detail.status)}</span></div>
           <dl className={styles.definitionGrid}>
@@ -279,13 +280,6 @@ export function ProductionJobDetail({
           <summary><strong>Legacy eTeams history</strong><span>{legacyFields.length} retained field{legacyFields.length === 1 ? "" : "s"}</span></summary>
           <dl className={styles.definitionGrid}>{legacyFields.map((field) => <div key={field.id}><dt>{field.label}</dt><dd className={styles.preWrapText}>{field.value || "—"}</dd></div>)}</dl>
         </details> : null}
-
-        {detail.finance ? <InvoicePanel jobId={job.id} jobApiBase={jobApiBase} invoicePdfBase={invoicePdfBase} canEdit={canManageFinance} /> : null}
-
-        <section className={styles.panel}>
-          <h2>Activity</h2>
-          {detail.audit.length ? <div className={styles.timeline}>{detail.audit.map((entry) => <article key={entry.id}><strong>{label(entry.action.replaceAll(".", "_"))}</strong><span>{entry.actorEmail}</span><small>{dateTime.format(entry.createdAt)}</small></article>)}</div> : <p className={styles.mutedText}>No production updates recorded after creation.</p>}
-        </section>
       </div>
 
       {canUpdateJob ? <aside className={styles.detailAside}>
@@ -328,6 +322,12 @@ export function ProductionJobDetail({
           orderBasePath={orderBasePath}
         />
       </aside> : null}
+      </div>
+        {detail.finance ? <InvoicePanel jobId={job.id} jobApiBase={jobApiBase} invoicePdfBase={invoicePdfBase} canEdit={canManageFinance} /> : null}
+        <section className={styles.panel}>
+          <h2>Activity</h2>
+          {detail.audit.length ? <div className={styles.timeline}>{detail.audit.map((entry) => <article key={entry.id}><strong>{label(entry.action.replaceAll(".", "_"))}</strong><span>{entry.actorEmail}</span><small>{dateTime.format(entry.createdAt)}</small></article>)}</div> : <p className={styles.mutedText}>No production updates recorded after creation.</p>}
+        </section>
     </div>
   );
 }

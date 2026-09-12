@@ -3086,6 +3086,288 @@
   text-transform: uppercase;
 }
 
+/* Production detail owns its layout; the invoice is a full-width work surface. */
+.content:has(.productionDetailPage) {
+  width: 100%;
+  max-width: 1500px;
+  padding: 28px 24px 64px;
+}
+
+.productionDetailPage,
+.productionDetail {
+  width: 100%;
+  min-width: 0;
+}
+
+.productionDetail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.productionWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 24px;
+  align-items: start;
+  min-width: 0;
+}
+
+.productionWorkspace[data-has-actions="false"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.productionDetail .detailMain,
+.productionDetail .actionStack {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+
+.productionDetail .detailMain > *,
+.productionDetail .detailAside,
+.productionDetail .panel {
+  min-width: 0;
+}
+
+.productionDetail .detailAside {
+  position: static;
+}
+
+.productionDetail .summaryGrid {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: var(--admin-surface);
+}
+
+.productionDetail .summaryGrid > div {
+  padding: 16px 20px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.productionDetail .summaryGrid > div + div {
+  border-left: 1px solid var(--admin-border);
+}
+
+.productionDetail .summaryGrid strong {
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.productionDetail :is(label, small, dt, .mutedText, .panelHeading > span, .summaryGrid span) {
+  font-size: 13px;
+}
+
+.productionDetail :is(input, select, textarea, button) {
+  font-size: 14px;
+}
+
+.productionDetail :is(input, select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.productionDetail .orderTotals strong {
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.productionDetail .definitionGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.productionDetail .twoColumnPanels {
+  gap: 20px;
+}
+
+.productionDetail .milestoneGrid > div {
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--admin-border);
+  background: none;
+}
+
+.productionDetail .persistedInvoiceWorkspace {
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 24px;
+  min-width: 0;
+}
+
+.productionDetail .persistedInvoiceEditor {
+  grid-template-columns: minmax(0, 1fr);
+  max-height: 840px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-right: 12px;
+  gap: 20px;
+}
+
+.productionDetail .invoiceMetaGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.productionDetail .invoiceAddressGrid,
+.productionDetail .invoiceBottomGrid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.productionDetail .invoiceAddressGrid fieldset {
+  min-width: 0;
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid var(--admin-border);
+  border-radius: 0;
+  background: none;
+}
+
+.productionDetail .invoiceAddressGrid legend,
+.productionDetail .invoiceItem legend {
+  padding-left: 0;
+  font-size: 13px;
+}
+
+.productionDetail .invoiceItem {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 16px 0;
+  border-width: 1px 0 0;
+  border-radius: 0;
+}
+
+.productionDetail .invoiceItem > label:first-of-type,
+.productionDetail .invoiceDescription {
+  grid-column: 1 / -1;
+}
+
+.productionDetail .invoiceActions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.productionDetail .invoiceActions button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.productionDetail .persistedInvoicePreview {
+  position: sticky;
+  top: 88px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.productionDetail .invoicePaper {
+  width: 100%;
+  min-height: 840px;
+  padding: 24px;
+  gap: 24px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.productionDetail .invoicePaperHeader,
+.productionDetail .invoicePaperAddresses,
+.productionDetail .invoicePaperBottom {
+  gap: 20px;
+}
+
+.productionDetail .invoicePaperMeta dl {
+  gap: 12px;
+}
+
+.productionDetail .invoicePaperMeta dl div {
+  display: grid;
+  gap: 2px;
+}
+
+.productionDetail .invoicePaperItems {
+  table-layout: fixed;
+}
+
+.productionDetail .invoicePaperItems th:nth-child(1) { width: 22%; }
+.productionDetail .invoicePaperItems th:nth-child(2) { width: 26%; }
+.productionDetail .invoicePaperItems th:nth-child(3) { width: 8%; }
+.productionDetail .invoicePaperItems th:nth-child(4),
+.productionDetail .invoicePaperItems th:nth-child(5) { width: 22%; }
+
+.productionDetail .invoicePaperItems :is(th, td) {
+  padding: 8px 4px;
+}
+
+.productionDetail .invoicePaperItems :is(th, td):nth-child(n + 3) {
+  white-space: nowrap;
+}
+
+.productionDetail .invoicePaperBottom {
+  flex-direction: column;
+}
+
+.productionDetail .invoicePaperBottom > div {
+  max-width: none;
+}
+
+.productionDetail .invoicePaperBottom dl {
+  min-width: 0;
+  width: 100%;
+}
+
+.productionDetail .invoicePaper footer {
+  font-size: 13px;
+}
+
+@media (max-width: 1150px) {
+  .productionWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .productionDetail .persistedInvoiceWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .productionDetail .persistedInvoiceEditor {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .productionDetail .persistedInvoicePreview {
+    position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .content:has(.productionDetailPage) {
+    padding: 20px 16px 40px;
+  }
+
+  .productionDetail .summaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .productionDetail .summaryGrid > div {
+    padding: 14px;
+  }
+
+  .productionDetail .twoColumnPanels,
+  .productionDetail .invoiceMetaGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .productionDetail .persistedInvoicePreview {
+    padding: 8px;
+    overflow-x: auto;
+  }
+
+  .productionDetail .invoicePaper {
+    min-width: 480px;
+  }
+}
+
 .orderDetailLayout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);

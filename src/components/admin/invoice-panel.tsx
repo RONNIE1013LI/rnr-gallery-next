@@ -361,8 +361,6 @@ export function InvoicePanel({
 
   return (
     <section className={`${styles.panel} ${styles.invoicePanel}`}>
-      <div className={styles.persistedInvoiceWorkspace}>
-        <div className={styles.persistedInvoiceEditor}>
       <div className={styles.panelHeading}>
         <div><h2>Invoice</h2><strong>{invoice.invoiceNumber}</strong></div>
         <span className={styles.invoiceStatus} data-status={invoice.status}>{invoice.status === "draft" ? "Draft" : invoice.status === "issued" ? "Issued" : "Void"}</span>
@@ -372,6 +370,8 @@ export function InvoicePanel({
         {pdfActions}
       </div> : null}
 
+      <div className={styles.persistedInvoiceWorkspace}>
+        <div className={styles.persistedInvoiceEditor} role="region" aria-label="Invoice editor controls" tabIndex={0}>
       <div className={styles.invoiceMetaGrid}>
         <label><span>Invoice date</span><input type="date" value={draft.invoiceDate} onChange={(event) => updateField("invoiceDate", event.target.value)} disabled={locked} /></label>
         <label><span>Due date</span><input type="date" value={draft.dueDate} onChange={(event) => updateField("dueDate", event.target.value)} disabled={locked} /></label>
@@ -413,7 +413,11 @@ export function InvoicePanel({
           </dl>
         </div>
       </div>
-
+        </div>
+        <div className={styles.persistedInvoicePreview}>
+          <InvoicePreview invoiceNumber={invoice.invoiceNumber} draft={draft} currency={invoice.currency} gstRateBasisPoints={invoice.gstRateBasisPoints} totals={calculated} />
+        </div>
+      </div>
       <div className={styles.invoiceActions}>
         {!downloadAtTop && !hideDownload ? pdfActions : null}
         {canEdit ? <button type="button" className={styles.secondaryAdminButton} onClick={() => { setEmailRecipient(invoice.customerEmail); setEmailOpen(true); }}>{emailLatest ? "Resend invoice" : "Send invoice by email"}</button> : null}
@@ -424,11 +428,6 @@ export function InvoicePanel({
       {invoice.status === "void" ? <p className={styles.authorityBanner}><strong>Voided:</strong> {invoice.voidReason}</p> : null}
       <p className={styles.formFeedback} aria-live="polite">{feedback}</p>
       {emailOpen ? <div role="dialog" aria-modal="true" className={styles.modalBackdrop}><div className={styles.modalCard}><h3>{emailLatest ? "Resend invoice" : "Send invoice by email"}</h3><label><span>Recipient</span><input type="email" value={emailRecipient} onChange={(event) => setEmailRecipient(event.target.value)} /></label><label><span>Subject (optional)</span><input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} /></label><label><span>Message (optional)</span><textarea rows={8} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} placeholder="Use the published invoice template" /></label><p className={styles.mutedText}>Invoice {invoice.invoiceNumber} PDF will be attached. Order and totals are read-only.</p><div className={styles.invoiceActions}><button type="button" className={styles.secondaryAdminButton} onClick={() => setEmailOpen(false)} disabled={emailBusy}>Cancel</button><button type="button" onClick={() => void sendInvoiceEmail()} disabled={emailBusy}>{emailBusy ? "Sending…" : emailLatest ? "Resend invoice" : "Send invoice"}</button></div></div></div> : null}
-        </div>
-        <div className={styles.persistedInvoicePreview}>
-          <InvoicePreview invoiceNumber={invoice.invoiceNumber} draft={draft} currency={invoice.currency} gstRateBasisPoints={invoice.gstRateBasisPoints} totals={calculated} />
-        </div>
-      </div>
     </section>
   );
 }

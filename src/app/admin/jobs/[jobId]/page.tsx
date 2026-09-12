@@ -33,7 +33,7 @@ export default async function ProductionJobDetailPage({ params }: Props) {
   ]);
   if (!detail) notFound();
   return (
-    <section className={styles.pageSection}>
+    <section className={`${styles.pageSection} ${styles.productionDetailPage}`}>
       <header className={styles.pageHeader}>
         <div><nav className={styles.breadcrumbs} aria-label="Breadcrumb"><Link href="/admin">Dashboard</Link><span>/</span><Link href="/admin/jobs">Production</Link><span>/</span><span>{detail.job.jobNumber}</span></nav><h1>{detail.job.jobNumber}</h1><p>{detail.job.source === "web" ? "Automatically created from an online order." : "Manually entered studio work."}</p></div>
         <div className={styles.headerActions}><span className={styles.recordCount}>{detail.job.source === "web" ? "Online" : "Manual"}</span>{detail.job.orderId && canViewOrders ? <Link className={styles.primaryAdminButton} href={`/admin/orders/${detail.job.orderId}`}>Open online order</Link> : null}</div>
