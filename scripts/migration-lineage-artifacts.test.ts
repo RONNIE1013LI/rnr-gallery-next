@@ -71,10 +71,10 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(65);
+    expect(journal.entries).toHaveLength(66);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(65);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(65);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(66);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(66);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -151,6 +151,22 @@ describe("migration lineage artifacts", () => {
     });
     expect(sha256("drizzle/0062_customer_service_conversation_identities.sql")).toBe(
       "eb82b078195e3a55329e78687dd83c9b7743743c1c719527d19735eacd3f7c76",
+    );
+    expect(journal.entries[64]).toMatchObject({
+      idx: 64,
+      when: 1789009722964,
+      tag: "0064_digital_oil_banner_gallery",
+    });
+    expect(sha256("drizzle/0064_digital_oil_banner_gallery.sql")).toBe(
+      "12e8209b66ab9d8864e85cfc1c62b1b48bf7497539a8dfdf39ed35f895546abf",
+    );
+    expect(journal.entries[65]).toMatchObject({
+      idx: 65,
+      when: 1789108916477,
+      tag: "0065_order_item_photo_metadata",
+    });
+    expect(sha256("drizzle/0065_order_item_photo_metadata.sql")).toBe(
+      "ba129717daf4eb373f88a4785867e17274a2f6e470915887ca5d8b3b263506a8",
     );
   });
 
