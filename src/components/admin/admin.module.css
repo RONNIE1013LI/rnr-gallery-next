@@ -3263,8 +3263,8 @@
 
 .productionDetail .invoicePaper {
   box-sizing: border-box;
-  width: min(100%, 794px);
-  min-height: 0;
+  width: 794px;
+  min-height: 1123px;
   aspect-ratio: 210 / 297;
   padding: 24px;
   gap: 24px;
@@ -3366,7 +3366,7 @@
   }
 
   .productionDetail .invoicePaper {
-    min-width: 480px;
+    min-width: 794px;
   }
 }
 
