@@ -5,6 +5,9 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   adminAuditLogs,
+  checkoutSessions,
+  orders,
+  productionJobItems,
   internalNotificationOutbox,
   internalNotificationRecipients,
   internalNotificationSubscriptions,
@@ -40,6 +43,8 @@ const formArtistId = `production-form-artist-${suffix}`;
 const notificationRecipientId = randomUUID();
 const notificationRecipientEmail = `production-notifications-${suffix}@example.test`;
 const jobIds: string[] = [];
+const orderIds: string[] = [];
+const checkoutIds: string[] = [];
 
 describe("drizzle production job repository", () => {
   beforeAll(async () => {
@@ -89,8 +94,67 @@ describe("drizzle production job repository", () => {
       .where(eq(internalNotificationOutbox.recipientId, notificationRecipientId));
     await database.delete(internalNotificationRecipients)
       .where(eq(internalNotificationRecipients.id, notificationRecipientId));
+    if (orderIds.length) await database.delete(orders).where(inArray(orders.id, orderIds));
+    if (checkoutIds.length) await database.delete(checkoutSessions).where(inArray(checkoutSessions.id, checkoutIds));
     await database.delete(user).where(inArray(user.id, [actorId, artistId, formArtistId]));
     await pool.end();
+  });
+
+  it("saves shared Web editor fields and reads them back without changing checkout or products", async () => {
+    const checkoutId = randomUUID();
+    const orderId = randomUUID();
+    const jobId = randomUUID();
+    checkoutIds.push(checkoutId);
+    orderIds.push(orderId);
+    jobIds.push(jobId);
+    await database.insert(checkoutSessions).values({
+      id: checkoutId, tokenDigest: randomUUID(), expiresAt: new Date("2099-01-01"),
+    });
+    await database.insert(orders).values({
+      id: orderId, orderNumber: `WEB-${suffix}`, checkoutSessionId: checkoutId,
+      checkoutSessionVersion: 1, idempotencyKey: randomUUID(),
+      customerEmail: "web@example.test",
+      pricingSnapshot: {} as (typeof orders.$inferInsert)["pricingSnapshot"],
+      deliveryMethod: "pickup", shippingServiceCode: "pickup", shippingServiceName: "Pickup",
+      productSubtotalExGstCents: 20000, productGstCents: 3000, productTotalInclGstCents: 23000,
+      shippingExGstCents: 0, shippingGstCents: 0, shippingTotalInclGstCents: 0,
+      totalExGstCents: 20000, totalGstCents: 3000, totalInclGstCents: 23000,
+      paymentStatus: "paid", fulfilmentStatus: "new",
+    });
+    await database.insert(productionJobs).values({
+      id: jobId, jobNumber: `WEB-${suffix}`, source: "web", orderId,
+      customerName: "Web Customer", customerEmail: "web@example.test", customerPhone: "0210000000",
+      customerSource: "web", neededDate: "2026-09-20", deliveryMethod: "pickup",
+      createdAt: new Date("2026-09-13T00:00:00.000Z"), updatedAt: new Date("2026-09-13T00:00:00.000Z"),
+    });
+    await database.insert(productionJobItems).values([
+      { jobId, position: 0, productTitle: "Canvas", sizeLabel: "A1", quantity: 2, designText: "Original artwork" },
+      { jobId, position: 1, productTitle: "Banner", sizeLabel: "85 × 200 cm", quantity: 1, notes: "Original instructions" },
+    ]);
+    const originalOrders = await database.select().from(orders).where(eq(orders.id, orderId));
+    const originalItems = await database.select().from(productionJobItems).where(eq(productionJobItems.jobId, jobId));
+    const service = createProductionJobService(createDrizzleProductionJobRepository(database));
+    for (const deliveryMethod of ["post", "pickup"] as const) {
+      const before = await getProductionJobDetail(database, jobId, { canViewFinance: true });
+      expect(before).not.toBeNull();
+      await expect(service.update({ userId: actorId, email: `manager-${suffix}@example.test` }, {
+        jobId, idempotencyKey: randomUUID(), expectedUpdatedAt: before!.job.updatedAt.toISOString(),
+        customerSource: "web", urgent: true, neededDate: "2026-09-25", deliveryMethod,
+        deliveryAddress: deliveryMethod === "post" ? "1 Test Street" : "",
+        assignedUserId: formArtistId, designRequirements: "Shared editor design note",
+        internalNotes: `Saved ${deliveryMethod}`, milestones: { fileSent: true },
+      }, { canUpdateFinance: true })).resolves.toBe("updated");
+      const refreshed = await getProductionJobDetail(database, jobId, { canViewFinance: true });
+      expect(refreshed).toMatchObject({
+        job: { source: "web", customerName: "Web Customer", customerEmail: "web@example.test",
+          urgent: true, neededDate: "2026-09-25", deliveryMethod, assignedUserId: formArtistId,
+          designRequirements: "Shared editor design note", internalNotes: `Saved ${deliveryMethod}` },
+        paymentStatus: "paid",
+      });
+      expect(refreshed!.job.fileSentAt).not.toBeNull();
+      expect(await database.select().from(orders).where(eq(orders.id, orderId))).toEqual(originalOrders);
+      expect(await database.select().from(productionJobItems).where(eq(productionJobItems.jobId, jobId))).toEqual(originalItems);
+    }
   });
 
   it("creates, lists, redacts and updates one manual production job atomically", async () => {
