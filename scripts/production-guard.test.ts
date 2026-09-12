@@ -116,6 +116,90 @@ function validSnapshot(): ProductionGuardSnapshot {
   };
 }
 
+const stagingGuardEnv = {
+  VERCEL_TOKEN: "test-token",
+  VERCEL_ORG_ID: "team_test",
+  VERCEL_PROJECT_ID: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+  PRODUCTION_DATABASE_TARGET_FINGERPRINT: "1".repeat(64),
+  PREVIEW_DATABASE_TARGET_FINGERPRINT:
+    "a6a953b4a05ac513468276f6d0283cc7dffc59554f0aa415dd8fded304a30bb3",
+  DATABASE_ENVIRONMENT_METADATA_FINGERPRINT:
+    "3e015eeb1aabea6200e10e3723c38203ec752cee9405fb47d51c408dff1177ca",
+};
+
+function stagingIsolationFetcher(pagination: "absent" | null | string = "absent") {
+  return (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/v9/projects/prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO") {
+      return Response.json({
+        id: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+        name: "rnr-gallery-staging",
+        link: { productionBranch: "main" },
+        targets: {
+          production: {
+            id: "dpl_production",
+            readyState: "READY",
+            alias: ["rnrgallery.com"],
+            meta: { githubCommitRef: "main", githubCommitSha: "a".repeat(40) },
+          },
+        },
+      });
+    }
+    if (url.pathname.endsWith("/domains/staging.rnrgallery.com")) {
+      return Response.json({
+        name: "staging.rnrgallery.com",
+        apexName: "rnrgallery.com",
+        projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+        gitBranch: "codex/invoice-email-release-20260912",
+        verified: true,
+      });
+    }
+    if (url.pathname === "/v4/aliases/staging.rnrgallery.com") {
+      return Response.json({
+        alias: "staging.rnrgallery.com",
+        created: "2026-09-12T10:00:00.000Z",
+        uid: "alias_staging",
+        projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+        deploymentId: "dpl_staging",
+      });
+    }
+    if (url.pathname === "/v13/deployments/dpl_staging") {
+      return Response.json({
+        id: "dpl_staging",
+        projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
+        target: null,
+        readyState: "READY",
+        meta: {
+          githubCommitRef: "codex/invoice-email-release-20260912",
+          githubCommitSha: "b".repeat(40),
+        },
+      });
+    }
+    if (url.pathname.endsWith("/env")) {
+      return Response.json({
+        envs: [
+          {
+            id: "7X3hipGyZA6v6xEA",
+            key: "DATABASE_URL",
+            target: ["preview"],
+            type: "encrypted",
+            updatedAt: 1788,
+          },
+          {
+            id: "prod-db",
+            key: "DATABASE_URL",
+            target: ["production"],
+            type: "encrypted",
+            updatedAt: 1787,
+          },
+        ],
+        ...(pagination === "absent" ? {} : { pagination: { next: pagination } }),
+      });
+    }
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+}
+
 describe("Production guard invariants", () => {
   it("passes a fully aligned main Production snapshot", () => {
     const result = evaluateProductionGuard(validSnapshot());
@@ -357,86 +441,9 @@ describe("Production guard network boundary", () => {
 
 describe("Vercel Production adapter", () => {
   it("collects Staging domain, alias, Preview deployment, and certified database metadata", async () => {
-    const fetcher = async (input: string | URL | Request) => {
-      const url = new URL(String(input));
-      if (url.pathname === "/v9/projects/prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO") {
-        return Response.json({
-          id: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
-          name: "rnr-gallery-staging",
-          link: { productionBranch: "main" },
-          targets: {
-            production: {
-              id: "dpl_production",
-              readyState: "READY",
-              alias: ["rnrgallery.com"],
-              meta: { githubCommitRef: "main", githubCommitSha: "a".repeat(40) },
-            },
-          },
-        });
-      }
-      if (url.pathname.endsWith("/domains/staging.rnrgallery.com")) {
-        return Response.json({
-          name: "staging.rnrgallery.com",
-          apexName: "rnrgallery.com",
-          projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
-          gitBranch: "codex/invoice-email-release-20260912",
-          verified: true,
-        });
-      }
-      if (url.pathname === "/v4/aliases/staging.rnrgallery.com") {
-        return Response.json({
-          alias: "staging.rnrgallery.com",
-          created: "2026-09-12T10:00:00.000Z",
-          uid: "alias_staging",
-          projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
-          deploymentId: "dpl_staging",
-        });
-      }
-      if (url.pathname === "/v13/deployments/dpl_staging") {
-        return Response.json({
-          id: "dpl_staging",
-          projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
-          target: null,
-          readyState: "READY",
-          meta: {
-            githubCommitRef: "codex/invoice-email-release-20260912",
-            githubCommitSha: "b".repeat(40),
-          },
-        });
-      }
-      if (url.pathname.endsWith("/env")) {
-        return Response.json({ envs: [
-          {
-            id: "7X3hipGyZA6v6xEA",
-            key: "DATABASE_URL",
-            target: ["preview"],
-            type: "encrypted",
-            updatedAt: 1788,
-          },
-          {
-            id: "prod-db",
-            key: "DATABASE_URL",
-            target: ["production"],
-            type: "encrypted",
-            updatedAt: 1787,
-          },
-        ] });
-      }
-      return new Response(null, { status: 404 });
-    };
-
     const snapshot = await collectStagingIsolationSnapshot({
-      env: {
-        VERCEL_TOKEN: "test-token",
-        VERCEL_ORG_ID: "team_test",
-        VERCEL_PROJECT_ID: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
-        PRODUCTION_DATABASE_TARGET_FINGERPRINT: "1".repeat(64),
-        PREVIEW_DATABASE_TARGET_FINGERPRINT:
-          "a6a953b4a05ac513468276f6d0283cc7dffc59554f0aa415dd8fded304a30bb3",
-        DATABASE_ENVIRONMENT_METADATA_FINGERPRINT:
-          "3e015eeb1aabea6200e10e3723c38203ec752cee9405fb47d51c408dff1177ca",
-      },
-      fetcher: fetcher as typeof fetch,
+      env: stagingGuardEnv,
+      fetcher: stagingIsolationFetcher(null),
     });
 
     expect(snapshot.deployment).toMatchObject({
@@ -446,6 +453,22 @@ describe("Vercel Production adapter", () => {
     expect(snapshot.productionDeploymentId).toBe("dpl_production");
     expect(snapshot.databaseEnvironmentMetadata.actual)
       .toBe("3e015eeb1aabea6200e10e3723c38203ec752cee9405fb47d51c408dff1177ca");
+  });
+
+  it("accepts an environment response without pagination metadata", async () => {
+    await expect(collectStagingIsolationSnapshot({
+      env: stagingGuardEnv,
+      fetcher: stagingIsolationFetcher(),
+    })).resolves.toEqual(expect.objectContaining({
+      previewDatabaseEnvironment: expect.objectContaining({ id: "7X3hipGyZA6v6xEA" }),
+    }));
+  });
+
+  it("fails closed when Vercel reports another environment metadata page", async () => {
+    await expect(collectStagingIsolationSnapshot({
+      env: stagingGuardEnv,
+      fetcher: stagingIsolationFetcher("next-page"),
+    })).rejects.toThrow(/environment metadata pagination is incomplete/i);
   });
 
   it("accepts only the certified pinned Preview Staging deployment", () => {

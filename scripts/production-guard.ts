@@ -654,6 +654,12 @@ function targetArray(value: unknown): EnvironmentTarget[] {
 
 function parseEnvironmentVariables(value: unknown): ProductionGuardEnvironmentVariable[] {
   const response = record(value, "Vercel environment metadata");
+  const pagination = response.pagination === undefined
+    ? undefined
+    : record(response.pagination, "Vercel environment metadata pagination");
+  if (pagination?.next !== undefined && pagination.next !== null) {
+    throw new Error("Vercel environment metadata pagination is incomplete");
+  }
   return (Array.isArray(response.envs) ? response.envs : [])
     .map((item): ProductionGuardEnvironmentVariable => {
       const variable = record(item, "Vercel environment variable metadata");
