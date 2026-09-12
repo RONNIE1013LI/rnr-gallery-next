@@ -120,7 +120,7 @@ describe("HomepageV3", () => {
     );
     expect(stylesheet).toContain("--v3-backdrop-width: 90rem;");
     expect(stylesheet).toMatch(
-      /\.heroGrid\s*\{[^}]*width:\s*100%[^}]*margin-inline:\s*0[^}]*grid-template-columns:\s*max\(2rem,\s*calc\(\(100%\s*-\s*var\(--v3-content-width\)\)\s*\/\s*2\)\)\s+minmax\(0,\s*min\(33\.16375rem,\s*calc\(43%\s*-\s*3\.17125rem\)\)\)\s+minmax\(0,\s*1fr\)\s+max\(0rem,\s*calc\(\(100%\s*-\s*var\(--v3-backdrop-width\)\)\s*\/\s*2\)\)[^}]*align-items:\s*stretch[^}]*gap:\s*0/,
+      /\.heroGrid\s*\{[^}]*width:\s*100%[^}]*margin-inline:\s*0[^}]*grid-template-columns:\s*max\(2rem,\s*calc\(\(100%\s*-\s*var\(--v3-content-width\)\)\s*\/\s*2\)\)\s+minmax\(0,\s*min\(26\.25rem,\s*calc\(33%\s*-\s*3\.17125rem\)\)\)\s+minmax\(0,\s*1fr\)\s+max\(0rem,\s*calc\(\(100%\s*-\s*var\(--v3-backdrop-width\)\)\s*\/\s*2\)\)[^}]*align-items:\s*stretch[^}]*gap:\s*0/,
     );
     expect(stylesheet).toMatch(/\.heroCopy\s*\{[^}]*grid-column:\s*2/);
     expect(stylesheet).toMatch(/\.heroArt\s*\{[^}]*grid-column:\s*3/);
