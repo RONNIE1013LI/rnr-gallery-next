@@ -53,13 +53,13 @@ export function getAdminInvoiceRuntime(database = getDatabase(), provider?: Cust
             actorUserId: actor.userId, actorEmail: actor.email, action: "invoice.email.sent", resourceType: "invoice", resourceId: attempt.invoiceId,
             result: attempt.result, idempotencyKey: attempt.idempotencyKey,
             afterSummary: { jobId: attempt.jobId ?? null, orderNumber: attempt.orderNumber ?? null, source: context.source, trigger: context.trigger, status: attempt.result, sentAt: attempt.createdAt.toISOString(), recipientEmail: attempt.recipientEmail, providerMessageId: attempt.providerMessageId ?? null, errorCode: attempt.errorCode ?? null, subject: attempt.subject, body: attempt.body },
-            requestSource: "admin",
+            requestSource: context.source === "automatic" ? "system" : "admin",
           }));
         },
       });
     },
-    async latestEmailAttempt(invoiceId: string) {
-      const [row] = await database.select({ result: adminAuditLogs.result, afterSummary: adminAuditLogs.afterSummary, actorEmail: adminAuditLogs.actorEmail, createdAt: adminAuditLogs.createdAt }).from(adminAuditLogs).where(and(eq(adminAuditLogs.resourceType, "invoice"), eq(adminAuditLogs.resourceId, invoiceId), eq(adminAuditLogs.action, "invoice.email.sent"), eq(adminAuditLogs.result, "success"))).orderBy(desc(adminAuditLogs.createdAt)).limit(1);
+    async latestEmailAttempt(invoiceId: string, includeFailures = false) {
+      const [row] = await database.select({ result: adminAuditLogs.result, afterSummary: adminAuditLogs.afterSummary, actorEmail: adminAuditLogs.actorEmail, createdAt: adminAuditLogs.createdAt }).from(adminAuditLogs).where(and(eq(adminAuditLogs.resourceType, "invoice"), eq(adminAuditLogs.resourceId, invoiceId), eq(adminAuditLogs.action, "invoice.email.sent"), includeFailures ? undefined : eq(adminAuditLogs.result, "success"))).orderBy(desc(adminAuditLogs.createdAt)).limit(1);
       return row ?? null;
     },
   });

@@ -7,7 +7,10 @@ export const runtime = "nodejs";
 export async function GET(_request: Request, { params }: { params: Promise<{ invoiceId: string }> }) {
   try {
     await requireAdminPermission("view_production_finance");
-    return Response.json({ attempt: await getAdminInvoiceRuntime().latestEmailAttempt((await params).invoiceId) }, { headers: { "Cache-Control": "no-store" } });
+    const invoiceId = (await params).invoiceId;
+    const runtime = getAdminInvoiceRuntime();
+    const [attempt, latestAttempt] = await Promise.all([runtime.latestEmailAttempt(invoiceId), runtime.latestEmailAttempt(invoiceId, true)]);
+    return Response.json({ attempt, latestAttempt }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status });
     return Response.json({ error: "Unable to load invoice email history." }, { status: 500 });

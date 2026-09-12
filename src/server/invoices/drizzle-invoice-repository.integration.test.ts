@@ -169,7 +169,7 @@ describe("drizzle invoice repository", () => {
     expect(voided).toMatchObject({ status: "void", voidReason: "Duplicate invoice" });
 
     const invoiceAudits = await database.select().from(adminAuditLogs).where(and(
-      eq(adminAuditLogs.actorUserId, actorId),
+      eq(adminAuditLogs.resourceId, voided.id),
       eq(adminAuditLogs.resourceType, "invoice"),
     ));
     expect(invoiceAudits.map((entry) => entry.action).sort()).toEqual([
@@ -182,7 +182,7 @@ describe("drizzle invoice repository", () => {
 
 
 describe("automatic manual invoice committed delivery", () => {
-  it.each(["valid", "missing", "provider_failure"])("handles %s and retains manual recovery", async (scenario) => {
+  it.each(["valid", "missing", "provider_failure", "without_preview"])("handles %s and retains manual recovery", async (scenario) => {
     const email = scenario === "missing" ? "" : "persisted@example.test";
     const scheduled: string[] = [];
     const provider = { configured: true, send: vi.fn().mockResolvedValue({ providerMessageId: "auto-test-mail" }) };
@@ -221,6 +221,7 @@ describe("automatic manual invoice committed delivery", () => {
 
       invoiceDraft: { invoiceDate: "2026-09-13", dueDate: "2026-09-20", reference: "DRAFT", customerName: "Test", customerEmail: "invoice-snapshot@example.test", customerAddress: "Test address", deliveryAddress: "Test address", discountCents: 0, notes: "Test", terms: "Test", items: [{ code: "TEST", description: "Test Canvas", quantityMilli: 1000, rateInclGstCents: 23000 }] },
     };
+    if (scenario === "without_preview") delete (input as Partial<typeof input>).invoiceDraft;
     const result = await create.createManual(actor, input, { canUpdateFinance: true });
     jobIds.push(result.job.id);
     const doc = await createDrizzleInvoiceRepository(database).findByJobId(result.job.id);
@@ -236,8 +237,8 @@ describe("automatic manual invoice committed delivery", () => {
     if (scenario === "missing") expect(history.some(x => x.action === "invoice.email.skipped")).toBe(true);
     if (scenario === "provider_failure") expect(history.some(x => x.result === "failure")).toBe(true);
     const runtime = getAdminInvoiceRuntime(database, provider);
-    expect(Boolean(await runtime.latestEmailAttempt(doc!.id))).toBe(scenario === "valid");
-    if (scenario === "valid") {
+    expect(Boolean(await runtime.latestEmailAttempt(doc!.id))).toBe((scenario === "valid" || scenario === "without_preview"));
+    if ((scenario === "valid" || scenario === "without_preview")) {
       const message = provider.send.mock.calls[0][0];
       expect(message.to).toBe(email);
       expect(message.text).not.toContain("/orders/");

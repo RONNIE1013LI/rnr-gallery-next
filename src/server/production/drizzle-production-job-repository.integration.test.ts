@@ -431,6 +431,7 @@ describe("drizzle production job repository", () => {
           eq(adminAuditLogs.resourceType, "production_job"),
           eq(adminAuditLogs.resourceId, createdJobId),
         ));
+        await database.delete(invoices).where(eq(invoices.jobId, createdJobId));
         await database.delete(productionJobs).where(eq(productionJobs.id, createdJobId));
       }
     }

@@ -1,4 +1,7 @@
-import { scheduleNewOrderInvoiceEmail } from "@/server/admin/admin-invoice-runtime";
+import { createInvoiceService } from "@/server/invoices/invoice-service";
+import { createDrizzleInvoiceRepository } from "@/server/invoices/drizzle-invoice-repository";
+import { getInvoiceBusinessSettings } from "@/server/invoices/invoice-business";
+import { automaticInvoiceActor, scheduleNewOrderInvoiceEmail } from "@/server/admin/admin-invoice-runtime";
 import { createHash } from "node:crypto";
 import {
   and,
@@ -809,6 +812,18 @@ export function createDrizzleProductionJobRepository(
           payload: { version: 1, adminPath: `/admin/jobs/${job.id}` },
           createdAt: input.createdAt,
         });
+        if (!input.invoice) {
+          try {
+            await transaction.transaction(async (invoiceTransaction) => {
+              await createInvoiceService(
+                createDrizzleInvoiceRepository(invoiceTransaction, { systemActor: true }),
+                { business: getInvoiceBusinessSettings(), now: () => input.createdAt },
+              ).getOrCreateDraft(automaticInvoiceActor, job.id);
+            });
+          } catch {
+            console.error("new manual order invoice creation failed", { jobId: job.id });
+          }
+        }
         inserted = true;
         return {
           id: job.id,
@@ -833,7 +848,7 @@ export function createDrizzleProductionJobRepository(
         }
         return { ...existing, requestDigest: existing.requestDigest };
       });
-      if (inserted && input.invoice) {
+      if (inserted) {
         try { (options.onNewInvoiceOrder ?? scheduleNewOrderInvoiceEmail)(created.id); } catch {
           console.error("invoice automatic scheduling failed", { jobId: created.id });
         }

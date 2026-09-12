@@ -237,6 +237,16 @@ describe("InvoicePanel", () => {
     expect(screen.getByText(/to internal@example.test by System/)).toBeInTheDocument();
   });
 
+  it("shows automatic failure without claiming a successful send", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ invoice })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ attempt: null, latestAttempt: { result: "failure", afterSummary: { source: "automatic" }, createdAt: "2026-09-13T00:00:00.000Z" } }))));
+    render(<InvoicePanel jobId={invoice.jobId} />);
+    expect(await screen.findByText("Invoice email failed. You can send it again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send invoice by email" })).toBeInTheDocument();
+    expect(screen.queryByText(/Last sent/)).not.toBeInTheDocument();
+  });
+
   it("keeps invoice details read-only without finance edit permission", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ invoice }), {
       status: 200,
