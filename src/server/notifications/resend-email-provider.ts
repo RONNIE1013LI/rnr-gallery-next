@@ -44,6 +44,7 @@ export function createResendEmailProvider(
             subject: message.subject,
             text: message.text,
             html: message.html,
+            ...(message.attachments?.length ? { attachments: message.attachments } : {}),
           }),
         });
       } catch {

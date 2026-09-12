@@ -48,6 +48,7 @@ export type CustomerEmailMessage = Readonly<{
   html: string;
   proofUrl?: string;
   idempotencyKey: string;
+  attachments?: readonly Readonly<{ filename: string; content: string }>[];
 }>;
 
 export interface CustomerEmailProvider {

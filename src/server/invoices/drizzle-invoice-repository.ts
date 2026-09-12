@@ -37,11 +37,13 @@ async function loadInvoice(database: Database, invoiceId: string): Promise<Invoi
   const [invoice] = await database.select().from(invoices)
     .where(eq(invoices.id, invoiceId)).limit(1);
   if (!invoice) return null;
+  const [job] = await database.select({ amountPaidCents: productionJobs.amountPaidCents }).from(productionJobs).where(eq(productionJobs.id, invoice.jobId)).limit(1);
   const items = await database.select().from(invoiceItems)
     .where(eq(invoiceItems.invoiceId, invoice.id))
     .orderBy(asc(invoiceItems.position));
   return Object.freeze({
     ...invoice,
+    amountPaidCents: job?.amountPaidCents ?? null,
     pricesIncludeGst: true as const,
     items: Object.freeze(items.map((item) => Object.freeze({
       position: item.position,

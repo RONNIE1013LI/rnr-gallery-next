@@ -53,4 +53,11 @@ describe("Resend email provider", () => {
 
     await expect(provider.send(message)).rejects.toEqual(new EmailDeliveryError("rate_limit_exceeded"));
   });
+
+  it("includes server-generated attachments when provided", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "email-attachment" }), { status: 200 }));
+    const provider = createResendEmailProvider({ RESEND_API_KEY: "re_test_secret", EMAIL_FROM: "orders@example.test" }, fetch);
+    await provider.send({ ...message, attachments: [{ filename: "INV-1.pdf", content: "cGRm" }] });
+    expect(JSON.parse(fetch.mock.calls[0][1].body).attachments).toEqual([{ filename: "INV-1.pdf", content: "cGRm" }]);
+  });
 });

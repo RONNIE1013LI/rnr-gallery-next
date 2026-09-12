@@ -4803,6 +4803,10 @@ button.paymentProofPreviewMedia {
   gap: 10px;
 }
 
+.modalBackdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 1rem; background: rgb(0 0 0 / 45%); }
+.modalCard { width: min(100%, 38rem); max-height: 90vh; overflow: auto; padding: 1.5rem; background: var(--admin-surface, #fff); border: 1px solid var(--admin-border, #ddd); box-shadow: 0 1rem 3rem rgb(0 0 0 / 20%); }
+.modalCard label { display: grid; gap: .35rem; margin-top: .8rem; }
+
 .reviewListIdentity > img,
 .reviewListIdentity > span {
   width: 36px;

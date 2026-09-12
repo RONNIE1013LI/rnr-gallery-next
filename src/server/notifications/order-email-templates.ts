@@ -6,6 +6,7 @@ type EmailVariable =
   | "amount"
   | "tracking_number"
   | "tracking_carrier";
+type InvoiceEmailVariable = EmailVariable | "invoice_number" | "invoice_date" | "due_date" | "amount_paid" | "balance_due" | "invoice_url" | "business_name" | "customer_email";
 
 type EmailTemplateDefinition = Readonly<{
   key: string;
@@ -16,12 +17,13 @@ type EmailTemplateDefinition = Readonly<{
   maxLength: number;
   multiline: boolean;
   defaultValue: string;
-  allowedVariables: readonly EmailVariable[];
+  allowedVariables: readonly InvoiceEmailVariable[];
 }>;
 
 const orderVariables = ["customer_name", "order_number"] as const;
 const paidVariables = [...orderVariables, "amount"] as const;
 const shippedVariables = [...orderVariables, "tracking_number", "tracking_carrier"] as const;
+const invoiceVariables = ["customer_name", "customer_email", "order_number", "invoice_number", "invoice_date", "due_date", "amount", "amount_paid", "balance_due", "invoice_url", "business_name"] as const;
 
 export const orderEmailTemplateDefinitions = Object.freeze([
   { key: "email.admin_order_received.subject", surface: "email", group: "Admin new paid order", label: "Subject", description: "Subject for the internal paid-order notification.", maxLength: 200, multiline: false, defaultValue: "New paid order — {{order_number}}", allowedVariables: paidVariables },
@@ -36,6 +38,9 @@ export const orderEmailTemplateDefinitions = Object.freeze([
   { key: "email.order_shipped.subject", surface: "email", group: "Customer order shipped", label: "Subject", description: "Subject sent when an order is marked as shipped.", maxLength: 200, multiline: false, defaultValue: "Your order has been shipped — {{order_number}}", allowedVariables: shippedVariables },
   { key: "email.order_shipped.body", surface: "email", group: "Customer order shipped", label: "Body", description: "Shipping message sent to the customer. The tracking paragraph is omitted when tracking is unavailable.", maxLength: 2000, multiline: true, defaultValue: "Your order is on its way.\n\nTracking: {{tracking_carrier}} {{tracking_number}}.", allowedVariables: shippedVariables },
   { key: "email.order_shipped.action_label", surface: "email", group: "Customer order shipped", label: "Button label", description: "Label for the tracking or order link.", maxLength: 60, multiline: false, defaultValue: "Track your order", allowedVariables: [] },
+  { key: "email.invoice_sent.subject", surface: "email", group: "Customer invoice", label: "Subject", description: "Subject sent when an invoice is emailed.", maxLength: 200, multiline: false, defaultValue: "Invoice {{invoice_number}} from {{business_name}}", allowedVariables: invoiceVariables },
+  { key: "email.invoice_sent.body", surface: "email", group: "Customer invoice", label: "Body", description: "Message sent with the invoice PDF attachment.", maxLength: 3000, multiline: true, defaultValue: "Hello {{customer_name}},\n\nPlease find invoice {{invoice_number}} for order {{order_number}} attached.\n\nTotal: {{amount}}\nAmount paid: {{amount_paid}}\nBalance due: {{balance_due}}\n\nYou can view your order here: {{invoice_url}}", allowedVariables: invoiceVariables },
+  { key: "email.invoice_sent.action_label", surface: "email", group: "Customer invoice", label: "Button label", description: "Label for the secure customer order link.", maxLength: 60, multiline: false, defaultValue: "View your order", allowedVariables: [] },
 ] as const satisfies readonly EmailTemplateDefinition[]);
 
 export type OrderEmailTemplateKey = typeof orderEmailTemplateDefinitions[number]["key"];
@@ -70,7 +75,12 @@ const keysByKind = Object.freeze({
     body: "email.order_shipped.body",
     actionLabel: "email.order_shipped.action_label",
   },
-} as const satisfies Record<OrderNotificationKind, Readonly<{
+  invoice_sent: {
+    subject: "email.invoice_sent.subject",
+    body: "email.invoice_sent.body",
+    actionLabel: "email.invoice_sent.action_label",
+  },
+} as const satisfies Record<OrderNotificationKind | "invoice_sent", Readonly<{
   subject: OrderEmailTemplateKey;
   body: OrderEmailTemplateKey;
   actionLabel: OrderEmailTemplateKey;
@@ -82,21 +92,37 @@ export type OrderEmailTemplateVariables = Readonly<{
   amount: string;
   trackingNumber: string | null;
   trackingCarrier: string | null;
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  dueDate?: string;
+  amountPaid?: string;
+  balanceDue?: string;
+  invoiceUrl?: string;
+  businessName?: string;
+  customerEmail?: string;
 }>;
 
 function substitute(template: string, variables: OrderEmailTemplateVariables) {
-  const values: Readonly<Record<EmailVariable, string>> = {
+  const values: Readonly<Record<InvoiceEmailVariable, string>> = {
     customer_name: variables.customerName,
     order_number: variables.orderNumber,
     amount: variables.amount,
     tracking_number: variables.trackingNumber ?? "",
     tracking_carrier: variables.trackingCarrier ?? "",
+    invoice_number: variables.invoiceNumber ?? "",
+    invoice_date: variables.invoiceDate ?? "",
+    due_date: variables.dueDate ?? "",
+    amount_paid: variables.amountPaid ?? "",
+    balance_due: variables.balanceDue ?? "",
+    invoice_url: variables.invoiceUrl ?? "",
+    business_name: variables.businessName ?? "",
+    customer_email: variables.customerEmail ?? "",
   };
   return template.replace(/{{\s*([a-z_]+)\s*}}/g, (_, name: EmailVariable) => values[name] ?? "");
 }
 
 export function renderOrderEmailTemplate(
-  kind: OrderNotificationKind,
+  kind: OrderNotificationKind | "invoice_sent",
   values: Partial<OrderEmailTemplateValues>,
   variables: OrderEmailTemplateVariables,
 ) {

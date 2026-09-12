@@ -173,6 +173,12 @@ export function InvoicePanel({
   const [pending, setPending] = useState(false);
   const [pdfBusy, setPdfBusy] = useState<"download" | "share" | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailRecipient, setEmailRecipient] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailLatest, setEmailLatest] = useState<string>("");
   const [voidReason, setVoidReason] = useState("");
   const money = (cents: number) => invoice
     ? formatMarketMoney(cents, invoice.currency)
@@ -221,6 +227,18 @@ export function InvoicePanel({
     } finally {
       setPdfBusy(null);
     }
+  }
+
+  async function sendInvoiceEmail() {
+    if (!invoice) return;
+    setEmailBusy(true); setFeedback("");
+    try {
+      const response = await fetch(`/api/admin/invoices/${invoice.id}/email`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipientEmail: emailRecipient, subject: emailSubject, body: emailBody, idempotencyKey: createClientId() }) });
+      const result = await response.json().catch(() => null) as { result?: string; error?: string } | null;
+      if (!response.ok || result?.result !== "sent") throw new Error(result?.error || "Invoice email could not be sent.");
+      setFeedback("Invoice email sent."); setEmailLatest("Last sent just now"); setEmailOpen(false);
+    } catch (error) { setFeedback(error instanceof Error ? error.message : "Invoice email could not be sent."); }
+    finally { setEmailBusy(false); }
   }
 
   const pdfActions = <>
@@ -377,11 +395,14 @@ export function InvoicePanel({
 
       <div className={styles.invoiceActions}>
         {!downloadAtTop && !hideDownload ? pdfActions : null}
+        {canEdit ? <button type="button" className={styles.secondaryAdminButton} onClick={() => { setEmailRecipient(invoice.customerEmail); setEmailOpen(true); }}>Send invoice by email</button> : null}
+        {emailLatest ? <span className={styles.mutedText}>{emailLatest}</span> : null}
         {invoice.status === "draft" && canEdit ? <><button type="button" className={styles.secondaryAdminButton} onClick={saveDraft} disabled={pending}>Save draft</button><button type="button" onClick={issueInvoice} disabled={pending}>Issue invoice</button></> : null}
         {invoice.status === "issued" && canEdit ? <><label><span>Void reason</span><input value={voidReason} onChange={(event) => setVoidReason(event.target.value)} disabled={pending} /></label><button type="button" className={styles.dangerButton} onClick={voidInvoice} disabled={pending}>Void invoice</button></> : null}
       </div>
       {invoice.status === "void" ? <p className={styles.authorityBanner}><strong>Voided:</strong> {invoice.voidReason}</p> : null}
       <p className={styles.formFeedback} aria-live="polite">{feedback}</p>
+      {emailOpen ? <div role="dialog" aria-modal="true" className={styles.modalBackdrop}><div className={styles.modalCard}><h3>Send invoice by email</h3><label><span>Recipient</span><input type="email" value={emailRecipient} onChange={(event) => setEmailRecipient(event.target.value)} /></label><label><span>Subject (optional)</span><input value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} /></label><label><span>Message (optional)</span><textarea rows={8} value={emailBody} onChange={(event) => setEmailBody(event.target.value)} placeholder="Use the published invoice template" /></label><p className={styles.mutedText}>Invoice {invoice.invoiceNumber} PDF will be attached. Order and totals are read-only.</p><div className={styles.invoiceActions}><button type="button" className={styles.secondaryAdminButton} onClick={() => setEmailOpen(false)} disabled={emailBusy}>Cancel</button><button type="button" onClick={() => void sendInvoiceEmail()} disabled={emailBusy}>{emailBusy ? "Sending…" : "Send invoice"}</button></div></div></div> : null}
         </div>
         <div className={styles.persistedInvoicePreview}>
           <InvoicePreview invoiceNumber={invoice.invoiceNumber} draft={draft} currency={invoice.currency} gstRateBasisPoints={invoice.gstRateBasisPoints} totals={calculated} />

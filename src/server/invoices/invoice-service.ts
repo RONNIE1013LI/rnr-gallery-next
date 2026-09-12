@@ -44,6 +44,7 @@ export type InvoiceRecord = Readonly<{
   subtotalExGstCents: number;
   gstCents: number;
   totalInclGstCents: number;
+  amountPaidCents?: number | null;
   notes: string;
   terms: string;
   issuedAt: Date | null;
