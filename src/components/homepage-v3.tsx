@@ -242,7 +242,9 @@ export function HomepageV3({
               </Link>
             </div>
             <p className={styles.microcopy}>
-              Custom design, proof before printing and delivery across New Zealand and Australia.
+              Custom design, proof before printing and delivery across{" "}
+              <br />
+              New Zealand and Australia.
             </p>
           </div>
 
