@@ -19,7 +19,7 @@ export const EXPECTED_GITHUB_REPOSITORY = "RONNIE1013LI/rnr-gallery-next";
 export const EXPECTED_VERCEL_PROJECT_ID = "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO";
 export const EXPECTED_VERCEL_PROJECT_NAME = "rnr-gallery-staging";
 export const EXPECTED_STAGING_DOMAIN = "staging.rnrgallery.com";
-export const EXPECTED_STAGING_BRANCH = "codex/ui-ux-audit-20260913";
+export const EXPECTED_STAGING_BRANCH = "codex/invoice-email-release-20260912";
 export const EXPECTED_PREVIEW_DATABASE_ENV_ID = "7X3hipGyZA6v6xEA";
 export const EXPECTED_PREVIEW_DATABASE_TARGET_FINGERPRINT =
   "a6a953b4a05ac513468276f6d0283cc7dffc59554f0aa415dd8fded304a30bb3";

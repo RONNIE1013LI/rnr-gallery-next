@@ -39,14 +39,6 @@ function ControlledAddressForm({
 }
 
 describe("AddressForm", () => {
-  it("puts contact details first for checkout and marks required labels", () => {
-    const { container } = render(<AddressForm value={emptyAddress} onChange={() => undefined}
-      googleMapsApiKey="" lockedCountry="NZ" layout="contact-first" fieldIdPrefix="checkout-billing" />);
-    expect(Array.from(container.querySelectorAll("input, select")).map((field) => field.getAttribute("name")))
-      .toEqual(["fullName", "email", "phone", "street", "building", "suburb", "region", "postcode", "country"]);
-    expect(screen.getByLabelText("Full name (required)")).toHaveAttribute("id", "checkout-billing-fullName");
-    expect(screen.getByLabelText("Email address (required)")).toBeRequired();
-  });
   afterEach(() => {
     delete (window as Window & { google?: unknown }).google;
   });

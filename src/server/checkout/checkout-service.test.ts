@@ -1,5 +1,3 @@
-import type { NormalizedAddress } from "@/domain/address/types";
-import { quoteAustraliaFixedShipping } from "@/server/shipping/australia-fixed-shipping";
 import { describe, expect, it, vi } from "vitest";
 import type { CheckoutStateRepository } from "./checkout-repository";
 import { createCheckoutService, InvalidCheckoutStateError } from "./checkout-service";
@@ -238,32 +236,6 @@ describe("checkout service", () => {
       sessionId,
       expect.objectContaining({ cartDigest: state.cartSnapshot!.cartDigest }),
     );
-  });
-
-  it.each([false, true])("preserves configured rush=%s across AU address and carrier changes despite a past event date", async (rush) => {
-    const registry = enabledAustraliaRegistry();
-    const configuredRushFee = rush ? registry.markets.AU.urgentServiceFees[1].amountInclTaxCents! : 0;
-    let saved: Awaited<ReturnType<CheckoutStateRepository["saveCheckoutState"]>>;
-    const repo = repository({
-      saveCheckoutState: vi.fn(async (id, input) => {
-        saved = { id, customerId: null, version: 2, selectedShippingQuoteId: null, expiresAt: new Date("2026-09-01"), ...input };
-        return saved;
-      }),
-      getCheckoutState: vi.fn(async () => saved),
-    });
-    const shipping = shippingService();
-    const liveShipping = { ...shipping, quotePost: vi.fn(async (snapshot: Parameters<typeof quoteAustraliaFixedShipping>[0], destination: NormalizedAddress, book?: Parameters<typeof quoteAustraliaFixedShipping>[2], code?: string) => quoteAustraliaFixedShipping(snapshot, { contact: destination.fullName, street: destination.street, suburb: destination.suburb, city: destination.region, postcode: destination.postcode, countryCode: destination.country }, book, code, now)) };
-    const service = createCheckoutService({ repository: repo, shippingService: liveShipping, productRegistryService: { current: vi.fn(async () => ({ revision: 9, registry })) }, now: () => now });
-    const configured = cart({ neededDate: "2026-08-01", eventDate: "2026-08-02", productionWorkingDays: rush ? 2 : 3, urgentServiceConfirmed: rush, urgentFeeInclGstCents: configuredRushFee, configuredUnitPriceInclTaxCents: 40000 + configuredRushFee, configuredCurrency: "AUD" });
-    for (const destination of [australianAddress, { ...australianAddress, suburb: "Alice Springs", region: "NT", postcode: "0870" }]) {
-      const updated = await service.updateSession(sessionId, { cart: configured, billingAddress: destination, useDifferentDeliveryAddress: false, deliveryMethod: "post" });
-      expect(updated.cartSnapshot!.items[0]).toMatchObject({ neededDate: "2026-08-01", eventDate: "2026-08-02", urgentServiceConfirmed: rush, urgentService: { workingDays: rush ? 2 : 3, feeInclGstCents: configuredRushFee } });
-      const originalSnapshot = structuredClone(updated.cartSnapshot);
-      for (const code of ["au-standard", "au-dhl-express"]) {
-        await service.quoteShipping(sessionId, code);
-        expect(saved!.cartSnapshot).toEqual(originalSnapshot);
-      }
-    }
   });
 
   it("uses the shipping country as authority and reprices every item in fixed AUD", async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render as renderCollapsed, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getConfigurationSchema } from "@/domain/configuration/schemas";
@@ -13,14 +13,6 @@ import {
   parseProductRegistry,
 } from "@/domain/catalogue/product-registry";
 import styles from "./storefront.module.css";
-
-// Existing commerce assertions inspect all sections; expand through the public accordion controls.
-function render(...args: Parameters<typeof renderCollapsed>) {
-  const result = renderCollapsed(...args);
-  result.container.querySelectorAll<HTMLButtonElement>('button[data-configuration-step][aria-expanded="false"]').forEach((button) => fireEvent.click(button));
-  result.container.querySelectorAll('details').forEach((details) => { details.open = true; });
-  return result;
-}
 
 const analytics = vi.hoisted(() => ({
   emitAnalyticsEvent: vi.fn<(event: unknown) => boolean>(() => true),
@@ -417,7 +409,7 @@ describe("ProductConfigurator", () => {
     expect(screen.getByRole("region", { name: "Related designs" })).toBeVisible();
     expect(screen.getByText("Made by R&R")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Design inspiration" })).toBeVisible();
-    expect(screen.getByRole("link", { name: /Memorial floral canvas/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Memorial floral canvas" })).toHaveAttribute(
       "href",
       `/products/digital-oil-painting-canvas/configure?design=${"a".repeat(64)}`,
     );
@@ -425,9 +417,9 @@ describe("ProductConfigurator", () => {
       "href",
       "/design-gallery?design_type=canvas",
     );
-    expect(screen.queryByRole("heading", { name: /Memorial floral canvas/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Memorial floral canvas" })).not.toBeInTheDocument();
     expect(screen.queryByText("Configure with this design")).not.toBeInTheDocument();
-    const relatedImage = screen.getByRole("img", { name: /Memorial floral canvas/ });
+    const relatedImage = screen.getByRole("img", { name: "Memorial floral canvas" });
     expect(relatedImage)
       .toHaveAttribute(
         "sizes",
@@ -565,8 +557,8 @@ describe("ProductConfigurator", () => {
     expect(screen.getByText("NZ$18.75")).toBeInTheDocument();
     expect(screen.getByText("NZ$143.75")).toBeInTheDocument();
 
-    const completionDate = screen.getByLabelText("When do you need the finished item?");
-    expect(completionDate).toHaveAttribute("aria-invalid", "false");
+    const completionDate = screen.getByLabelText("Production completion date");
+    expect(completionDate.closest("div")).toHaveClass(styles.timingFields);
     fireEvent.change(completionDate, {
       target: { value: "2026-08-20" },
     });
@@ -579,7 +571,7 @@ describe("ProductConfigurator", () => {
       id: "configured-item",
       productKey: product.key,
       peoplePets: 2,
-      neededDate: "2026-08-06",
+      neededDate: "2026-08-20",
       deliveryPreference: "post",
       quantity: 1,
     });
@@ -914,15 +906,41 @@ describe("ProductConfigurator", () => {
       />,
     );
     fireEvent.click(screen.getByText("Send Photos After Ordering"));
-    fireEvent.change(screen.getByLabelText("When do you need the finished item?"), {
-      target: { value: "2026-08-10" },
+    fireEvent.change(screen.getByLabelText("Production completion date"), {
+      target: { value: "2026-08-05" },
     });
 
     const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
-    expect(screen.getByLabelText("Production service")).toHaveValue("3");
+    const completionDateField = screen
+      .getByLabelText("Production completion date")
+      .closest("label");
+    const urgentConfirmation = screen
+      .getByLabelText("Confirm urgent service")
+      .closest("label");
+    const delivery = screen.getByRole("radiogroup", { name: "Delivery" });
+
+    expect(screen.getByText(
+      "I need production completed by the selected date and confirm urgent service.",
+    )).toBeInTheDocument();
+    const urgentDetails = urgentConfirmation?.querySelectorAll("small");
+    expect(urgentDetails).toHaveLength(2);
+    expect(urgentDetails?.[0]).toHaveTextContent("NZ$50.00 incl GST");
+    expect(urgentDetails?.[1]).toHaveTextContent(
+      "Delivery time is not included in this timeframe.",
+    );
+    expect(completionDateField?.nextElementSibling).toBe(urgentConfirmation);
+    expect(urgentConfirmation?.nextElementSibling).toBe(delivery);
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+    expect(css).toMatch(
+      /\.timingFields \.urgentConfirmation\s*\{[\s\S]*?margin-top:\s*0;/,
+    );
+    expect(screen.getAllByText("NZ$50.00 incl GST")).toHaveLength(1);
+    expect(within(orderSummary).queryByText("NZ$50.00 incl GST")).not.toBeInTheDocument();
     expect(within(orderSummary).getByText("NZ$120.75")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add to Cart — Send Photos Later" })).toBeEnabled();
-    fireEvent.change(screen.getByLabelText("Production service"), { target: { value: "2" } });
+    const addButton = screen.getByRole("button", { name: "Confirm urgent service to continue" });
+    expect(addButton).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText("Confirm urgent service"));
     expect(within(orderSummary).getByText("NZ$50.00 incl GST")).toBeInTheDocument();
     expect(within(orderSummary).getByText("NZ$170.75")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add to Cart — Send Photos Later" })).toBeEnabled();
@@ -955,7 +973,7 @@ describe("ProductConfigurator", () => {
     );
 
     const preview = screen.getByRole("region", { name: "Artwork preview" });
-    expect(within(preview).getByRole("img", { name: /Memorial floral canvas/ }))
+    expect(within(preview).getByRole("img", { name: "Memorial floral canvas" }))
       .toBeInTheDocument();
     expect(within(preview).getByRole("button", { name: "View full image" })).toBeInTheDocument();
     fireEvent.click(within(preview).getByRole("button", { name: "View full image" }));
@@ -1000,23 +1018,5 @@ describe("ProductConfigurator", () => {
       galleryDesignId: designId,
       price: { totalInclGstCents: 12_075 },
     });
-  });
-});
-
-// Interaction acceptance uses the real collapsed flow rather than expanding legacy fixtures.
-describe("customer configuration journey", () => {
-  it.each(["2026-08-04", "2026-08-02", ""])("keeps ordering and standard fees available for advisory need-by %s", (date) => {
-    localStorage.clear();
-    renderCollapsed(<ProductConfigurator product={product} schema={schema} orderDate="2026-08-03" createId={() => "date-advisory"} />);
-    fireEvent.click(screen.getByRole("button", { name: /Upload original photos/ }));
-    fireEvent.click(screen.getByText("Send Photos After Ordering"));
-    fireEvent.click(screen.getByRole("button", { name: /Timing and delivery/ }));
-    fireEvent.change(screen.getByLabelText("When do you need the finished item?"), { target: { value: date } });
-    expect(screen.getAllByRole("button", { name: /Next: step/ }).at(-1)).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Review your order" }));
-    const add = screen.getByRole("button", { name: "Add to Cart — Send Photos Later" });
-    expect(add).toBeEnabled();
-    fireEvent.click(add);
-    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0]).toMatchObject({ neededDate: "2026-08-06", urgentServiceConfirmed: false, urgentFeeInclGstCents: 0 });
   });
 });

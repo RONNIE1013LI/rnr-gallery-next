@@ -4,9 +4,9 @@ import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { Cart } from "@/domain/cart/types";
-import Link from "next/link";
-import { marketSwitchDestination } from "@/domain/markets/market";
+import type { MarketSwitchUrgentIssue } from "@/domain/checkout/market-switch-preflight";
 import type { Market } from "@/domain/markets/types";
+import { formatMarketMoney } from "@/domain/money";
 import styles from "./market-switch-dialog.module.css";
 
 const targetLabels: Readonly<Record<Market, string>> = {
@@ -26,12 +26,31 @@ const focusableSelector = [
 export type MarketSwitchDialogState = Readonly<{
   targetMarket: Market;
   cart: Cart;
+  issues: readonly MarketSwitchUrgentIssue[];
+  message: string;
 }>;
 
-export function MarketSwitchDialog({ state, pending, onConfirm, onCancel }: Readonly<{
+export function hasStaleUrgentDate(state: MarketSwitchDialogState): boolean {
+  return state.issues.some((issue) => state.cart.items.find(
+    (item) => item.id === issue.clientItemId,
+  )?.neededDate !== issue.neededDate);
+}
+
+export function MarketSwitchDialog({
+  state,
+  pending,
+  confirmDisabled = false,
+  onDateChange,
+  onConfirmUrgent,
+  onTryDates,
+  onCancel,
+}: Readonly<{
   state: MarketSwitchDialogState;
   pending: boolean;
-  onConfirm: () => void;
+  confirmDisabled?: boolean;
+  onDateChange: (clientItemId: string, neededDate: string) => void;
+  onConfirmUrgent: () => void;
+  onTryDates: () => void;
   onCancel: () => void;
 }>): ReactNode {
   const dialogRef = useRef<HTMLElement>(null);
@@ -107,31 +126,46 @@ export function MarketSwitchDialog({ state, pending, onConfirm, onCancel }: Read
       >
         <header className={styles.header}>
           <p className={styles.eyebrow}>Switching to {targetLabels[state.targetMarket]}</p>
-          <h2 id="market-switch-dialog-title">Keep your configured cart</h2>
-          <p id="market-switch-dialog-message" className={styles.message}>Your cart keeps its configured prices, production service and dates. To order for this country, edit each configuration. Your existing items stay in your cart.</p>
+          <h2 id="market-switch-dialog-title">Review urgent service</h2>
+          <p id="market-switch-dialog-message" className={styles.message}>{state.message}</p>
         </header>
 
         <div className={styles.issues}>
-          {state.cart.items.map((item) => (
-            <div className={styles.issue} key={item.id}>
-              <strong>{item.productTitle}</strong>
-              {pending ? <span>Edit configuration</span> : <Link
-                aria-label={`Edit configuration for ${item.productTitle}`}
-                onClick={onCancel}
-                href={`${marketSwitchDestination(`/products/${item.productSlug}/configure`, state.targetMarket)}?${new URLSearchParams({ edit: item.id, size: item.sizeKey, ...(item.galleryDesignId ? { design: item.galleryDesignId } : {}) }).toString()}`}
-              >Edit configuration</Link>}
-            </div>
-          ))}
+          {state.issues.map((issue) => {
+            const neededDate = state.cart.items.find(
+              (item) => item.id === issue.clientItemId,
+            )?.neededDate ?? "";
+            return (
+              <label className={styles.issue} key={issue.clientItemId}>
+                <span className={styles.issueSummary}>
+                  <strong>{issue.productTitle}</strong>
+                  <span>{formatMarketMoney(issue.urgentFeeInclGstCents, issue.currency)}</span>
+                </span>
+                <span className={styles.dateLabel}>Completion date</span>
+                <input
+                  aria-label={`Completion date for ${issue.productTitle}`}
+                  type="date"
+                  value={neededDate}
+                  disabled={pending}
+                  onChange={(event) => onDateChange(issue.clientItemId, event.target.value)}
+                />
+                <small>{issue.urgentWorkingDays} working days</small>
+              </label>
+            );
+          })}
         </div>
 
         <div className={styles.actions}>
           <button
             className={styles.primaryAction}
             type="button"
-            disabled={pending}
-            onClick={onConfirm}
+            disabled={pending || confirmDisabled}
+            onClick={onConfirmUrgent}
           >
-            {pending ? "Switching market…" : "Change browsing country"}
+            {pending ? "Switching market…" : "Confirm urgent service and switch"}
+          </button>
+          <button type="button" disabled={pending} onClick={onTryDates}>
+            Try these dates
           </button>
           <button type="button" disabled={pending} onClick={onCancel}>
             Cancel

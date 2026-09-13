@@ -116,7 +116,7 @@ export default async function RootLayout({
               phone: managed["contact.phone"],
             }}
             footerLead={reviewSection
-              ? <CustomerReviewsSection data={reviewSection} background="sand" compact />
+              ? <CustomerReviewsSection data={reviewSection} background="sand" />
               : null}
           >
             {children}

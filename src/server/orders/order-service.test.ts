@@ -219,13 +219,6 @@ describe("atomic order service", () => {
     )).rejects.toBeInstanceOf(OrderConflictError);
   });
 
-  it("does not change configured rush or block order creation when midnight passes", async () => {
-    const repo = repository();
-    const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => new Date("2026-08-03T12:01:00Z") });
-    await service.createOrder(sessionId, key, reviewed());
-    expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({ cart: expect.objectContaining({ orderDate: "2026-08-03", items: [expect.objectContaining({ neededDate: "2026-08-10", urgentServiceConfirmed: false, urgentService: { workingDays: 3, feeInclGstCents: 0 } })] }) }));
-  });
-
   it("creates Pickup with exact zero shipping and no provider call", async () => {
     const repo = repository();
     const shipping = shippingService();

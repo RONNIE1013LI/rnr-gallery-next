@@ -21,7 +21,6 @@ describe("canvas preview integration",()=>{
     const product=getProductBySlug("digital-oil-painting-canvas")!;
     render(<ProductConfigurator product={product} schema={getConfigurationSchema(product.key)!} orderDate="2026-09-06" selectedDesign={{id:"a".repeat(64),title:"Chosen",altText:"Chosen",imageUrl:"/gallery-images/chosen",contentHash:"original",productSlug:"digital-oil-painting-canvas",width,height}}/>);
     expect(screen.getByRole("radio",{name:orientation==="portrait"?"Portrait":"Landscape"})).toBeChecked();
-    fireEvent.click(screen.getByRole("button",{name:"Review your order"}));
     expect(within(screen.getByRole("complementary",{name:"Order summary"})).getByText(`A4 — ${dimensions} cm`)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button",{name:"3D View"}));
     expect(await screen.findByTitle("Interactive canvas preview")).toHaveAttribute("data-orientation",orientation);

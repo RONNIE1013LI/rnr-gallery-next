@@ -33,19 +33,6 @@ function galleryItem(
 }
 
 describe("HomepageV3", () => {
-  it.each(["NZ", "AU"] as const)("links process guidance to How It Works and product guidance to the discovery heading in %s", (market) => {
-    const { container } = render(<HomepageV3 registry={defaultProductRegistry} market={market} />);
-    expect(screen.getByRole("link", { name: "See How It Works" })).toHaveAttribute("href", "/how-it-works");
-    const guidance = screen.getByRole("link", { name: "Get product guidance" });
-    expect(guidance).toHaveAttribute("href", "#begin");
-    const destination = container.querySelector(guidance.getAttribute("href")!);
-    expect(destination?.tagName).toBe("SECTION");
-    expect(destination).toContainElement(screen.getByRole("heading", { name: "Find the right way to begin." }));
-    for (const link of container.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')) {
-      expect(container.querySelector(link.getAttribute("href")!)).not.toBeNull();
-    }
-  });
-
   it("uses the published recommendation count in the homepage trust highlight", () => {
     render(<HomepageV3 registry={defaultProductRegistry} reviewSection={{
       summary: {

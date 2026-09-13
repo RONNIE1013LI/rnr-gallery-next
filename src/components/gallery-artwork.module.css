@@ -1,7 +1,0 @@
-.frame { display: grid; position: relative; width: 100%; min-height: 8rem; }
-.frame > * { grid-area: 1 / 1; }
-.loading, .fallback { display: grid; align-content: center; justify-items: center; padding: 1.5rem; min-height: 12rem; text-align: center; font-size: .875rem; color: var(--gallery-green); background: var(--paper, #f4f0e8); }
-.loading { animation: breathe 1.6s ease-in-out infinite; }
-.frame img { position: relative; }
-@keyframes breathe { 50% { opacity: .55; } }
-@media (prefers-reduced-motion: reduce) { .loading { animation: none; } }

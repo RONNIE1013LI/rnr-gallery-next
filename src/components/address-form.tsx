@@ -19,8 +19,6 @@ type AddressFormProps = {
   disabled?: boolean;
   googleMapsApiKey?: string;
   lockedCountry?: SupportedCountry;
-  layout?: "contact-first";
-  fieldIdPrefix?: string;
 };
 
 type FieldName = keyof AddressInput;
@@ -52,12 +50,8 @@ export function AddressForm({
   disabled = false,
   googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
   lockedCountry,
-  layout,
-  fieldIdPrefix,
 }: AddressFormProps) {
-  const generatedId = useId();
-  const idPrefix = fieldIdPrefix ?? generatedId;
-  const labelFor = (label: string) => layout === "contact-first" ? `${label} (required)` : label;
+  const idPrefix = useId();
 
   function updateField(field: FieldName, fieldValue: string) {
     onChange({ ...value, [field]: fieldValue });
@@ -74,9 +68,10 @@ export function AddressForm({
     } as const;
   }
 
-  const fields = {
-    country: (
-<FieldShell
+  return (
+    <div className={styles.addressFormFields}>
+      <div className={styles.addressPair}>
+        <FieldShell
           errorId={`${idPrefix}-country-error`}
           errors={errors.country}
           inputId={`${idPrefix}-country`}
@@ -107,9 +102,8 @@ export function AddressForm({
               <option value="AU">Australia</option>
             </select>}
         </FieldShell>
-    ),
-    building: (
-<FieldShell
+
+        <FieldShell
           errorId={`${idPrefix}-building-error`}
           errors={errors.building}
           inputId={`${idPrefix}-building`}
@@ -123,13 +117,13 @@ export function AddressForm({
             value={value.building}
           />
         </FieldShell>
-    ),
-    fullName: (
-<FieldShell
+      </div>
+
+      <FieldShell
         errorId={`${idPrefix}-fullName-error`}
         errors={errors.fullName}
         inputId={`${idPrefix}-fullName`}
-        label={labelFor("Full name")}
+        label="Full name"
       >
         <input
           {...fieldAttributes("fullName")}
@@ -140,13 +134,41 @@ export function AddressForm({
           value={value.fullName}
         />
       </FieldShell>
-    ),
-    suburb: (
-<FieldShell
+
+      {googleMapsApiKey ? (
+        <GoogleAddressAutocomplete
+          apiKey={googleMapsApiKey}
+          country={value.country}
+          disabled={disabled}
+          errorId={`${idPrefix}-street-error`}
+          errors={errors.street}
+          inputId={`${idPrefix}-street`}
+          onChange={onChange}
+          value={value}
+        />
+      ) : (
+        <FieldShell
+          errorId={`${idPrefix}-street-error`}
+          errors={errors.street}
+          inputId={`${idPrefix}-street`}
+          label="Street address"
+        >
+          <input
+            {...fieldAttributes("street")}
+            autoComplete="address-line1"
+            maxLength={ADDRESS_FIELD_LIMITS.street}
+            onChange={(event) => updateField("street", event.target.value)}
+            required
+            value={value.street}
+          />
+        </FieldShell>
+      )}
+
+      <FieldShell
         errorId={`${idPrefix}-suburb-error`}
         errors={errors.suburb}
         inputId={`${idPrefix}-suburb`}
-        label={labelFor("Suburb")}
+        label="Suburb"
       >
         <input
           {...fieldAttributes("suburb")}
@@ -157,13 +179,13 @@ export function AddressForm({
           value={value.suburb}
         />
       </FieldShell>
-    ),
-    region: (
-<FieldShell
+
+      <div className={styles.addressPair}>
+        <FieldShell
           errorId={`${idPrefix}-region-error`}
           errors={errors.region}
           inputId={`${idPrefix}-region`}
-          label={labelFor(value.country === "AU" ? "State / territory" : "Region / city")}
+          label={value.country === "AU" ? "State / territory" : "Region / city"}
         >
           {value.country === "AU" ? (
             <select
@@ -189,13 +211,12 @@ export function AddressForm({
             />
           )}
         </FieldShell>
-    ),
-    postcode: (
-<FieldShell
+
+        <FieldShell
           errorId={`${idPrefix}-postcode-error`}
           errors={errors.postcode}
           inputId={`${idPrefix}-postcode`}
-          label={labelFor("Postcode")}
+          label="Postcode"
         >
           <input
             {...fieldAttributes("postcode")}
@@ -208,13 +229,14 @@ export function AddressForm({
             value={value.postcode}
           />
         </FieldShell>
-    ),
-    phone: (
-<FieldShell
+      </div>
+
+      <div className={styles.addressPair}>
+        <FieldShell
           errorId={`${idPrefix}-phone-error`}
           errors={errors.phone}
           inputId={`${idPrefix}-phone`}
-          label={labelFor("Phone")}
+          label="Phone"
         >
           <input
             {...fieldAttributes("phone")}
@@ -227,13 +249,12 @@ export function AddressForm({
             value={value.phone}
           />
         </FieldShell>
-    ),
-    email: (
-<FieldShell
+
+        <FieldShell
           errorId={`${idPrefix}-email-error`}
           errors={errors.email}
           inputId={`${idPrefix}-email`}
-          label={labelFor("Email address")}
+          label="Email address"
         >
           <input
             {...fieldAttributes("email")}
@@ -245,56 +266,7 @@ export function AddressForm({
             value={value.email}
           />
         </FieldShell>
-    ),
-    street: (
-googleMapsApiKey ? (
-        <GoogleAddressAutocomplete
-          label={labelFor("Street address")}
-          apiKey={googleMapsApiKey}
-          country={value.country}
-          disabled={disabled}
-          errorId={`${idPrefix}-street-error`}
-          errors={errors.street}
-          inputId={`${idPrefix}-street`}
-          onChange={onChange}
-          value={value}
-        />
-      ) : (
-        <FieldShell
-          errorId={`${idPrefix}-street-error`}
-          errors={errors.street}
-          inputId={`${idPrefix}-street`}
-          label={labelFor("Street address")}
-        >
-          <input
-            {...fieldAttributes("street")}
-            autoComplete="address-line1"
-            maxLength={ADDRESS_FIELD_LIMITS.street}
-            onChange={(event) => updateField("street", event.target.value)}
-            required
-            value={value.street}
-          />
-        </FieldShell>
-      )
-    ),
-  };
-
-  return <div className={styles.addressFormFields}>
-    {layout === "contact-first" ? <>
-      {fields.fullName}
-      <div className={styles.addressPair}>{fields.email}{fields.phone}</div>
-      {fields.street}
-      {fields.building}
-      {fields.suburb}
-      <div className={styles.addressPair}>{fields.region}{fields.postcode}</div>
-      {fields.country}
-    </> : <>
-      <div className={styles.addressPair}>{fields.country}{fields.building}</div>
-      {fields.fullName}
-      {fields.street}
-      {fields.suburb}
-      <div className={styles.addressPair}>{fields.region}{fields.postcode}</div>
-      <div className={styles.addressPair}>{fields.phone}{fields.email}</div>
-    </>}
-  </div>;
+      </div>
+    </div>
+  );
 }

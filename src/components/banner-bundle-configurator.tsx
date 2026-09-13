@@ -11,8 +11,6 @@ import {
   type BannerBundleComponentCustomization,
   type BannerBundleComponentKey,
 } from "@/domain/bundles/banner-bundle";
-import { getActiveCartStorageKey } from "@/domain/cart/browser-cart-scope";
-import { needsProductionServiceReview, restoreCartPhotos, replaceConfiguredCartItem } from "./cart-configuration-edit";
 import { createBrowserCartRepository } from "@/domain/cart/browser-cart-repository";
 import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 import { addCartItem, setCartDeliveryPreference } from "@/domain/cart/cart";
@@ -20,11 +18,7 @@ import type { CartItem } from "@/domain/cart/types";
 import { emitAnalyticsEvent } from "@/domain/analytics/client";
 import { buildCartItemEvent } from "@/domain/analytics/events";
 import type { DeliveryPreference } from "@/domain/configuration/types";
-import { estimatedArrival, getCustomerTiming } from "@/domain/scheduling/customer-timing";
-import { ConfigurationFlow, ConfigurationStep, ConfigurationReviewButton } from "./configuration-flow";
-import { ConfigurationTiming } from "./configuration-timing";
-import { ConfigurationDraft } from "./configuration-draft";
-import flowStyles from "./configuration-flow.module.css";
+import { deliveryCopy } from "@/domain/content/delivery-copy";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
 import { currencyForMarket } from "@/domain/markets/market";
 import { formatMarketMoney } from "@/domain/money";
@@ -123,8 +117,6 @@ export function BannerBundleConfigurator({
   createId = createClientId,
   selectedDesign = null,
   initialSizeKey,
-  editingItem,
-  editingCartStorageKey,
 }: BannerBundleConfiguratorProps) {
   const [sizeKey, setSizeKey] = useState(
     initialSizeKey && schema.sizes.some((size) => size.key === initialSizeKey)
@@ -132,20 +124,15 @@ export function BannerBundleConfigurator({
       : schema.defaultSizeKey,
   );
   const [rollUp, setRollUp] = useState<SourcePhotoCustomisationValue>(() =>
-    editingItem?.bundleComponents ? restoreCartPhotos(editingItem.bundleComponents.find((component) => component.componentKey === "roll-up")!) : initialCustomisation(schema.defaultPhotoSubmissionMethod));
+    initialCustomisation(schema.defaultPhotoSubmissionMethod));
   const [wallBanner, setWallBanner] = useState<SourcePhotoCustomisationValue>(() =>
-    editingItem?.bundleComponents ? restoreCartPhotos(editingItem.bundleComponents.find((component) => component.componentKey === "wall-banner")!) : initialCustomisation(schema.defaultPhotoSubmissionMethod));
+    initialCustomisation(schema.defaultPhotoSubmissionMethod));
   const [rollUpUploading, setRollUpUploading] = useState(false);
   const [wallBannerUploading, setWallBannerUploading] = useState(false);
-  const [needByDate, setNeedByDate] = useState(() => editingItem?.eventDate ?? estimatedArrival(addWorkingDays(orderDate, STANDARD_PRODUCTION_WORKING_DAYS), market, schema.defaultDeliveryPreference).end);
-  const [productionDays, setProductionDays] = useState(editingItem && [1, 2, 3].includes(editingItem.productionWorkingDays ?? 3) ? editingItem.productionWorkingDays ?? 3 : 3);
-  const [productionServiceReviewed, setProductionServiceReviewed] = useState(!editingItem || !needsProductionServiceReview(editingItem));
-  const [saveError, setSaveError] = useState("");
-  const urgentServiceConfirmed = productionDays < STANDARD_PRODUCTION_WORKING_DAYS;
+  const [neededDate, setNeededDate] = useState(() => addWorkingDays(orderDate, STANDARD_PRODUCTION_WORKING_DAYS));
+  const [urgentServiceConfirmed, setUrgentServiceConfirmed] = useState(false);
   const [deliveryPreference, setDeliveryPreference] =
-    useState<DeliveryPreference>(editingItem?.deliveryPreference ?? schema.defaultDeliveryPreference);
-  const neededDate = addWorkingDays(orderDate, productionDays);
-  const timing = getCustomerTiming(orderDate, needByDate, market, market === "AU" ? "post" : deliveryPreference, neededDate);
+    useState<DeliveryPreference>(schema.defaultDeliveryPreference);
   const [added, setAdded] = useState(false);
   const [isPreviewZoomOpen, setIsPreviewZoomOpen] = useState(false);
   const previewZoomTriggerRef = useRef<HTMLButtonElement>(null);
@@ -262,16 +249,15 @@ export function BannerBundleConfigurator({
   const uploadRequired = [rollUp, wallBanner].some((value) =>
     value.photoSubmissionMethod === "upload" &&
     value.uploadedFiles.length < schema.minimumSourcePhotos);
+  const urgentConfirmationRequired = Boolean(
+    urgentService?.requiresConfirmation && !urgentServiceConfirmed,
+  );
   const addDisabled =
-    !productionServiceReviewed || rollUpUploading || wallBannerUploading || uploadRequired ||
-    !urgentService;
+    rollUpUploading || wallBannerUploading || uploadRequired ||
+    !urgentService || urgentConfirmationRequired;
 
   function addToCart() {
     if (addDisabled || !urgentService) return;
-    if (editingItem && editingCartStorageKey !== getActiveCartStorageKey()) {
-      setSaveError("Your customer session changed. Return to your cart and open the item again.");
-      return;
-    }
     const effectiveDeliveryPreference = market === "AU" ? "post" : deliveryPreference;
     const bundleComponents = validateBannerBundleComponents([
       componentSnapshot("roll-up", rollUp),
@@ -280,12 +266,12 @@ export function BannerBundleConfigurator({
     const uploadReferences = flattenBannerBundleUploadReferences(bundleComponents);
     const repository = createBrowserCartRepository(window.localStorage);
     const item: CartItem = {
-      id: editingItem?.id ?? createId(),
+      id: createId(),
       productKey: product.key,
       productSlug: product.slug,
       productTitle: product.title,
       imageSrc: product.image.src,
-      ...((selectedDesign?.id ?? editingItem?.galleryDesignId) ? { galleryDesignId: selectedDesign?.id ?? editingItem?.galleryDesignId } : {}),
+      ...(selectedDesign ? { galleryDesignId: selectedDesign.id } : {}),
       sizeKey,
       sizeLabel,
       peoplePets: 0,
@@ -293,37 +279,30 @@ export function BannerBundleConfigurator({
       designText: "",
       notes: "",
       neededDate,
-      productionWorkingDays: productionDays,
-      eventDate: needByDate,
       urgentServiceConfirmed,
       urgentFeeInclGstCents: urgentService.feeInclGstCents,
       deliveryPreference: effectiveDeliveryPreference,
-      quantity: editingItem?.quantity ?? 1,
+      quantity: 1,
       price: quote,
       uploadReferences,
       bundleComponents,
     };
-    try {
-      const current = repository.load();
-      const cart = editingItem
-        ? replaceConfiguredCartItem(current, editingItem, item)
-        : setCartDeliveryPreference(addCartItem(current, item), effectiveDeliveryPreference);
-      repository.save(cart);
-    } catch {
-      setSaveError("This cart item changed while you were editing. Return to your cart and open it again.");
-      return;
-    }
+    const cart = setCartDeliveryPreference(
+      addCartItem(repository.load(), item),
+      effectiveDeliveryPreference,
+    );
+    repository.save(cart);
     notifyCartChanged();
     setAdded(true);
     try {
-      if (!editingItem) emitAnalyticsEvent(buildCartItemEvent("add_to_cart", item));
+      emitAnalyticsEvent(buildCartItemEvent("add_to_cart", item));
     } catch {
       // Analytics must never change a successfully persisted cart action.
     }
   }
 
   return (
-    <ConfigurationFlow total={7}>
+    <>
       <AnalyticsEventTracker
         event={selectedDesign ? {
           event: "design_selected",
@@ -332,13 +311,14 @@ export function BannerBundleConfigurator({
         } : null}
         scopeKey={`${product.key}:${selectedDesign?.id ?? "none"}`}
       />
-      <div className={flowStyles.compactSummary} aria-label="Current price">
-        <div><strong>{formatMarketMoney(quote.totalInclGstCents, currency)}{taxSuffix}</strong>
-        <p>Selected options included. Delivery calculated at checkout.</p></div>
-        <ConfigurationReviewButton />
+      <div className={styles.priceAtStart} aria-label="Current price">
+        <strong>{formatMarketMoney(quote.totalInclGstCents, currency)}{taxSuffix}</strong>
+        <p>Selected options included. Delivery is calculated at checkout.</p>
+        <p>Order and pay → Receive your design proof → Approve before printing.</p>
+        <Link href="/contact">Need help choosing? Send your photos, occasion and required date.</Link>
       </div>
-      <div className={`${styles.configuratorLayout} ${flowStyles.layout}`}>
-        <div className={`${styles.configuratorSidebar} ${flowStyles.sidebar}`}>
+      <div className={styles.configuratorLayout}>
+        <div className={styles.configuratorSidebar}>
           <section className={styles.artworkPreview} aria-label="Artwork preview">
             <div className={styles.artworkPreviewMedia}>
               <Image
@@ -401,7 +381,52 @@ export function BannerBundleConfigurator({
             </div>
           ) : null}
 
-
+          <aside className={styles.priceSummary} aria-label="Order summary">
+            <p className={styles.eyebrow}>Estimated price</p>
+            <h2>Order summary</h2>
+            <p>{product.title}</p>
+            <dl className={styles.summaryDetails}>
+              <div><dt>Size</dt><dd>{displaySizeLabel}</dd></div>
+            </dl>
+            <dl className={styles.priceLines}>
+              {quote.lines.map((line) => (
+                <div key={line.key}>
+                  <dt>{line.label}</dt>
+                  <dd>{formatMarketMoney(getPriceLineAmountInclGstCents(line), currency)}{taxSuffix}</dd>
+                </div>
+              ))}
+              {taxRegistered ? <div>
+                <dt>{market === "NZ" ? "Includes GST (15%)" : "Includes Australian GST"}</dt>
+                <dd>{formatMarketMoney(quote.gstCents, currency)}</dd>
+              </div> : null}
+              <div className={styles.priceTotal}>
+                <dt>{taxRegistered ? "Total incl GST" : "Total"}</dt>
+                <dd>{formatMarketMoney(quote.totalInclGstCents, currency)}</dd>
+              </div>
+            </dl>
+            <PurchaseTrustStrip />
+            <button
+              className={styles.primaryButton}
+              type="button"
+              disabled={addDisabled}
+              onClick={addToCart}
+            >
+            {uploadRequired
+              ? "Upload a source photo to continue"
+              : urgentConfirmationRequired
+                ? "Confirm urgent service to continue"
+                  : rollUp.photoSubmissionMethod === "later" &&
+                      wallBanner.photoSubmissionMethod === "later"
+                    ? "Add to Cart — Send Photos Later"
+                    : "Add to cart"}
+            </button>
+            {added && (
+              <p className={styles.addedMessage} role="status">
+                <span>Added to your cart.</span>
+                <Link className={styles.addedMessageAction} href="/cart">View cart</Link>
+              </p>
+            )}
+          </aside>
         </div>
 
         <form
@@ -412,19 +437,7 @@ export function BannerBundleConfigurator({
             addToCart();
           }}
         >
-        {!editingItem ? <ConfigurationDraft
-          scope={`${market}:${product.key}:${selectedDesign?.id ?? "none"}`}
-          allowedSizes={schema.sizes.map((option) => option.key)}
-          options={{ sizeKey, peoplePets: 0, needByDate, deliveryPreference, photoMethods: [rollUp.photoSubmissionMethod, wallBanner.photoSubmissionMethod] }}
-          onRestore={(draft) => {
-            setSizeKey(draft.sizeKey); setNeedByDate(draft.needByDate); setDeliveryPreference(market === "AU" ? "post" : draft.deliveryPreference); setProductionDays(STANDARD_PRODUCTION_WORKING_DAYS);
-            setRollUp((value) => ({ ...value, photoSubmissionMethod: draft.photoMethods[0] }));
-            setWallBanner((value) => ({ ...value, photoSubmissionMethod: draft.photoMethods[1] }));
-          }}
-        /> : null}
-
-          <ConfigurationStep number={1} title="Choose the format">
-<section className={styles.configuratorStep}>
+          <section className={styles.configuratorStep}>
             <div className={styles.stepHeading}>
               <span>01</span>
               <div>
@@ -464,7 +477,6 @@ export function BannerBundleConfigurator({
               </div>
             </fieldset>
           </section>
-        </ConfigurationStep>
 
           <SourcePhotoCustomisation
             analyticsProductId={`${product.key}:roll-up-banner`}
@@ -495,8 +507,7 @@ export function BannerBundleConfigurator({
             onUploadingChange={setWallBannerUploading}
           />
 
-          <ConfigurationStep number={6} title="Timing and delivery">
-<section className={styles.configuratorStep}>
+          <section className={styles.configuratorStep}>
             <div className={styles.stepHeading}>
               <span>06</span>
               <div>
@@ -504,19 +515,55 @@ export function BannerBundleConfigurator({
                 <p>Tell us when you need it and how you prefer to receive it.</p>
               </div>
             </div>
-            <ConfigurationTiming orderDate={orderDate} needByDate={needByDate} market={market} deliveryPreference={deliveryPreference} productionDate={neededDate} onChange={setNeedByDate} />
-          <div className={`${styles.fieldGrid} ${styles.timingFields}`}>
-            <label className={styles.formField}>
-              <span>Production service</span>
-              {!productionServiceReviewed ? <p role="status">Please choose your production service again. Your saved cart stays unchanged until you save.</p> : null}
-              <select aria-label="Production service" value={productionServiceReviewed ? productionDays : ""} onChange={(event) => { setProductionDays(Number(event.target.value)); setProductionServiceReviewed(true); }}>
-                {!productionServiceReviewed ? <option value="" disabled>Choose production service</option> : null}
-                <option value={3}>Standard — 3 business days</option>
-                {[2, 1].map((days) => <option key={days} value={days}>Optional rush — {days} business {days === 1 ? "day" : "days"} (+{formatMarketMoney(getUrgentService(orderDate, addWorkingDays(orderDate, days), urgentFees).feeInclGstCents, currency)}{taxSuffix})</option>)}
-              </select>
-              <small>Selecting optional rush confirms its displayed fee. Delivery time is separate and is not guaranteed.</small>
-            </label>
-            {market === "NZ" ? <fieldset className={styles.formField} role="radiogroup">
+            <div className={styles.timingPolicy}>
+              <p>{deliveryCopy.production}</p>
+              <p>Estimated delivery times after production are:</p>
+              {market === "NZ" ? (
+                <ul>
+                  <li>{deliveryCopy.newZealand}</li>
+                </ul>
+              ) : (
+                <>
+                  <p>{deliveryCopy.australiaDhl}</p>
+                  <p>{deliveryCopy.australiaStandard}</p>
+                  <p>{deliveryCopy.australiaRemote}</p>
+                </>
+              )}
+              <p><strong>This is the production completion date, not the delivery date.</strong> Allow additional time for shipping.</p>
+            <p>If your order is <strong>urgent</strong>, please make sure to clearly let us know when placing your order so that we can arrange it accordingly and avoid any delays.</p>
+            </div>
+            <div className={`${styles.fieldGrid} ${styles.timingFields}`}>
+              <label className={styles.formField}>
+                <span>Production completion date</span>
+                <input
+                  type="date"
+                  required
+                  min={addWorkingDays(orderDate, 1)}
+                  value={neededDate}
+                  onChange={(event) => {
+                    setNeededDate(event.target.value);
+                    setUrgentServiceConfirmed(false);
+                  }}
+                />
+              </label>
+              {urgentService?.requiresConfirmation && (
+                <label className={styles.urgentConfirmation}>
+                  <input
+                    type="checkbox"
+                    checked={urgentServiceConfirmed}
+                    onChange={(event) => setUrgentServiceConfirmed(event.target.checked)}
+                    aria-label="Confirm urgent service"
+                  />
+                  <span>
+                    <strong>I need production completed by the selected date and confirm urgent service.</strong>
+                    <small>{formatMarketMoney(urgentService.feeInclGstCents, currency)}{taxSuffix}</small>
+                    <small className={styles.urgentDateClarification}>
+                      Delivery time is not included in this timeframe.
+                    </small>
+                  </span>
+                </label>
+              )}
+              {market === "NZ" ? <fieldset className={styles.formField} role="radiogroup">
                 <legend>Delivery</legend>
                 <div className={styles.deliveryChoices}>
                   <label>
@@ -524,7 +571,7 @@ export function BannerBundleConfigurator({
                       type="radio"
                       name="delivery-preference"
                       checked={deliveryPreference === "post"}
-                      onChange={() => { setDeliveryPreference("post"); }}
+                      onChange={() => setDeliveryPreference("post")}
                     />
                     Post
                   </label>
@@ -533,7 +580,7 @@ export function BannerBundleConfigurator({
                       type="radio"
                       name="delivery-preference"
                       checked={deliveryPreference === "pickup"}
-                      onChange={() => { setDeliveryPreference("pickup"); }}
+                      onChange={() => setDeliveryPreference("pickup")}
                     />
                     Pickup
                   </label>
@@ -542,60 +589,8 @@ export function BannerBundleConfigurator({
               </fieldset> : null}
             </div>
           </section>
-        </ConfigurationStep>
-        <ConfigurationStep number={7} title={editingItem ? "Review and save configuration" : "Review and add to cart"}>
-          <aside className={styles.priceSummary} aria-label="Order summary">
-            <p className={styles.eyebrow}>Estimated price</p>
-            <h2>Order summary</h2>
-            <p>{product.title}</p>
-            <dl className={styles.summaryDetails}>
-              <div><dt>Size</dt><dd>{displaySizeLabel}</dd></div>
-            </dl>
-            <dl className={styles.priceLines}>
-              {quote.lines.map((line) => (
-                <div key={line.key}>
-                  <dt>{line.label}</dt>
-                  <dd>{formatMarketMoney(getPriceLineAmountInclGstCents(line), currency)}{taxSuffix}</dd>
-                </div>
-              ))}
-              {taxRegistered ? <div>
-                <dt>{market === "NZ" ? "Includes GST (15%)" : "Includes Australian GST"}</dt>
-                <dd>{formatMarketMoney(quote.gstCents, currency)}</dd>
-              </div> : null}
-              <div className={styles.priceTotal}>
-                <dt>{taxRegistered ? "Total incl GST" : "Total"}</dt>
-                <dd>{formatMarketMoney(quote.totalInclGstCents, currency)}</dd>
-              </div>
-            </dl>
-            <p>Need-by date: {needByDate || "Choose a date"}. Estimated production completion: {neededDate}.</p>
-          {timing.error ? <p role="status" className={flowStyles.warning}>{timing.error}</p> : null}
-          <PurchaseTrustStrip />
-            <button
-              className={styles.primaryButton}
-              type="button"
-              disabled={addDisabled || Boolean(editingItem && added)}
-              onClick={addToCart}
-            >
-            {uploadRequired
-              ? "Upload a source photo to continue"
-              : editingItem ? "Save configuration"
-
-                  : rollUp.photoSubmissionMethod === "later" &&
-                      wallBanner.photoSubmissionMethod === "later"
-                    ? "Add to Cart — Send Photos Later"
-                    : "Add to cart"}
-            </button>
-            {saveError ? <p role="alert">{saveError} <Link href="/cart">Return to cart</Link></p> : null}
-          {added && (
-              <p className={styles.addedMessage} role="status">
-                <span>{editingItem ? "Configuration saved." : "Added to your cart."}</span>
-                <Link className={styles.addedMessageAction} href="/cart">View cart</Link>
-              </p>
-            )}
-          </aside>
-        </ConfigurationStep>
         </form>
       </div>
-    </ConfigurationFlow>
+    </>
   );
 }

@@ -35,7 +35,7 @@ describe("Forms source visual parity", () => {
   });
 
   it("keeps mobile filter controls and paired actions touch-safe", () => {
-    const mobileRules = css.slice(css.lastIndexOf("@media (max-width: 720px)", css.indexOf("--forms-filter-control-height-mobile")));
+    const mobileRules = css.slice(css.lastIndexOf("@media (max-width: 720px)"));
 
     expect(mobileRules).toContain("--forms-filter-control-height-mobile: 44px;");
     expect(mobileRules).toMatch(/\.filterPanel input,\s*\.filterPanel select[\s\S]*?height: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-height: var\(--forms-filter-control-height-mobile\);/);

@@ -1,6 +1,3 @@
-import { quoteMarketConfiguration } from "@/domain/pricing/market-quote";
-import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
-import { getBannerBundleCounts } from "@/domain/bundles/banner-bundle";
 import { describe, expect, it } from "vitest";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import { calculateFixedPackage } from "@/domain/pricing/calculate-fixed-package";
@@ -61,7 +58,7 @@ describe("cart checkout input", () => {
       }],
     };
 
-    const input = cartToCheckoutInput({ ...cart, items: cart.items.map((item) => ({ ...item, price: quoteMarketConfiguration(defaultProductRegistry, "NZ", item.productKey, { sizeKey: item.sizeKey, peoplePets: 0, bundleCounts: getBannerBundleCounts(item.bundleComponents!) }) })) });
+    const input = cartToCheckoutInput(cart);
 
     expect(input.items[0].bundleComponents).toEqual(cart.items[0].bundleComponents);
     expect(input.items[0].bundleComponents).not.toBe(cart.items[0].bundleComponents);
@@ -133,7 +130,7 @@ describe("cart checkout input", () => {
       }],
     };
 
-    const input = cartToCheckoutInput({ ...cart, items: cart.items.map((item) => ({ ...item, price: quoteMarketConfiguration(defaultProductRegistry, "NZ", item.productKey, { sizeKey: item.sizeKey, peoplePets: 0, bundleCounts: getBannerBundleCounts(item.bundleComponents!) }) })) });
+    const input = cartToCheckoutInput(cart);
     expect(input.items[0].uploadReferences).toHaveLength(100);
 
     const repriced = repriceCart(input, { now: MONDAY_IN_AUCKLAND });

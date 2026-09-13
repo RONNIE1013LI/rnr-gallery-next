@@ -426,7 +426,7 @@ export function HomepageV3({
             <p className={styles.eyebrow}>THE R&amp;R GALLERY DIFFERENCE</p>
             <h2>Designer-led.<br />Approved by you.</h2>
             <p>Every artwork is reviewed and refined by our team before printing. You see the design proof and approve the version that moves into production.</p>
-            <Link className={`${styles.button} ${styles.buttonOutline}`} href="/how-it-works">See How It Works</Link>
+            <a className={`${styles.button} ${styles.buttonOutline}`} href="#faq">See How It Works</a>
           </div>
           <div className={styles.proofPanel}>
             <div className={styles.proofHeader}><span>YOUR DESIGN PROOF</span></div>
@@ -472,7 +472,7 @@ export function HomepageV3({
       <section id="final-cta" className={`${styles.finalCta} ${styles.sectionDark}`}>
         <div className={`${styles.shell} ${styles.finalCtaGrid}`}>
           <div><p className={`${styles.eyebrow} ${styles.eyebrowLight}`}>A PLACE TO START</p><h2>You don&apos;t need perfect photos.<br />You just need a place to start.</h2><p>Upload what you have, tell us what the piece is for, and we&apos;ll guide you from there.</p></div>
-          <div className={styles.finalActions}><Link className={`${styles.button} ${styles.buttonLight}`} href={shopHref}>Choose Your Product</Link><a className={`${styles.textLink} ${styles.textLinkLight}`} href="#begin">Get product guidance <Arrow /></a></div>
+          <div className={styles.finalActions}><Link className={`${styles.button} ${styles.buttonLight}`} href={shopHref}>Choose Your Product</Link><a className={`${styles.textLink} ${styles.textLinkLight}`} href="#products">Get product guidance <Arrow /></a></div>
         </div>
       </section>
     </main>

@@ -94,8 +94,8 @@ export function SiteFooter({
         <div className="site-footer__column site-footer__discover">
           <p className="site-footer__title">Discover</p>
           <ul>
-            <li><Link href="/design-gallery">Design Gallery</Link></li>
-            <li><Link href="/#gallery">Designs by product</Link></li>
+            <li><Link href="/design-gallery">Gallery</Link></li>
+            <li><Link href="/#gallery">Designs by Product</Link></li>
             <li><Link href="/#transformation">Transformations</Link></li>
             <li><Link href="/how-it-works">How It Works</Link></li>
             <li><Link href="/about">About</Link></li>
@@ -117,7 +117,7 @@ export function SiteFooter({
           <div className="site-footer__help-menu">
             <p className="site-footer__title">Need help?</p>
             <ul>
-              <li><Link href="/help">Help</Link></li>
+              <li><Link href="/help">FAQ</Link></li>
               <li><Link href="/contact">Contact</Link></li>
               <li>
                 <a href="https://m.me/RandRgallery" rel="noopener noreferrer">
@@ -142,8 +142,7 @@ export function SiteFooter({
 
       <div className="site-footer__legal">
         <address className="site-footer__business-line">
-          Fairview Heights, Auckland, New Zealand<br />
-          Pickup available by appointment.
+          11 Para Close, Fairview Heights, Auckland 0632, New Zealand
         </address>
         <span
           className="site-footer__copyright"

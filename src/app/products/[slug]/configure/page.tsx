@@ -16,7 +16,6 @@ type ConfigurePageProps = {
   searchParams: Promise<{
     design?: string | string[];
     size?: string | string[];
-    edit?: string | string[];
   }>;
 };
 
@@ -102,7 +101,6 @@ export default async function ConfigurePage({ params, searchParams }: ConfigureP
     orderDate={getAucklandOrderDate()}
     selectedDesign={selectedDesign}
     relatedDesigns={relatedDesigns}
-    editItemId={Array.isArray(resolvedSearchParams.edit) ? resolvedSearchParams.edit[0] : resolvedSearchParams.edit}
     initialSizeKey={(() => {
       const requested = Array.isArray(resolvedSearchParams.size)
         ? resolvedSearchParams.size[0]

@@ -92,7 +92,7 @@ describe("CheckoutView", () => {
     expect(screen.getByLabelText("Country")).toHaveValue("Australia");
     expect(screen.getByLabelText("Country")).toHaveAttribute("readonly");
     expect(screen.queryByRole("combobox", { name: "Country" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Full name (required)")).toHaveValue("Mia Chen");
+    expect(screen.getByLabelText("Full name")).toHaveValue("Mia Chen");
     expect(screen.queryByRole("option", { name: /Aroha Ngata/ })).not.toBeInTheDocument();
   });
 
@@ -110,7 +110,7 @@ describe("CheckoutView", () => {
 
     expect(screen.getByLabelText("Country")).toHaveValue("Australia");
     expect(screen.getByLabelText("Country")).toHaveAttribute("readonly");
-    expect(screen.getByLabelText("Full name (required)")).toHaveValue("Mia Chen");
+    expect(screen.getByLabelText("Full name")).toHaveValue("Mia Chen");
     expect(screen.queryByText(/checkout details were restored/i)).not.toBeInTheDocument();
   });
 
@@ -200,7 +200,7 @@ describe("CheckoutView", () => {
     render(<CheckoutView savedAddresses={[address]} />);
 
     expect(screen.getByRole("button", { name: "Checking order status…" })).toBeDisabled();
-    expect(screen.getByLabelText("Street address (required)")).toBeDisabled();
+    expect(screen.getByLabelText("Street address")).toBeDisabled();
     expect(screen.queryByRole("radiogroup", { name: "Delivery" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Delivery" })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -247,7 +247,7 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
 
-    expect(screen.getByLabelText("Full name (required)")).toHaveValue("Aroha Ngata");
+    expect(screen.getByLabelText("Full name")).toHaveValue("Aroha Ngata");
     expect(screen.queryByRole("heading", { name: "Delivery" })).not.toBeInTheDocument();
     await checkoutReady();
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
@@ -260,10 +260,10 @@ describe("CheckoutView", () => {
     expect(sessionBody.deliveryMethod).toBe("post");
     expect(JSON.stringify(sessionBody)).not.toContain("saved-1");
 
-    fireEvent.change(screen.getByLabelText("Street address (required)"), { target: { value: "14 Queen Street" } });
+    fireEvent.change(screen.getByLabelText("Street address"), { target: { value: "14 Queen Street" } });
     expect(screen.getByText("Changes need review.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continue to/ })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Street address (required)"), { target: { value: "12 Queen Street" } });
+    fireEvent.change(screen.getByLabelText("Street address"), { target: { value: "12 Queen Street" } });
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByRole("radiogroup", { name: "Payment method" });
 
@@ -341,8 +341,8 @@ describe("CheckoutView", () => {
       expect(country).toHaveAttribute("readonly");
     }
     expect(screen.queryByRole("combobox", { name: "Country" })).not.toBeInTheDocument();
-    expect(screen.getAllByLabelText("State / territory (required)")).toHaveLength(2);
-    expect(screen.getAllByLabelText("Full name (required)")).toHaveLength(2);
+    expect(screen.getAllByLabelText("State / territory")).toHaveLength(2);
+    expect(screen.getAllByLabelText("Full name")).toHaveLength(2);
   });
 
   it("does not expose a second checkout-local market switch", async () => {
@@ -440,7 +440,7 @@ describe("CheckoutView", () => {
     await checkoutReady();
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText("Post unavailable");
-    expect(screen.getByLabelText("Street address (required)")).toHaveValue("12 Queen Street");
+    expect(screen.getByLabelText("Street address")).toHaveValue("12 Queen Street");
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText(/Live carrier rate/);
   });
@@ -448,7 +448,7 @@ describe("CheckoutView", () => {
   it("restores partially entered checkout details after a refresh without trusting old totals", async () => {
     const firstRender = render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
-    fireEvent.change(screen.getByLabelText("Street address (required)"), { target: { value: "44 Refresh Road" } });
+    fireEvent.change(screen.getByLabelText("Street address"), { target: { value: "44 Refresh Road" } });
     fireEvent.change(screen.getByLabelText("Building / unit (optional)"), { target: { value: "Unit 3" } });
     await waitFor(() => expect(sessionStorage.getItem(checkoutDraftStorageKey)).toContain("44 Refresh Road"));
     firstRender.unmount();
@@ -456,11 +456,11 @@ describe("CheckoutView", () => {
     render(<CheckoutView savedAddresses={[address]} />);
 
     await checkoutReady();
-    expect(screen.getByLabelText("Street address (required)")).toHaveValue("44 Refresh Road");
+    expect(screen.getByLabelText("Street address")).toHaveValue("44 Refresh Road");
     expect(screen.getByLabelText("Building / unit (optional)")).toHaveValue("Unit 3");
     expect(screen.queryByRole("heading", { name: "Delivery" })).not.toBeInTheDocument();
     expect(screen.getByText("Your checkout details were restored. Review delivery and totals again.")).toBeInTheDocument();
-    expect(screen.getByText("Enter your delivery address to calculate shipping and confirm your total.")).toBeInTheDocument();
+    expect(screen.getByText("Review delivery to see authoritative totals.")).toBeInTheDocument();
   });
 
   it("shows a useful retry message when the checkout network request fails", async () => {
@@ -483,11 +483,11 @@ describe("CheckoutView", () => {
     render(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
     await checkoutReady();
     fireEvent.click(screen.getByLabelText("Deliver to a different address"));
-    fireEvent.change(screen.getAllByLabelText("Street address (required)")[1], { target: { value: "25 George Street" } });
-    fireEvent.change(screen.getAllByLabelText("Suburb (required)")[1], { target: { value: "Sydney" } });
-    fireEvent.change(screen.getAllByLabelText("State / territory (required)")[1], { target: { value: "NSW" } });
-    fireEvent.change(screen.getAllByLabelText("Postcode (required)")[1], { target: { value: "2000" } });
-    fireEvent.change(screen.getAllByLabelText("Phone (required)")[1], { target: { value: "+61412345678" } });
+    fireEvent.change(screen.getAllByLabelText("Street address")[1], { target: { value: "25 George Street" } });
+    fireEvent.change(screen.getAllByLabelText("Suburb")[1], { target: { value: "Sydney" } });
+    fireEvent.change(screen.getAllByLabelText("State / territory")[1], { target: { value: "NSW" } });
+    fireEvent.change(screen.getAllByLabelText("Postcode")[1], { target: { value: "2000" } });
+    fireEvent.change(screen.getAllByLabelText("Phone")[1], { target: { value: "+61412345678" } });
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText(/No shipping charge/);
 
@@ -498,7 +498,7 @@ describe("CheckoutView", () => {
     expect(JSON.stringify(body)).not.toContain("saved-1");
   });
 
-  it("announces an error summary and links to each invalid field", async () => {
+  it("associates local address errors and focuses the first invalid field", async () => {
     render(<CheckoutView />);
     await checkoutReady();
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
@@ -510,10 +510,7 @@ describe("CheckoutView", () => {
     expect(screen.queryByText(/Too small:|expected string|must match pattern/)).not.toBeInTheDocument();
     const firstInvalid = document.querySelector<HTMLElement>('[aria-invalid="true"]');
     expect(firstInvalid).toHaveAccessibleDescription();
-    const summary = screen.getByRole("alert", { name: "Check your details" });
-    await waitFor(() => expect(document.activeElement).toBe(summary));
-    fireEvent.click(screen.getByRole("link", { name: "Contact details: Full name" }));
-    expect(document.activeElement).toBe(firstInvalid);
+    await waitFor(() => expect(document.activeElement).toBe(firstInvalid));
   });
 
   it("submits a review from the checkout form and locks request-changing controls while pending", async () => {
@@ -526,7 +523,7 @@ describe("CheckoutView", () => {
     fireEvent.submit(screen.getByRole("form", { name: "Checkout details" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText("Saved billing address")).toBeDisabled();
-    expect(screen.getByLabelText("Street address (required)")).toBeDisabled();
+    expect(screen.getByLabelText("Street address")).toBeDisabled();
     expect(screen.getByLabelText("Deliver to a different address")).toBeDisabled();
     expect(screen.queryByRole("radiogroup", { name: "Delivery" })).not.toBeInTheDocument();
 
@@ -543,8 +540,8 @@ describe("CheckoutView", () => {
     await checkoutReady();
     fireEvent.click(screen.getByLabelText("Deliver to a different address"));
     fireEvent.change(screen.getByLabelText("Saved billing address"), { target: { value: "saved-2" } });
-    expect(screen.getAllByLabelText("Street address (required)")[0]).toHaveValue("9 Lake Road");
-    expect(screen.getAllByLabelText("Street address (required)")[1]).toHaveValue("12 Queen Street");
+    expect(screen.getAllByLabelText("Street address")[0]).toHaveValue("9 Lake Road");
+    expect(screen.getAllByLabelText("Street address")[1]).toHaveValue("12 Queen Street");
     expect(screen.getByLabelText("Saved delivery address")).toHaveValue("saved-1");
   });
 
@@ -563,7 +560,7 @@ describe("CheckoutView", () => {
 
     expect(await screen.findByText("Checkout changed. Review delivery and totals again.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continue to/ })).toBeDisabled();
-    expect(screen.getByText("Enter your delivery address to calculate shipping and confirm your total.")).toBeInTheDocument();
+    expect(screen.getByText("Review delivery to see authoritative totals.")).toBeInTheDocument();
     expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
   });
 
@@ -746,7 +743,7 @@ describe("CheckoutView", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0][0]).toBe("/api/checkout/order");
-    expect(screen.getByLabelText("Street address (required)")).toBeDisabled();
+    expect(screen.getByLabelText("Street address")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Review delivery & totals" })).toBeDisabled();
     first.unmount();
     render(<CheckoutView savedAddresses={[address]} />);
@@ -843,7 +840,7 @@ describe("CheckoutView", () => {
 
     render(<CheckoutView savedAddresses={[address]} />);
 
-    await waitFor(() => expect(screen.getByLabelText("Street address (required)")).toBeEnabled());
+    await waitFor(() => expect(screen.getByLabelText("Street address")).toBeEnabled());
     expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
     expect(sessionStorage.getItem("rnr:commerce:v1:guest:checkout:intent-cart-backup")).toBeNull();
     expect(screen.getByRole("button", { name: "Review delivery & totals" })).toBeEnabled();
@@ -897,7 +894,7 @@ describe("CheckoutView", () => {
     expect(fetchMock.mock.calls[2][0]).toBe("/api/checkout/payment-methods");
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ checkoutVersion: 2, cartDigest: "a".repeat(64) });
 
-    fireEvent.change(screen.getByLabelText("Street address (required)"), { target: { value: "14 Queen Street" } });
+    fireEvent.change(screen.getByLabelText("Street address"), { target: { value: "14 Queen Street" } });
     expect(screen.queryByRole("radiogroup", { name: "Payment method" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continue to/ })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));

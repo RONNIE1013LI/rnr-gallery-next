@@ -213,7 +213,6 @@ describe("web order production job snapshot", () => {
           notes: "Second note",
           neededDate: "2026-08-08",
           urgentServiceConfirmed: true,
-          productionWorkingDays: 1,
           quantity: 2,
           uploadReferences: [],
         },

@@ -40,20 +40,6 @@ function openChat() {
 }
 
 describe("CustomerChat", () => {
-  it("contains keyboard focus and marks the open chat as modal", async () => {
-    render(<><button>Background action</button><CustomerChat /></>);
-    openChat();
-    const dialog = screen.getByRole("dialog", { name: "Chat with R&R Gallery" });
-    await screen.findByRole("button", { name: "Get a Quote" });
-    expect(dialog).toHaveAttribute("aria-modal", "true");
-    const close = screen.getByRole("button", { name: "Close chat" });
-    close.focus();
-    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
-    expect(close).not.toHaveFocus();
-    expect(dialog.contains(document.activeElement)).toBe(true);
-    fireEvent.keyDown(document, { key: "Tab" });
-    expect(close).toHaveFocus();
-  });
   it("stops polling and gives a sign-in action when chat identity is unavailable", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: { code: "WEBSITE_CHAT_IDENTITY_UNAVAILABLE" } }), { status: 503 }));
     vi.stubGlobal("fetch", fetchMock);

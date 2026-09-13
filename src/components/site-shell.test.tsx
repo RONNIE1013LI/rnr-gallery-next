@@ -14,25 +14,10 @@ const { usePathname, push, refresh } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ usePathname, useRouter: () => ({ push, refresh }) }));
 
 describe("site shell", () => {
-  it("shows appointment-only locality in the public footer", () => {
-    render(<SiteFooter />);
-    const footer = screen.getByRole("contentinfo");
-    expect(footer).not.toHaveTextContent("11 Para Close");
-    expect(footer).toHaveTextContent("Fairview Heights, Auckland, New Zealand");
-    expect(footer).toHaveTextContent("Pickup available by appointment.");
-  });
   beforeEach(() => {
     usePathname.mockReturnValue("/");
     localStorage.clear();
     Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
-  });
-
-  it("removes the duplicate shop action and exposes Contact in both menus", () => {
-    render(<SiteHeader />);
-    expect(screen.queryByRole("link", { name: "Start a Design" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Contact" })).toHaveAttribute("href", "/contact");
-    fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
-    expect(within(screen.getByRole("navigation", { name: "Mobile navigation" })).getByRole("link", { name: "Contact" })).toHaveAttribute("href", "/contact");
   });
 
   it("offers the main storefront routes", () => {
@@ -84,9 +69,9 @@ describe("site shell", () => {
       "href",
       "/help",
     );
-    expect(screen.getAllByRole("link", { name: "Contact" })[0]).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "Start a Design" })[0]).toHaveAttribute(
       "href",
-      "/contact",
+      "/shop",
     );
     expect(within(shopMenu).getByRole("link", { name: "Canvas" })).toBeInTheDocument();
     expect(within(shopMenu).getByRole("link", { name: "Banners" })).toBeInTheDocument();
@@ -107,8 +92,8 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/au");
     expect(screen.getAllByRole("link", { name: "Shop" })[0])
       .toHaveAttribute("href", "/au/shop");
-    expect(screen.getAllByRole("link", { name: "Contact" })[0])
-      .toHaveAttribute("href", "/contact");
+    expect(screen.getAllByRole("link", { name: "Start a Design" })[0])
+      .toHaveAttribute("href", "/au/shop");
 
     const shopMenu = screen.getByRole("navigation", { name: "Shop menu" });
     expect(within(shopMenu).getByRole("link", { name: "All products" }))
@@ -333,9 +318,9 @@ describe("site shell", () => {
       "href",
       "/",
     );
-    expect(within(menu).getByRole("link", { name: "Contact" })).toHaveAttribute(
+    expect(within(menu).getByRole("link", { name: "Start a Design" })).toHaveAttribute(
       "href",
-      "/contact",
+      "/shop",
     );
 
     fireEvent.click(document.querySelector<HTMLAnchorElement>(".site-header__brand")!);
@@ -391,7 +376,7 @@ describe("site shell", () => {
       .closest<HTMLDivElement>(".mobile-menu")!;
     const mobileNavigation = screen.getByRole("navigation", { name: "Mobile navigation" });
     const firstLink = within(mobileNavigation).getByRole("link", { name: "Home" });
-    const lastLink = within(mobileNavigation).getByRole("link", { name: "Contact" });
+    const lastLink = within(mobileNavigation).getByRole("link", { name: "Start a Design" });
 
     expect(document.body.style.overflow).toBe("");
     expect(document.body.style.paddingRight).toBe("");
@@ -447,17 +432,6 @@ describe("site shell", () => {
     expect(canvasLink).toHaveFocus();
   });
 
-  it.each(["NZ", "AU"] as const)("uses the same customer navigation labels in the header and footer for %s", (market) => {
-    render(<><SiteHeader initialMarket={market} /><SiteFooter market={market} /></>);
-    const header = screen.getByRole("banner");
-    const footer = screen.getByRole("contentinfo");
-    for (const [label, href] of [["Design Gallery", "/design-gallery"], ["Help", "/help"], ["How It Works", "/how-it-works"], ["Contact", "/contact"]]) {
-      expect(within(header).getAllByRole("link", { name: label })[0]).toHaveAttribute("href", href);
-      expect(within(footer).getByRole("link", { name: label })).toHaveAttribute("href", href);
-    }
-    expect(within(footer).getByRole("link", { name: "Designs by product" })).toHaveAttribute("href", "/#gallery");
-  });
-
   it("keeps support and legal links in the footer", () => {
     render(<SiteFooter />);
     const footer = screen.getByRole("contentinfo");
@@ -480,17 +454,17 @@ describe("site shell", () => {
     expect(contact).not.toHaveTextContent("11 Para Close");
     const businessLine = footer.querySelector<HTMLElement>(".site-footer__business-line");
     expect(businessLine).toHaveTextContent(
-      "Fairview Heights, Auckland, New Zealand",
+      "11 Para Close, Fairview Heights, Auckland 0632, New Zealand",
     );
     expect(businessLine).not.toHaveTextContent("R&R Gallery Ltd");
     expect(businessLine?.querySelector("strong")).toBeNull();
     expect(within(footer).getAllByRole("link", { name: /privacy/i }))
       .toHaveLength(1);
-    expect(within(footer).getByRole("link", { name: "Designs by product" }))
+    expect(within(footer).getByRole("link", { name: "Designs by Product" }))
       .toHaveAttribute("href", "/#gallery");
     expect(within(footer).getByRole("link", { name: "Transformations" }))
       .toHaveAttribute("href", "/#transformation");
-    expect(within(footer).getByRole("link", { name: "Help" }))
+    expect(within(footer).getByRole("link", { name: "FAQ" }))
       .toHaveAttribute("href", "/help");
     expect(within(footer).getByRole("link", { name: "About" }))
       .toHaveAttribute("href", "/about");

@@ -77,7 +77,7 @@ describe("RootLayout shared customer reviews", () => {
     expect(isValidElement(footerLead)).toBe(true);
     expect((footerLead as ReactElement).type).toBe(CustomerReviewsSection);
     expect((footerLead as ReactElement<{ background: string; data: unknown }>).props)
-      .toEqual({ background: "sand", data: reviewSection, compact: true });
+      .toEqual({ background: "sand", data: reviewSection });
   });
 
   it("marks the server-resolved Australian storefront with its regional language", async () => {

@@ -1,8 +1,8 @@
 "use client";
 
-import { CartProductImage } from "./cart-product-image";
+import Image from "next/image";
 import Link from "next/link";
-import { useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AnalyticsEventTracker } from "@/components/analytics-event-tracker";
 import { emitAnalyticsEvent } from "@/domain/analytics/client";
 import { buildCartEvent, buildCartItemEvent } from "@/domain/analytics/events";
@@ -20,16 +20,25 @@ import {
   calculateCartTotals,
   cartMatchesMarket,
   getCartDisplayMarket,
+  applyAuthoritativeRepricing,
   removeCartItem,
   setCartItemQuantity,
 } from "@/domain/cart/cart";
 import type { Cart } from "@/domain/cart/types";
 import {
+  clearIdentityCheckoutState,
   getActiveCartStorageKey,
+  getActiveCustomerId,
 } from "@/domain/cart/browser-cart-scope";
 import { marketSwitchDestination } from "@/domain/markets/market";
+import { requestMarketSwitch } from "@/domain/markets/browser-market-switch";
 import type { Market } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
+import {
+  hasStaleUrgentDate,
+  MarketSwitchDialog,
+  type MarketSwitchDialogState,
+} from "./market-switch-dialog";
 import styles from "./storefront.module.css";
 
 function updateCart(update: (cart: Cart) => Cart) {
@@ -74,7 +83,101 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
   const cart = parseStoredCart(snapshot);
   const totals = calculateCartTotals(cart);
   const displayMarket = getCartDisplayMarket(cart);
-  const needsConfiguration = !cartMatchesMarket(cart, market);
+  const needsMarketReconciliation = cart.items.length > 0 && !cartMatchesMarket(cart, market);
+  const reconciliationRef = useRef<string | null>(null);
+  const [reconciliationError, setReconciliationError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [reconciliationPending, setReconciliationPending] = useState(false);
+  const [marketDialog, setMarketDialog] = useState<MarketSwitchDialogState | null>(null);
+
+  const reconcileMarket = useCallback(async (candidateCart: Cart) => {
+    const initiatingCustomerId = getActiveCustomerId();
+    setReconciliationPending(true);
+    setReconciliationError(null);
+    try {
+      const result = await requestMarketSwitch({
+        market,
+        candidateCart,
+        persistPreference: false,
+      });
+      if (getActiveCustomerId() !== initiatingCustomerId) return;
+      if (!result.ok) {
+        if (
+          "code" in result.payload &&
+          result.payload.code === "urgent_confirmation_required" &&
+          result.payload.issues?.length
+        ) {
+          setMarketDialog({
+            targetMarket: market,
+            cart: candidateCart,
+            issues: result.payload.issues,
+            message: result.payload.error,
+          });
+          return;
+        }
+        setReconciliationError(
+          "error" in result.payload
+            ? result.payload.error
+            : "The cart could not be repriced for this market.",
+        );
+        return;
+      }
+      if (!("cart" in result.payload) || !result.payload.cart) {
+        setReconciliationError("The cart could not be repriced for this market.");
+        return;
+      }
+      const repository = createBrowserCartRepository(window.localStorage);
+      repository.save(applyAuthoritativeRepricing(candidateCart, result.payload.cart));
+      clearIdentityCheckoutState(
+        window.localStorage,
+        window.sessionStorage,
+        initiatingCustomerId,
+      );
+      setMarketDialog(null);
+      notifyCartChanged();
+    } catch {
+      if (getActiveCustomerId() === initiatingCustomerId) {
+        setReconciliationError("The cart could not be repriced for this market.");
+      }
+    } finally {
+      setReconciliationPending(false);
+    }
+  }, [market]);
+
+  useEffect(() => {
+    if (!needsMarketReconciliation) {
+      reconciliationRef.current = null;
+      return;
+    }
+    const reconciliationKey = `${market}:${snapshot}:${retryNonce}`;
+    if (reconciliationRef.current === reconciliationKey) return;
+    reconciliationRef.current = reconciliationKey;
+    const candidateCart = createBrowserCartRepository(window.localStorage).load();
+    void reconcileMarket(candidateCart);
+  }, [market, needsMarketReconciliation, reconcileMarket, retryNonce, snapshot]);
+
+  function changeMarketDialogDate(clientItemId: string, neededDate: string) {
+    setMarketDialog((current) => current ? {
+      ...current,
+      cart: {
+        version: 1,
+        items: current.cart.items.map((item) => item.id === clientItemId
+          ? { ...item, neededDate, urgentServiceConfirmed: false }
+          : item),
+      },
+    } : null);
+  }
+
+  function confirmMarketDialogUrgent() {
+    if (!marketDialog || reconciliationPending || hasStaleUrgentDate(marketDialog)) return;
+    const urgentIds = new Set(marketDialog.issues.map((issue) => issue.clientItemId));
+    void reconcileMarket({
+      version: 1,
+      items: marketDialog.cart.items.map((item) => urgentIds.has(item.id)
+        ? { ...item, urgentServiceConfirmed: true }
+        : item),
+    });
+  }
 
   if (cart.items.length === 0) {
     return (
@@ -90,6 +193,29 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
     );
   }
 
+  if (needsMarketReconciliation) {
+    return (
+      <>
+        <section className={styles.cartEmpty} aria-live="polite">
+          <h2>Updating your cart</h2>
+          {reconciliationError ? (
+            <>
+              <p role="alert">{reconciliationError}</p>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                onClick={() => setRetryNonce((current) => current + 1)}
+              >Try again</button>
+            </>
+          ) : (
+            <p>Updating cart prices for {market === "AU" ? "Australia" : "New Zealand"}…</p>
+          )}
+        </section>
+        {marketDialog ? <MarketSwitchDialog state={marketDialog} pending={reconciliationPending} confirmDisabled={hasStaleUrgentDate(marketDialog)} onDateChange={changeMarketDialogDate} onConfirmUrgent={confirmMarketDialogUrgent} onTryDates={() => void reconcileMarket(marketDialog.cart)} onCancel={() => { if (!reconciliationPending) { setMarketDialog(null); setReconciliationError("Review urgent service before checking out in this market."); } }} /> : null}
+      </>
+    );
+  }
+
   return (
     <div className={styles.cartLayout}>
       <AnalyticsEventTracker
@@ -97,7 +223,6 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
         scopeKey={getActiveCartStorageKey()}
       />
       <section className={styles.cartItems} aria-label="Cart items">
-        {needsConfiguration ? <p role="status">Your cart keeps its configured prices, production service and dates. Edit configuration for {market === "AU" ? "Australia" : "New Zealand"} before checking out in this country. Your existing items stay in your cart.</p> : null}
         {cart.items.map((item) => (
           <article className={styles.cartItem} key={item.id}>
             <button
@@ -107,13 +232,10 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
               onClick={() => removeItemFromCart(item.id)}
             >×</button>
             <div className={styles.cartItemMedia}>
-              <CartProductImage src={item.imageSrc} productSlug={item.productSlug} title={item.productTitle} />
+              <Image src={item.imageSrc} alt="" width={96} height={96} />
             </div>
             <div className={styles.cartItemDetails}>
               <h2>{item.productTitle}</h2>
-              <Link aria-label={`Edit configuration for ${item.productTitle}`} href={`${marketSwitchDestination(`/products/${item.productSlug}/configure`, market)}?${new URLSearchParams({ edit: item.id, size: item.sizeKey, ...(item.galleryDesignId ? { design: item.galleryDesignId } : {}) }).toString()}`}>
-                Edit configuration
-              </Link>
               {item.galleryDesignId && (
                 <div className={styles.gallerySnapshotText}>
                   <strong>Selected design inspiration</strong>
@@ -127,9 +249,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
                 {item.orientation && <div><dt>Orientation</dt><dd>{labelFor(item.orientation)}</dd></div>}
                 {item.peoplePets > 0 && <div><dt>People / pets</dt><dd>{item.peoplePets}</dd></div>}
                 <div><dt>Photo submission</dt><dd>{labelFor(item.photoSubmissionMethod)}</dd></div>
-                {item.eventDate ? <div><dt>Event date</dt><dd>{item.eventDate}</dd></div> : null}
-                <div><dt>Estimated production completion</dt><dd>{item.neededDate}</dd></div>
-                {item.productionWorkingDays ? <div><dt>Production service</dt><dd>{item.productionWorkingDays} working days</dd></div> : null}
+                <div><dt>Production completion date</dt><dd>{item.neededDate}</dd></div>
                 {Boolean(item.urgentFeeInclGstCents) && (
                   <div>
                     <dt>Urgent service</dt>
@@ -183,8 +303,8 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
           <div><dt>{displayMarket.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt><dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd></div>
           {displayMarket.taxJurisdiction !== "NONE" ? <div><dt>{displayMarket.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : "Includes Australian GST"}</dt><dd>{formatMarketMoney(totals.gstCents, displayMarket.currency)}</dd></div> : null}
           <div className={styles.priceTotal}><dt>{displayMarket.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt><dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd></div>
-        </dl> : <p>Your items use different currencies. Edit configuration to use one delivery country.</p>}
-        {!needsConfiguration ? <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link> : null}
+        </dl> : <p>Prices will be recalculated for the selected delivery country.</p>}
+        <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link>
         <p className={styles.cartAssurance}>Draft approval comes before production.</p>
       </aside>
     </div>

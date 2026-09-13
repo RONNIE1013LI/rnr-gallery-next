@@ -42,48 +42,139 @@ const cart: Cart = {
   ],
 };
 
-const state = { targetMarket: "AU" as const, cart };
+const state = {
+  targetMarket: "AU" as const,
+  cart,
+  message: "Confirm urgent service or choose another completion date.",
+  issues: [
+    {
+      clientItemId: "item-1",
+      productTitle: "Custom Themed Canvas",
+      neededDate: "2026-08-28",
+      urgentWorkingDays: 5,
+      urgentFeeInclGstCents: 10_000,
+      currency: "AUD" as const,
+    },
+    {
+      clientItemId: "item-2",
+      productTitle: "Photo Print Canvas",
+      neededDate: "2026-08-29",
+      urgentWorkingDays: 4,
+      urgentFeeInclGstCents: 12_500,
+      currency: "AUD" as const,
+    },
+  ],
+};
 
 describe("MarketSwitchDialog", () => {
-  it("offers configuration links with no date or rush mutators", () => {
-    const onCancel = vi.fn();
-    render(<MarketSwitchDialog state={state} pending={false} onConfirm={vi.fn()} onCancel={onCancel} />);
-    const dialog = screen.getByRole("dialog", { name: "Keep your configured cart" });
+  it("shows every server-provided issue with target-market fees and native date inputs", () => {
+    render(
+      <MarketSwitchDialog
+        state={state}
+        pending={false}
+        onDateChange={vi.fn()}
+        onConfirmUrgent={vi.fn()}
+        onTryDates={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Review urgent service" });
+    expect(dialog).toBeInTheDocument();
     expect(dialog.closest("[role='presentation']")?.parentElement).toBe(document.body);
-    expect(screen.getByText("Switching to Australia — AUD")).toBeVisible();
-    expect(screen.getAllByRole("link", { name: /Edit configuration/ })).toHaveLength(2);
-    expect(document.querySelector("input")).toBeNull();
-    expect(screen.queryByRole("button", { name: /rush|urgent/i })).not.toBeInTheDocument();
-    const editLink = screen.getAllByRole("link")[0];
-    editLink.addEventListener("click", (event) => event.preventDefault(), { once: true });
-    fireEvent.click(editLink);
-    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Switching to Australia — AUD")).toBeInTheDocument();
+    expect(screen.getByText("Custom Themed Canvas")).toBeInTheDocument();
+    expect(screen.getByText("Photo Print Canvas")).toBeInTheDocument();
+    expect(screen.getByText("A$100.00 AUD")).toBeInTheDocument();
+    expect(screen.getByText("A$125.00 AUD")).toBeInTheDocument();
+    expect(screen.getByLabelText("Completion date for Custom Themed Canvas"))
+      .toHaveAttribute("type", "date");
+    expect(screen.getByLabelText("Completion date for Photo Print Canvas"))
+      .toHaveValue("2026-08-29");
   });
 
-  it("traps keyboard focus and handles Escape", () => {
-    const onCancel = vi.fn();
-    render(<MarketSwitchDialog state={state} pending={false} onConfirm={vi.fn()} onCancel={onCancel} />);
-    const first = screen.getAllByRole("link")[0];
+  it("reports date edits and keeps keyboard focus trapped within its controls", () => {
+    const onDateChange = vi.fn();
+    render(
+      <MarketSwitchDialog
+        state={state}
+        pending={false}
+        onDateChange={onDateChange}
+        onConfirmUrgent={vi.fn()}
+        onTryDates={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    const first = screen.getByLabelText("Completion date for Custom Themed Canvas");
     const last = screen.getByRole("button", { name: "Cancel" });
     expect(first).toHaveFocus();
-    last.focus(); fireEvent.keyDown(document, { key: "Tab" }); expect(first).toHaveFocus();
-    fireEvent.keyDown(document, { key: "Tab", shiftKey: true }); expect(last).toHaveFocus();
-    fireEvent.keyDown(document, { key: "Escape" }); expect(onCancel).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(first, { target: { value: "2026-09-10" } });
+    expect(onDateChange).toHaveBeenCalledWith("item-1", "2026-09-10");
+
+    last.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(first).toHaveFocus();
+
+    first.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(last).toHaveFocus();
   });
 
-  it("disables all navigation and contains focus while pending", () => {
+  it("closes on Escape and disables every action while pending", () => {
     const onCancel = vi.fn();
-    const { rerender } = render(<MarketSwitchDialog state={state} pending onConfirm={vi.fn()} onCancel={onCancel} />);
-    const dialog = screen.getByRole("dialog");
+    render(
+      <MarketSwitchDialog
+        state={state}
+        pending
+        onDateChange={vi.fn()}
+        onConfirmUrgent={vi.fn()}
+        onTryDates={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+
     expect(screen.getByRole("button", { name: "Switching market…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Try these dates" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+
+    const dialog = screen.getByRole("dialog", { name: "Review urgent service" });
+    expect(dialog).toHaveAttribute("tabindex", "-1");
     expect(dialog).toHaveFocus();
-    fireEvent.keyDown(document, { key: "Tab" }); expect(dialog).toHaveFocus();
-    fireEvent.keyDown(document, { key: "Tab", shiftKey: true }); expect(dialog).toHaveFocus();
-    fireEvent.keyDown(document, { key: "Escape" }); expect(onCancel).not.toHaveBeenCalled();
-    rerender(<MarketSwitchDialog state={state} pending={false} onConfirm={vi.fn()} onCancel={onCancel} />);
-    fireEvent.keyDown(document, { key: "Tab" }); expect(screen.getAllByRole("link")[0]).toHaveFocus();
-    dialog.focus(); fireEvent.keyDown(document, { key: "Tab", shiftKey: true }); expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(false);
+    expect(dialog).toHaveFocus();
+    expect(fireEvent.keyDown(document, { key: "Tab", shiftKey: true })).toBe(false);
+    expect(dialog).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it("contains both Tab directions when a repeated conflict re-enables controls", () => {
+    const props = {
+      state,
+      onDateChange: vi.fn(),
+      onConfirmUrgent: vi.fn(),
+      onTryDates: vi.fn(),
+      onCancel: vi.fn(),
+    };
+    const { rerender } = render(<MarketSwitchDialog {...props} pending />);
+    const dialog = screen.getByRole("dialog", { name: "Review urgent service" });
+    expect(dialog).toHaveFocus();
+
+    rerender(<MarketSwitchDialog {...props} pending={false} />);
+    expect(screen.getByRole("button", {
+      name: "Confirm urgent service and switch",
+    })).toBeEnabled();
+    expect(dialog).toHaveFocus();
+
+    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(false);
+    expect(screen.getByLabelText("Completion date for Custom Themed Canvas"))
+      .toHaveFocus();
+
+    dialog.focus();
+    expect(fireEvent.keyDown(document, { key: "Tab", shiftKey: true })).toBe(false);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
   });
 });

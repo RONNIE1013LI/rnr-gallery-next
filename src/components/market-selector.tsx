@@ -9,9 +9,13 @@ import {
   getActiveCustomerId,
 } from "@/domain/cart/browser-cart-scope";
 import { createBrowserCartRepository } from "@/domain/cart/browser-cart-repository";
+import { applyAuthoritativeRepricing } from "@/domain/cart/cart";
+import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 import { marketSwitchDestination } from "@/domain/markets/market";
 import { requestMarketSwitch } from "@/domain/markets/browser-market-switch";
+import type { Cart } from "@/domain/cart/types";
 import {
+  hasStaleUrgentDate,
   MarketSwitchDialog,
   type MarketSwitchDialogState,
 } from "./market-switch-dialog";
@@ -35,7 +39,6 @@ export function MarketSelector({
   const pendingRef = useRef(false);
   const selectorRef = useRef<HTMLSelectElement>(null);
   const dialogWasOpenRef = useRef(false);
-  const dialogIdentityRef = useRef<string | null>(null);
   const [useMobileLabels, setUseMobileLabels] = useState(false);
   const [dialogState, setDialogState] = useState<MarketSwitchDialogState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,15 +61,17 @@ export function MarketSelector({
     }
   }, [dialogState]);
 
-  async function runSwitch(next: Market) {
+  async function runSwitch(next: Market, candidateCart: Cart) {
     if (pendingRef.current) return;
     pendingRef.current = true;
     const initiatingCustomerId = getActiveCustomerId();
     setPending(true);
     setError(null);
     try {
+      const repository = createBrowserCartRepository(window.localStorage);
       const result = await requestMarketSwitch({
         market: next,
+        candidateCart,
         persistPreference: true,
       });
       if (getActiveCustomerId() !== initiatingCustomerId) {
@@ -74,11 +79,30 @@ export function MarketSelector({
         return;
       }
       if (!result.ok) {
-        setDialogState(null);
-        setError("error" in result.payload ? result.payload.error : "The market could not be changed.");
+        const payload = result.payload;
+        if (
+          "code" in payload &&
+          payload.code === "urgent_confirmation_required" &&
+          payload.issues?.length
+        ) {
+          setDialogState({
+            targetMarket: next,
+            cart: candidateCart,
+            issues: payload.issues,
+            message: payload.error,
+          });
+        } else {
+          setDialogState(null);
+          setError("error" in payload ? payload.error : "The market could not be changed.");
+        }
         return;
       }
 
+      const payload = result.payload;
+      if (candidateCart.items.length > 0 && "cart" in payload && payload.cart) {
+        repository.save(applyAuthoritativeRepricing(candidateCart, payload.cart));
+        notifyCartChanged();
+      }
       clearIdentityCheckoutState(
         window.localStorage,
         window.sessionStorage,
@@ -104,23 +128,36 @@ export function MarketSelector({
   function select(next: Market) {
     if (next === market || pendingRef.current) return;
     const repository = createBrowserCartRepository(window.localStorage);
-    const cart = repository.load();
-    if (cart.items.length > 0) {
-      setError(null);
-      dialogIdentityRef.current = getActiveCustomerId();
-      setDialogState({ targetMarket: next, cart });
-    } else {
-      void runSwitch(next);
-    }
+    void runSwitch(next, repository.load());
   }
 
-  function confirmCountry() {
+  function changeDate(clientItemId: string, neededDate: string) {
+    setDialogState((current) => current ? {
+      ...current,
+      cart: {
+        version: 1,
+        items: current.cart.items.map((item) => item.id === clientItemId
+          ? { ...item, neededDate, urgentServiceConfirmed: false }
+          : item),
+      },
+    } : null);
+  }
+
+  function confirmUrgent() {
+    if (!dialogState || pendingRef.current || hasStaleUrgentDate(dialogState)) return;
+    const urgentIds = new Set(dialogState.issues.map((issue) => issue.clientItemId));
+    const confirmedCart: Cart = {
+      version: 1,
+      items: dialogState.cart.items.map((item) => urgentIds.has(item.id)
+        ? { ...item, urgentServiceConfirmed: true }
+        : item),
+    };
+    void runSwitch(dialogState.targetMarket, confirmedCart);
+  }
+
+  function tryDates() {
     if (!dialogState || pendingRef.current) return;
-    if (dialogIdentityRef.current !== getActiveCustomerId()) {
-      setDialogState(null);
-      return;
-    }
-    void runSwitch(dialogState.targetMarket);
+    void runSwitch(dialogState.targetMarket, dialogState.cart);
   }
 
   function cancelDialog() {
@@ -148,7 +185,10 @@ export function MarketSelector({
         <MarketSwitchDialog
           state={dialogState}
           pending={pending}
-          onConfirm={confirmCountry}
+          confirmDisabled={hasStaleUrgentDate(dialogState)}
+          onDateChange={changeDate}
+          onConfirmUrgent={confirmUrgent}
+          onTryDates={tryDates}
           onCancel={cancelDialog}
         />
       ) : null}

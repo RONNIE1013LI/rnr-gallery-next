@@ -33,11 +33,6 @@ export type CanonicalCheckoutItemInput = Readonly<{
   notes: string;
   neededDate: string;
   urgentServiceConfirmed?: boolean;
-  productionWorkingDays?: number;
-  urgentFeeInclGstCents?: number;
-  configuredUnitPriceInclTaxCents?: number;
-  configuredCurrency?: "NZD" | "AUD";
-  eventDate?: string;
   quantity: number;
   uploadReferences: readonly string[];
   mainPhotoUploadId?: string;
@@ -65,7 +60,6 @@ export type RepricedCheckoutItem = Readonly<{
   notes: string;
   neededDate: string;
   urgentServiceConfirmed: boolean;
-  eventDate?: string;
   urgentService: Readonly<{
     workingDays: number;
     feeInclGstCents: number;

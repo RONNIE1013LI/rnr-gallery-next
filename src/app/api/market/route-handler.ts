@@ -7,6 +7,7 @@ import {
 } from "@/server/http/mutation-request";
 import {
   preflightMarketSwitch,
+  type MarketSwitchUrgentIssue,
 } from "@/domain/checkout/market-switch-preflight";
 import { InvalidCheckoutCartError } from "@/domain/checkout/types";
 import { ZodError } from "zod";
@@ -16,8 +17,10 @@ type MarketRouteFailure = Readonly<{
   code:
     | "unsupported_market"
     | "market_unavailable"
+    | "urgent_confirmation_required"
     | "invalid_cart"
     | "market_switch_failed";
+  issues?: readonly MarketSwitchUrgentIssue[];
 }>;
 
 type Dependencies = Readonly<{
@@ -67,6 +70,13 @@ export function createMarketRoute(dependencies?: Dependencies) {
               registryRevision: revision,
               market,
             });
+        if (preflight?.result === "urgent_confirmation_required") {
+          return failureResponse({
+            error: "Confirm urgent service or choose another completion date.",
+            code: "urgent_confirmation_required",
+            issues: preflight.issues,
+          }, 409);
+        }
         const cart = preflight?.result === "ready" ? preflight.cart : undefined;
         const persistPreference = body.persistPreference !== false;
         return Response.json(

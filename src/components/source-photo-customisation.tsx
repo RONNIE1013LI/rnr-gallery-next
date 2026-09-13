@@ -13,7 +13,6 @@ import { currencyForMarket } from "@/domain/markets/market";
 import type { Market } from "@/domain/markets/types";
 import { emitAnalyticsEvent } from "@/domain/analytics/client";
 import styles from "./storefront.module.css";
-import { ConfigurationStep } from "./configuration-flow";
 
 export type UploadedFile = Readonly<{
   id: string;
@@ -190,7 +189,6 @@ export function SourcePhotoCustomisation({
 
   return (
     <>
-      <ConfigurationStep number={sourceStepNumber} title={groupLabel ?? "Upload original photos"} continueDisabled={uploading || value.photoSubmissionMethod === "upload" && value.uploadedFiles.length < schema.minimumSourcePhotos}>
       <section
         className={`${styles.configuratorStep} ${groupLabel ? styles.bundleCustomisationGroup : ""}`}
         aria-label={groupLabel}
@@ -199,7 +197,7 @@ export function SourcePhotoCustomisation({
           <span>{String(sourceStepNumber).padStart(2, "0")}</span>
           <div>
             <h2>{groupLabel ?? "Upload original photos"}</h2>
-            <p>Use the clearest original files you have. <Link href="/help#photos" target="_blank" rel="noopener noreferrer">Choosing photos (opens in new tab)</Link></p>
+            <p>Use the clearest original files you have.</p>
           </div>
         </div>
         <fieldset
@@ -255,7 +253,6 @@ export function SourcePhotoCustomisation({
         {value.photoSubmissionMethod === "upload" && (
           <div className={styles.uploadPanel}>
             <strong className={styles.uploadPanelTitle}>Choose photos or artwork files</strong>
-            <p><Link href="/help#files" target="_blank" rel="noopener noreferrer">File formats and limits (opens in new tab)</Link></p>
             <label className={styles.uploadButton}>
               <span>{uploading ? "Uploading…" : "Choose files"}</span>
               <input
@@ -326,10 +323,8 @@ export function SourcePhotoCustomisation({
           </div>
         )}
       </section>
-      </ConfigurationStep>
 
       {schema.artworkDirectionMode !== "none" ? (
-        <ConfigurationStep number={artworkStepNumber} title={groupLabel ? `${groupLabel}: design details` : "Tell us your design details"}>
         <section
           className={styles.configuratorStep}
           aria-label={groupLabel ? `${groupLabel} artwork direction` : undefined}
@@ -338,7 +333,7 @@ export function SourcePhotoCustomisation({
             <span>{String(artworkStepNumber).padStart(2, "0")}</span>
             <div>
               <h2>Artwork direction</h2>
-              <p>Add wording, photo order, colours and the feeling you want. <Link href="/help#proofs" target="_blank" rel="noopener noreferrer">Proofs and revisions (opens in new tab)</Link></p>
+              <p>Add wording, photo order, colours and the feeling you want.</p>
             </div>
           </div>
           <label className={styles.formField}>
@@ -370,7 +365,6 @@ export function SourcePhotoCustomisation({
             />
           </label>
         </section>
-        </ConfigurationStep>
       ) : null}
     </>
   );

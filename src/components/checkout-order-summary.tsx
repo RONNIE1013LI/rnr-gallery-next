@@ -16,7 +16,7 @@ export function CheckoutOrderSummary({ cart, shipping }: {
   cart: RepricedCheckoutCart | null;
   shipping: PublicShippingDTO["option"] | null;
 }) {
-  if (!cart) return <p>Enter your delivery address to calculate shipping and confirm your total.</p>;
+  if (!cart) return <p>Review delivery to see authoritative totals.</p>;
   const shippingGst = shipping?.gstCents ?? 0;
   const shippingTotal = shipping?.amountInclGstCents ?? 0;
   const currency = cart.currency ?? "NZD";
@@ -39,9 +39,6 @@ export function CheckoutOrderSummary({ cart, shipping }: {
           <div>
             <strong>{item.productTitle} × {item.quantity}</strong>
             <span>{item.sizeLabel}</span>
-            <small>{item.urgentServiceConfirmed ? "Rush" : "Non-Rush"} · {item.urgentService.workingDays} working {item.urgentService.workingDays === 1 ? "day" : "days"}</small>
-            {item.eventDate ? <small>Event date: {item.eventDate} · advisory only</small> : null}
-            {item.urgentService.feeInclGstCents > 0 ? <small>Confirmed rush fee: {formatMarketMoney(item.urgentService.feeInclGstCents, currency)}</small> : null}
             {item.galleryDesign && <small>{item.galleryDesign.title}</small>}
             {item.bundleComponents?.map((component) => {
               const componentLabel = component.componentKey === "roll-up"

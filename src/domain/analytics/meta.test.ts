@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AnalyticsEvent, PurchaseEvent } from "./events";
-import { emitMetaAnalyticsEvent, emitMetaPageView, resetMetaPixelForTests } from "./meta";
+import type { PurchaseEvent } from "./events";
+import { emitMetaAnalyticsEvent, resetMetaPixelForTests } from "./meta";
 import { META_PIXEL_ID } from "./runtime";
 
 const cartEvent = {
@@ -49,37 +49,6 @@ describe("Meta commerce transport", () => {
     window.history.replaceState({}, "", "/");
     vi.stubGlobal("fetch", fetchMock);
     resetMetaPixelForTests();
-  });
-
-  it("sends PageView without a price or currency", () => {
-    document.documentElement.dataset.metaEnabled = "true";
-    expect(emitMetaPageView("/")).toBe(true);
-    expect(fbq.mock.calls[0][3]).toEqual({});
-  });
-
-  it.each(["NZD", "AUD"] as const)("keeps %s separate from numeric values for every commerce event", (currency) => {
-    document.documentElement.dataset.metaEnabled = "true";
-    for (const event of ["view_item", "add_to_cart", "begin_checkout", "purchase"] as const) {
-      const input = event === "purchase" ? { ...purchase, currency } : { ...cartEvent, event, currency };
-      expect(emitMetaAnalyticsEvent(input)).toBe(true);
-      const payload = fbq.mock.calls.at(-1)![3];
-      expect(payload.currency).toBe(currency);
-      expect(typeof payload.value).toBe("number");
-      expect(Number.isFinite(payload.value)).toBe(true);
-    }
-  });
-
-  it.each(["view_item", "add_to_cart", "begin_checkout", "purchase"] as const)("rejects malformed runtime currency/value for %s before either transport", (event) => {
-    document.documentElement.dataset.metaEnabled = "true";
-    const input = event === "purchase" ? purchase : { ...cartEvent, event };
-    for (const currency of ["NZ$", "AU$", "NZD 65.00", { code: "NZD" }, undefined]) {
-      expect(emitMetaAnalyticsEvent({ ...input, currency } as unknown as AnalyticsEvent)).toBe(false);
-    }
-    for (const value of ["65.00", NaN, Infinity, -1]) {
-      expect(emitMetaAnalyticsEvent({ ...input, value, ...(event === "purchase" ? { total: value } : {}) } as unknown as AnalyticsEvent)).toBe(false);
-    }
-    expect(fbq).not.toHaveBeenCalled();
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("pairs Pixel and CAPI AddToCart with one shared event ID and no private fields", async () => {

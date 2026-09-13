@@ -4,21 +4,6 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-## Staging release policy
-
-* Normal bug fixes, UI/UX changes, cart/checkout/order-flow fixes and test fixes have standing authorization to deploy to Staging after implementation, relevant tests and Production Build pass with no known blocker.
-* Keep the Staging branch binding and its isolation guard aligned with the verified feature branch. Do not request repeated approval for this routine Staging branch update.
-* Required sequence: Local -> Tests -> Build -> Staging -> real Staging E2E and browser verification. Local verification cannot replace Staging acceptance.
-* Staging authorization does not cover destructive migrations, Production data deletion, payment configuration, Production secrets or irreversible infrastructure/schema changes.
-* Production requires successful Staging acceptance, core regression checks, build/tests and no known blocker. Preserve an explicitly requested unified Production release; never bypass Staging unless the user explicitly requests direct Production deployment.
-
-## Rush source of truth
-
-* Configure alone selects Rush/Non-Rush, production duration, rush fee, event date and the configured product price. Persist those selections in the cart item and carry them into the order snapshot.
-* Cart, Checkout and payment must not derive Rush or ordering eligibility from event dates, production dates, shipping ETA, address, AU metro/remote classification or Standard/DHL timing.
-* All delivery and event-date estimates are advisory. Never force Rush/Express or block ordering/payment because of timing.
-* Price and configuration integrity checks remain required. Changes to price-affecting configuration must return to Configure and require explicit saving.
-
 ## Production release policy
 
 * `origin/main` is the only normal Production source, and Vercel Production Branch must remain `main`.
@@ -35,7 +20,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 * Production database writes/migrations, environment changes, DNS/domain changes, and payment/authentication configuration changes require separate explicit approval.
 * Before every Production migration, run the exact-prefix lineage and database-identity checks. Any hash, order, timestamp, catalog, or identity mismatch blocks migration; never bypass or rewrite applied history.
 * Never edit the Production migration journal manually. Read-only audits must not mutate Production. Every Production-affecting change requires a known rollback point before release.
-* The normal release path is: isolated feature worktree -> implementation -> isolated tests and build -> Staging deployment and acceptance -> merge or fast-forward to `origin/main` -> Vercel automatic Production -> `npm run production:guard` -> smoke tests. A feature branch must never become the normal Production trunk.
+* The normal release path is: isolated feature worktree -> implementation -> isolated tests -> merge or fast-forward to `origin/main` -> Vercel automatic Production -> `npm run production:guard` -> smoke tests. A feature branch must never become the normal Production trunk.
 
 ## Production browser automation
 

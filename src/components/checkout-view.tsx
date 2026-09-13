@@ -239,7 +239,6 @@ export function CheckoutView({
   const [recoveryChecked, setRecoveryChecked] = useState(false);
   const [draftChecked, setDraftChecked] = useState(false);
   const [pending, setPending] = useState<"review" | "shipping" | "order" | null>(null);
-  const validationSummaryRef = useRef<HTMLDivElement>(null);
   const [billingErrors, setBillingErrors] = useState<AddressFieldErrors>({});
   const [deliveryErrors, setDeliveryErrors] = useState<AddressFieldErrors>({});
   const [billingSavedId, setBillingSavedId] = useState(first?.id ?? "");
@@ -519,7 +518,7 @@ export function CheckoutView({
     setBillingErrors(nextBillingErrors); setDeliveryErrors(nextDeliveryErrors);
     if (!billingResult.success || (different && !deliveryResult.success)) {
       setMessage("Correct the highlighted address fields, then review again.");
-      requestAnimationFrame(() => validationSummaryRef.current?.focus());
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
       return;
     }
     const reviewDestination = different && deliveryResult.success
@@ -541,7 +540,7 @@ export function CheckoutView({
       trackCheckoutEvent("add_shipping_info", session.checkout.cart, {
         shipping_tier: quote.shipping.option.serviceName,
       });
-    } catch (error) { const fields = error instanceof CheckoutApiError ? error.fields as { billingAddress?: AddressFieldErrors; deliveryAddress?: AddressFieldErrors } | undefined : undefined; if (fields?.billingAddress) setBillingErrors(fields.billingAddress); if (fields?.deliveryAddress) setDeliveryErrors(fields.deliveryAddress); setReviewedCart(null); setReviewedVersion(null); setShipping(null); setShippingOptions([]); setReviewKey(""); setPaymentMethods([]); setSelectedPaymentMethod(null); setPaymentReviewKey(""); setMessage(reviewErrorMessage(error)); requestAnimationFrame(() => validationSummaryRef.current?.focus()); }
+    } catch (error) { const fields = error instanceof CheckoutApiError ? error.fields as { billingAddress?: AddressFieldErrors; deliveryAddress?: AddressFieldErrors } | undefined : undefined; if (fields?.billingAddress) setBillingErrors(fields.billingAddress); if (fields?.deliveryAddress) setDeliveryErrors(fields.deliveryAddress); setReviewedCart(null); setReviewedVersion(null); setShipping(null); setShippingOptions([]); setReviewKey(""); setPaymentMethods([]); setSelectedPaymentMethod(null); setPaymentReviewKey(""); setMessage(reviewErrorMessage(error)); requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); }
     finally { reviewing.current = false; setPending(null); }
   }
 
@@ -647,27 +646,12 @@ export function CheckoutView({
       event={buildCartEvent("begin_checkout", cart)}
       scopeKey={getActiveCartStorageKey()}
     />
-    {!checkoutLocked ? <p>To change your event date, size or production service, <Link href="/cart">return to Cart and edit configuration</Link>.</p> : null}
     <div className={styles.checkoutLayout}>
     <form aria-label="Checkout details" className={styles.checkoutForm} noValidate onSubmit={(event) => { event.preventDefault(); void review(); }}>
-      {Object.values(billingErrors).some((errors) => errors?.length) || (different && Object.values(deliveryErrors).some((errors) => errors?.length)) ?
-        <div ref={validationSummaryRef} role="alert" aria-labelledby="checkout-errors-title" tabIndex={-1} className={styles.checkoutErrorSummary}>
-          <h2 id="checkout-errors-title">Check your details</h2>
-          <p>Choose a field below to correct it, then review delivery again.</p>
-          <ul>{([
-            ["billing", "Contact details", billingErrors],
-            ...(different ? [["delivery", "Delivery details", deliveryErrors] as const] : []),
-          ] as const).flatMap(([scope, group, errors]) => Object.entries(errors).filter(([, messages]) => messages?.length).map(([field]) => {
-            const labels: Record<string, string> = { fullName: "Full name", email: "Email", phone: "Phone", street: "Street address", building: "Building / unit", suburb: "Suburb", region: "Region / city", postcode: "Postcode", country: "Country" };
-            const target = `checkout-${scope}-${field}`;
-            return <li key={target}><a href={`#${target}`} onClick={(event) => { event.preventDefault(); document.getElementById(target)?.focus(); }}>{group}: {labels[field] ?? "Address"}</a></li>;
-          }))}</ul>
-        </div> : null}
-
       {marketAddresses.length ? <label className={styles.savedAddressSelect}>Saved billing address<select disabled={checkoutLocked} value={billingSavedId} onChange={(event) => { setBillingSavedId(event.target.value); const selected = marketAddresses.find((address) => address.id === event.target.value); if (selected) setBilling(addressInput(selected)); }}><option value="">Enter manually</option>{marketAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}
-      <fieldset><legend>{different ? "Contact and billing details" : "Contact and delivery details"}</legend><AddressForm layout="contact-first" fieldIdPrefix="checkout-billing" value={billing} onChange={(value) => { setBilling({ ...value, country: market }); setBillingSavedId(""); }} errors={billingErrors} disabled={checkoutLocked} lockedCountry={market} /></fieldset>
+      <fieldset><legend>Billing address</legend><AddressForm value={billing} onChange={(value) => { setBilling({ ...value, country: market }); setBillingSavedId(""); }} errors={billingErrors} disabled={checkoutLocked} lockedCountry={market} /></fieldset>
       <label className={styles.checkoutToggle}><input disabled={checkoutLocked} type="checkbox" checked={different} onChange={(event) => setDifferent(event.target.checked)} /> Deliver to a different address</label>
-      {different ? <fieldset><legend>Delivery address</legend>{marketAddresses.length ? <label className={styles.savedAddressSelect}>Saved delivery address<select disabled={checkoutLocked} value={deliverySavedId} onChange={(event) => { setDeliverySavedId(event.target.value); const selected = marketAddresses.find((address) => address.id === event.target.value); if (selected) setDelivery(addressInput(selected)); }}><option value="">Enter manually</option>{marketAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}<AddressForm layout="contact-first" fieldIdPrefix="checkout-delivery" value={delivery} onChange={(value) => { setDelivery({ ...value, country: market }); setDeliverySavedId(""); }} errors={deliveryErrors} disabled={checkoutLocked} lockedCountry={market} /></fieldset> : null}
+      {different ? <fieldset><legend>Delivery address</legend>{marketAddresses.length ? <label className={styles.savedAddressSelect}>Saved delivery address<select disabled={checkoutLocked} value={deliverySavedId} onChange={(event) => { setDeliverySavedId(event.target.value); const selected = marketAddresses.find((address) => address.id === event.target.value); if (selected) setDelivery(addressInput(selected)); }}><option value="">Enter manually</option>{marketAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}<AddressForm value={delivery} onChange={(value) => { setDelivery({ ...value, country: market }); setDeliverySavedId(""); }} errors={deliveryErrors} disabled={checkoutLocked} lockedCountry={market} /></fieldset> : null}
       <button className={`${styles.secondaryButton} ${styles.checkoutReviewButton}`} type="submit" disabled={checkoutLocked}>{!recoveryChecked ? "Checking order status…" : pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>

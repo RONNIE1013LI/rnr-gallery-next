@@ -6,7 +6,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { emitAnalyticsEvent } from "@/domain/analytics/client";
 import { pollingAllowedForAutomation } from "@/lib/automation-mode";
 import styles from "./customer-chat.module.css";
-import { useContainedDialog } from "../forms/use-contained-dialog";
 import { isNearBottom, scrollTranscriptToLatest } from "./follow-latest";
 
 type PublicEvent = Readonly<{
@@ -149,7 +148,6 @@ export function CustomerChat({
   const restoreLauncherFocusRef = useRef(false);
   const isComposingRef = useRef(false);
   const launcherRef = useRef<HTMLButtonElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const transcriptContentRef = useRef<HTMLDivElement>(null);
@@ -358,7 +356,14 @@ export function CustomerChat({
     };
   }, [open, poll, startPendingPolling, stopPendingPolling]);
 
-  useContainedDialog({ active: open, dialogRef, initialFocusRef: inputRef, returnFocusRef: launcherRef, onClose: close });
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [open]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -577,10 +582,8 @@ export function CustomerChat({
     <div className={`${styles.root} customer-chat-root`} data-open={open}>
       {open ? (
         <section
-          ref={dialogRef}
           className={styles.panel}
           role="dialog"
-          aria-modal="true"
           aria-label="Chat with R&R Gallery"
           aria-describedby="customer-chat-status"
           style={{
@@ -589,7 +592,7 @@ export function CustomerChat({
           } as React.CSSProperties}
         >
           <header className={styles.header}>
-            <div><strong>R&R Gallery</strong><span>Artwork help · replies may take a little time</span></div>
+            <div><strong>R&R Gallery</strong><span>Chat with our team</span></div>
             <button type="button" className={styles.closeButton} aria-label="Close chat" title="Close chat" onClick={close}>×</button>
           </header>
           <div className={styles.transcriptShell}>

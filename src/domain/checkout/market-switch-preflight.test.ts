@@ -45,7 +45,7 @@ function cart(items = [item(FIRST_ID), item(SECOND_ID)]) {
 }
 
 describe("market-switch target-market preflight", () => {
-  it("does not force rush when changing market for an advisory date", () => {
+  it("reports every unconfirmed urgent item using authoritative target-market data", () => {
     const result = preflightMarketSwitch(cart(), {
       now: NOW,
       registry: enabledAuRegistry(),
@@ -53,15 +53,24 @@ describe("market-switch target-market preflight", () => {
       registryRevision: 9,
     });
 
-    expect(result).toMatchObject({ result: "ready", cart: { currency: "AUD", items: [
-      expect.objectContaining({ urgentServiceConfirmed: false, urgentService: expect.objectContaining({ feeInclGstCents: 0 }) }),
-      expect.objectContaining({ urgentServiceConfirmed: false, urgentService: expect.objectContaining({ feeInclGstCents: 0 }) }),
-    ] } });
+    expect(result).toEqual({
+      result: "urgent_confirmation_required",
+      issues: [
+        expect.objectContaining({
+          clientItemId: FIRST_ID,
+          productTitle: "Custom Themed Canvas",
+          neededDate: "2026-08-28",
+          currency: "AUD",
+          urgentFeeInclGstCents: expect.any(Number),
+        }),
+        expect.objectContaining({ clientItemId: SECOND_ID, currency: "AUD" }),
+      ],
+    });
   });
 
   it("returns the ordinary repriced cart when no confirmation is needed", () => {
     const value = cart([item(FIRST_ID, {
-      urgentServiceConfirmed: true, productionWorkingDays: 2,
+      urgentServiceConfirmed: true,
     })]);
     const result = preflightMarketSwitch(value, { now: NOW });
 
@@ -92,15 +101,15 @@ describe("market-switch target-market preflight", () => {
     });
   });
 
-  it("preserves voluntary rush while leaving other items on standard production", () => {
+  it("preserves already-confirmed items while reporting only unconfirmed items", () => {
     const result = preflightMarketSwitch(cart([
-      item(FIRST_ID, { urgentServiceConfirmed: true, productionWorkingDays: 2 }),
+      item(FIRST_ID, { urgentServiceConfirmed: true }),
       item(SECOND_ID),
     ]), { now: NOW, registry: enabledAuRegistry(), market: "AU" });
 
     expect(result).toMatchObject({
-      result: "ready",
-      cart: { items: [expect.objectContaining({ urgentServiceConfirmed: true }), expect.objectContaining({ urgentServiceConfirmed: false, urgentService: expect.objectContaining({ feeInclGstCents: 0 }) })] },
+      result: "urgent_confirmation_required",
+      issues: [{ clientItemId: SECOND_ID }],
     });
   });
 

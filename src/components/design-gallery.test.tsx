@@ -12,27 +12,6 @@ const query: GalleryQuery = {
 };
 
 describe("DesignGallery", () => {
-  it.each([
-    ["canvas", "Canvas"],
-    ["grave-cover", "Grave Cover"],
-    ["roll-up-banner", "Roll-up Banner"],
-    ["wall-hanging-banners", "Wall Banner"],
-  ] as const)("uses one %s family label in filters, selected chips and both card layouts", (productTypeSlug, label) => {
-    const { container } = render(<DesignGallery query={{ ...query, productTypes: [productTypeSlug], occasions: [], birthdayAges: [], themes: [] }}
-      result={{ items: [{ id: "a".repeat(64), productTypeSlug, occasionSlug: "birthday", subOccasion: null, themeSlugs: [], altText: "Synthetic artwork", productSlug: "custom-themed-canvas", contentHash: "b".repeat(64), mimeType: "image/jpeg", width: 1200, height: 1600 }], total: 1, page: 1, pageCount: 1, pageSize: 24 }} />);
-    const card = screen.getByRole("img", { name: "Synthetic artwork" }).closest("article")!;
-    expect(within(card).getByText(label, { selector: "span" })).toBeInTheDocument();
-    expect(within(card).getByText(`Birthday · ${label}`)).toBeInTheDocument();
-    const chip = screen.getByRole("link", { name: `Remove ${label} filter` });
-    expect(chip).toHaveAttribute("href", "/design-gallery?page=1");
-    fireEvent.click(screen.getByRole("button", { name: "Filters (1)" }));
-    const checkbox = screen.getByRole("checkbox", { name: label });
-    expect(checkbox).toBeChecked();
-    expect(checkbox).toHaveAttribute("name", "design_type");
-    expect(checkbox).toHaveAttribute("value", productTypeSlug);
-    expect(container.querySelector("article h2")?.textContent).toBeTruthy();
-  });
-
   it("marks the exact quick filter as selected without changing the query", () => {
     const { rerender } = render(<DesignGallery
       query={{ ...query, productTypes: [], occasions: ["birthday"], birthdayAges: [], themes: [] }}
@@ -68,7 +47,7 @@ describe("DesignGallery", () => {
       result={{ items: [], total: 0, page: 1, pageCount: 1, pageSize: 24 }}
     />);
 
-    expect(screen.getByRole("dialog", { name: "Filter designs" })).toBeVisible();
+    expect(screen.getByText("Filters +").closest("details")).toHaveAttribute("open");
   });
 
   it("renders URL-backed accessible filters, natural artwork and pagination", () => {
@@ -96,11 +75,9 @@ describe("DesignGallery", () => {
     />);
 
     expect(screen.getByRole("heading", { name: "Designed around your story." })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Filters (3)" }));
     expect(screen.getByRole("checkbox", { name: "Canvas" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Birthday" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "21st Birthday" })).toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Close filters" }));
     expect(screen.getByText("25 artworks")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Golden 21st birthday canvas" }))
       .toHaveAttribute("width", "1200");
@@ -191,6 +168,6 @@ describe("DesignGallery", () => {
       "(max-width: 767px) calc(100vw - 2rem), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px",
     );
     expect(within(canvasCard as HTMLElement).getByText("Canvas", { selector: "span" })).toBeInTheDocument();
-    expect(within(wallBannerCard as HTMLElement).getByText("Wall Banner", { selector: "span" })).toBeInTheDocument();
+    expect(within(wallBannerCard as HTMLElement).getByText("Wall banner", { selector: "span" })).toBeInTheDocument();
   });
 });
