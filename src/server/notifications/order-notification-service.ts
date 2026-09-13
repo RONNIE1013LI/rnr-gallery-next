@@ -94,7 +94,7 @@ function orderMessage(
   });
 
   const actionUrl = event.kind === "order_shipped"
-    ? event.trackingUrl
+    ? (event.trackingUrl ?? (event.source === "manual" ? null : orderUrl.toString()))
     : orderUrl.toString();
   const greeting = event.kind === "admin_order_received"
     ? "Hello R&R Gallery team,"

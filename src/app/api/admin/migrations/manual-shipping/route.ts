@@ -41,6 +41,13 @@ export async function POST(request: Request) {
     if (identity?.database !== "neondb") {
       throw new Error("Unexpected database");
     }
+    const existingResult = await transaction.execute(
+      sql`select to_regclass('public.manual_order_notification_outbox') as table_name`,
+    );
+    const existing = existingResult.rows[0] as { table_name?: string } | undefined;
+    if (existing?.table_name === "manual_order_notification_outbox") {
+      return "already_applied" as const;
+    }
     for (const statement of migrationStatements) await transaction.execute(statement);
     const verifiedResult = await transaction.execute(sql`select to_regclass('public.manual_order_notification_outbox') as table_name`);
     const verified = verifiedResult.rows[0] as { table_name?: string } | undefined;
