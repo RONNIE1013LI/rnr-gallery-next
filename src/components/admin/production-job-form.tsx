@@ -95,6 +95,7 @@ type Props = Readonly<{
   canViewInvoice?: boolean;
   canUpdateProductionStatus?: boolean;
   canUpdateDeliveryStatus?: boolean;
+  showTrackingForWebOrder?: boolean;
   canDeleteJob?: boolean;
   invoicePdfBase?: string;
   onSaved?: () => void;
@@ -408,6 +409,7 @@ export function ProductionJobForm({
   canViewInvoice = canManageFinance,
   canUpdateProductionStatus = true,
   canUpdateDeliveryStatus = true,
+  showTrackingForWebOrder = false,
   canDeleteJob = false,
   invoicePdfBase = "/api/admin/invoices",
   onSaved,
@@ -415,6 +417,7 @@ export function ProductionJobForm({
   onBack,
 }: Props) {
   const isWebOrder = existingOrder?.source === "web";
+  const canEditTracking = !isWebOrder || showTrackingForWebOrder;
   const router = useRouter();
   const [itemKeys, setItemKeys] = useState([0]);
   const [nextItemKey, setNextItemKey] = useState(1);
@@ -862,7 +865,7 @@ export function ProductionJobForm({
           neededDate: body.neededDate,
           deliveryMethod: body.deliveryMethod,
           deliveryAddress: body.deliveryAddress,
-          ...(!isWebOrder ? {
+          ...(canEditTracking ? {
             trackingCarrier: body.trackingCarrier,
             trackingNumber: body.trackingNumber,
             trackingUrl: body.trackingUrl,
@@ -1066,11 +1069,12 @@ export function ProductionJobForm({
           <p className={styles.fieldHint}>Enter at least an email address or phone number.</p>
         </section>
 
-        {!isWebOrder ? <section className={styles.formPanel}>
+        {canEditTracking ? <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Shipping / Tracking</h2></div></div>
           <div className={styles.manualFieldRows}>
             <label><span>Carrier</span><select name="trackingCarrier" defaultValue={existingOrder?.trackingCarrier ?? ""} disabled={formDisabled}>
               <option value="">Select carrier</option>
+              {existingOrder?.trackingCarrier && !manualCarrierChoices.includes(existingOrder.trackingCarrier as typeof manualCarrierChoices[number]) ? <option value={existingOrder.trackingCarrier}>{existingOrder.trackingCarrier}</option> : null}
               {manualCarrierChoices.map((carrier) => <option key={carrier} value={carrier}>{carrier}</option>)}
             </select></label>
             <label><span>Tracking number</span><input name="trackingNumber" defaultValue={existingOrder?.trackingNumber ?? ""} maxLength={190} disabled={formDisabled} /></label>

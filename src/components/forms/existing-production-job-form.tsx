@@ -107,6 +107,7 @@ export function ExistingProductionJobForm({
     canEdit={canEdit}
     canUpdateProductionStatus={canUpdateProductionStatus}
     canUpdateDeliveryStatus={canUpdateDeliveryStatus}
+    showTrackingForWebOrder
     canDeleteJob={canDeleteJob && detail.job.source === "manual"}
     endpoint={jobApiBase}
     detailBasePath="/order-system/jobs"

@@ -181,12 +181,13 @@ describe("ProductionJobForm", () => {
     vi.stubGlobal("fetch", fetchMock);
     const onSaved = vi.fn();
     render(<ExistingManualEditor assignees={assignees} canManageFinance canViewInvoice={false}
+      showTrackingForWebOrder
       manualEntryLayout endpoint="/api/forms/jobs" onSaved={onSaved}
       existingOrder={{ ...existingOrder, source: "web", deliveryMethod, amountPaidCents: paid,
-        customerSource: "web", products: [
+      customerSource: "web", products: [
           { productTitle: "Original Canvas", quantity: 2, size: "A2", sizeOther: "" },
           { productTitle: "Original Banner", quantity: 3, size: "Custom Size", sizeOther: "850 x 2000 mm" },
-        ] }} />);
+        ], trackingCarrier: "NZ Post", trackingNumber: "TRACK-1", trackingUrl: "https://tracking.example/TRACK-1" }} />);
     expect(screen.getByText("Original Canvas × 2")).toBeInTheDocument();
     expect(screen.getByText("Original Banner × 3")).toBeInTheDocument();
     for (const label of ["Cust.Name", "Email", "PhoneNo.", "AmtPaid", "AmtPayable", "Material Cost"]) {
@@ -194,12 +195,15 @@ describe("ProductionJobForm", () => {
     }
     expect(screen.queryByRole("heading", { name: "Change log" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Remark")).toHaveValue("Saved remark");
+    expect(screen.getByLabelText("Carrier")).toHaveValue("NZ Post");
+    fireEvent.change(screen.getByLabelText("Carrier"), { target: { value: "DHL" } });
     fireEvent.change(screen.getByLabelText("Remark"), { target: { value: "Updated production note" } });
     fireEvent.blur(screen.getByLabelText("Remark"));
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(payload).toMatchObject({ internalNotes: "Updated production note", customerSource: "web", deliveryMethod,
-      paymentReconciliationStatus: "Afterpay", milestones: { fileSent: true } });
+      paymentReconciliationStatus: "Afterpay", milestones: { fileSent: true }, trackingCarrier: "DHL",
+      trackingNumber: "TRACK-1", trackingUrl: "https://tracking.example/TRACK-1" });
     for (const field of ["items", "finance", "manualStatus", "customerName", "customerEmail", "customerPhone", "orderId", "webOrderNumber", "designRequirements"]) {
       expect(payload).not.toHaveProperty(field);
     }
