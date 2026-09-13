@@ -600,6 +600,13 @@ export function createProductionJobService(
       if (result === "conflict") throw new ProductionJobConflictError("The job changed before this update was saved");
       if (result === "not_found") throw new ProductionJobNotFoundError();
       if (result === "invalid_source") throw new ProductionJobValidationError("Linked web order status must be updated from the order workflow");
+      if (result === "updated") {
+        try {
+          dependencies.onNotificationOutboxAvailable?.();
+        } catch {
+          // The committed outbox remains available to recovery.
+        }
+      }
       return result;
     },
   });

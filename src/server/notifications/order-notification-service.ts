@@ -39,6 +39,7 @@ export type OrderNotificationDelivery = Readonly<{
   status: OrderNotificationStatus;
   attempts: number;
   createdAt: Date;
+  source?: "order" | "manual";
 }>;
 
 export interface OrderNotificationRepository {
@@ -92,7 +93,7 @@ function orderMessage(
     trackingCarrier: event.trackingCarrier,
   });
 
-  const actionUrl = event.kind === "order_shipped" && event.trackingUrl
+  const actionUrl = event.kind === "order_shipped"
     ? event.trackingUrl
     : orderUrl.toString();
   const greeting = event.kind === "admin_order_received"
@@ -104,8 +105,8 @@ function orderMessage(
   return Object.freeze({
     to: event.recipientEmail,
     subject,
-    text: [greeting, "", ...paragraphs, "", `${actionLabel}: ${actionUrl}`, "", footer.text].join("\n"),
-    html: `<p>${escapeHtml(greeting)}</p>${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}<p><a href="${escapeHtml(actionUrl)}">${escapeHtml(actionLabel)}</a></p>${footer.html}`,
+    text: [greeting, "", ...paragraphs, ...(actionUrl ? ["", `${actionLabel}: ${actionUrl}`] : []), "", footer.text].join("\n"),
+    html: `<p>${escapeHtml(greeting)}</p>${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}${actionUrl ? `<p><a href="${escapeHtml(actionUrl)}">${escapeHtml(actionLabel)}</a></p>` : ""}${footer.html}`,
     idempotencyKey: event.eventKey,
   });
 }

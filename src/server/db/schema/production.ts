@@ -76,6 +76,7 @@ export type CustomerNotificationKind =
   | "proof_approved"
   | "proof_changes_requested";
 export type CustomerNotificationStatus = "pending" | "sending" | "sent" | "failed";
+export type ManualOrderNotificationStatus = "pending" | "sending" | "sent" | "failed" | "skipped";
 export type ProductionCustomerSource =
   | "web"
   | "phone"
@@ -675,6 +676,32 @@ export const customerNotificationOutbox = pgTable(
       "customer_notification_outbox_recipient_present",
       sql`length(trim(${table.recipientEmail})) > 0`,
     ),
+  ],
+);
+
+export const manualOrderNotificationOutbox = pgTable(
+  "manual_order_notification_outbox",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventKey: text("event_key").notNull(),
+    jobId: uuid("job_id").notNull().references(() => productionJobs.id, { onDelete: "cascade" }),
+    recipientEmail: text("recipient_email"),
+    status: text("status").$type<ManualOrderNotificationStatus>().default("pending").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    providerMessageId: text("provider_message_id"),
+    lastErrorCode: text("last_error_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("manual_order_notification_outbox_event_key_unique").on(table.eventKey),
+    index("manual_order_notification_outbox_status_available_idx").on(table.status, table.availableAt),
+    index("manual_order_notification_outbox_job_id_idx").on(table.jobId),
+    check("manual_order_notification_outbox_status_valid", sql`${table.status} in ('pending', 'sending', 'sent', 'failed', 'skipped')`),
+    check("manual_order_notification_outbox_attempts_nonnegative", sql`${table.attempts} >= 0`),
   ],
 );
 

@@ -470,6 +470,13 @@
       "when": 1789336171884,
       "tag": "0066_manual_production_tracking",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1789341450482,
+      "tag": "0067_unique_switch",
+      "breakpoints": true
     }
   ]
 }

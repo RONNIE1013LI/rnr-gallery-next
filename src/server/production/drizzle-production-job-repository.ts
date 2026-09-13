@@ -44,6 +44,7 @@ import {
   productionJobs,
   productionFieldDefinitions,
   productionFieldValues,
+  manualOrderNotificationOutbox,
   user,
   type OrderFulfilmentStatus,
   type OrderPaymentStatus,
@@ -1035,6 +1036,17 @@ export function createDrizzleProductionJobRepository(
             jobId: input.jobId,
             position,
           })));
+        }
+
+        if (current.source === "manual" && current.deliveredAt === null && input.deliveredAt !== undefined && input.deliveredAt !== null) {
+          await transaction.insert(manualOrderNotificationOutbox).values({
+            eventKey: `manual-order-shipped:${current.id}`,
+            jobId: current.id,
+            recipientEmail: current.customerEmail.trim() || null,
+            availableAt: input.updatedAt,
+            createdAt: input.updatedAt,
+            updatedAt: input.updatedAt,
+          }).onConflictDoNothing({ target: manualOrderNotificationOutbox.eventKey });
         }
 
         const changedFields = changes.map((change) => change.field);
