@@ -20,6 +20,8 @@ function label(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+const carrierChoices = ["Aramex NZ", "NZ Couriers", "NZ Post", "DHL"] as const;
+
 export function AdminOrderActions({ orderId, currentStatus, tracking }: Props) {
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -122,11 +124,17 @@ export function AdminOrderActions({ orderId, currentStatus, tracking }: Props) {
       </section>
 
       <section className={styles.panel}>
-        <h2>Tracking</h2>
+        <h2>Shipping / Tracking</h2>
         <form className={styles.compactForm} onSubmit={submitTracking}>
           <label>
             <span>Carrier</span>
-            <input name="carrier" defaultValue={tracking.carrier ?? ""} required disabled={pending} />
+            <select name="carrier" defaultValue={tracking.carrier ?? ""} required disabled={pending}>
+              <option value="">Select carrier</option>
+              {tracking.carrier && !carrierChoices.includes(tracking.carrier as typeof carrierChoices[number])
+                ? <option value={tracking.carrier}>{tracking.carrier}</option>
+                : null}
+              {carrierChoices.map((carrier) => <option key={carrier} value={carrier}>{carrier}</option>)}
+            </select>
           </label>
           <label>
             <span>Tracking number</span>
