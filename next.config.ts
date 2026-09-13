@@ -33,7 +33,7 @@ const nextConfig: NextConfig = {
   images: {
     deviceSizes: [480, 640, 672, 750, 828, 960, 1080, 1200, 1920, 2048],
     imageSizes: [32, 48, 64, 96, 128, 256, 320, 384],
-    qualities: [50, 60, 75],
+    qualities: [40, 50, 60, 75],
     unoptimized: process.env.VERCEL_ENV === "preview",
     localPatterns: [
       { pathname: "/**", search: "" },

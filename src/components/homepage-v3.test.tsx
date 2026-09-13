@@ -1029,7 +1029,7 @@ describe("HomepageV3", () => {
 
     const source = readFileSync("src/components/homepage-v3.tsx", "utf8");
     expect(source).toMatch(
-      /src=\{`\/gallery-images\/\$\{item\.id\}[\s\S]*?quality=\{50\}[\s\S]*?loading="lazy"/,
+      /src=\{`\/gallery-images\/\$\{item\.id\}[\s\S]*?quality=\{40\}[\s\S]*?loading="lazy"/,
     );
   });
 

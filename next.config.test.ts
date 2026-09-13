@@ -82,7 +82,7 @@ describe("Next.js workspace configuration", () => {
     expect(nextConfig.images?.deviceSizes).toEqual([
       480, 640, 672, 750, 828, 960, 1080, 1200, 1920, 2048,
     ]);
-    expect(nextConfig.images?.qualities).toEqual([50, 60, 75]);
+    expect(nextConfig.images?.qualities).toEqual([40, 50, 60, 75]);
   });
 
   it.each([

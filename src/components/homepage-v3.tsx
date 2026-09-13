@@ -132,7 +132,7 @@ function GalleryArtworkCard({
             width={item.width}
             height={item.height}
             sizes={sizes}
-            quality={50}
+            quality={40}
             loading="lazy"
           />
         </div>
