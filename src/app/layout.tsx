@@ -60,6 +60,9 @@ export const metadata: Metadata = {
     description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
     images: [socialImage],
   },
+  robots: process.env.VERCEL_ENV === "preview"
+    ? { index: false, follow: false }
+    : { index: true, follow: true },
 };
 
 export default async function RootLayout({

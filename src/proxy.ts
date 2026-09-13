@@ -107,6 +107,13 @@ function usesStagingHost(request: NextRequest) {
     || hostHeader === stagingHost;
 }
 
+function isNonProductionSeoHost(request: NextRequest) {
+  const hostname = request.nextUrl.hostname.toLowerCase();
+  return process.env.VERCEL_ENV === "preview"
+    || hostname === stagingHost
+    || hostname.endsWith(".vercel.app");
+}
+
 export function proxy(request: NextRequest) {
   if (
     usesStagingHost(request)
@@ -116,6 +123,14 @@ export function proxy(request: NextRequest) {
       status: 503,
       headers: { "Cache-Control": "no-store" },
     });
+  }
+  if (isNonProductionSeoHost(request) && request.nextUrl.pathname === "/robots.txt") {
+    return new NextResponse("User-agent: *\\nDisallow: /\\n", {
+      headers: { "Content-Type": "text/plain; charset=utf-8", "X-Robots-Tag": "noindex, nofollow, noarchive" },
+    });
+  }
+  if (isNonProductionSeoHost(request) && request.nextUrl.pathname === "/sitemap.xml") {
+    return new NextResponse(null, { status: 404, headers: { "X-Robots-Tag": "noindex, nofollow, noarchive" } });
   }
   const pathname = request.nextUrl.pathname;
   const isIdentityOrStaffApi = ["/api/auth", "/api/admin", "/api/forms"].some(
@@ -203,7 +218,11 @@ export function proxy(request: NextRequest) {
   );
   requestHeaders.set("x-rnr-resolved-market", resolved.market);
   requestHeaders.set("x-rnr-market-source", resolved.source);
-  return NextResponse.next({ request: { headers: requestHeaders } });
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  if (isNonProductionSeoHost(request)) {
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive");
+  }
+  return response;
 }
 
 export const config = {

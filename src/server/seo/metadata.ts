@@ -78,7 +78,9 @@ export function buildPublicMetadata({
       description,
       images: [socialImage],
     },
-    robots: { index: true, follow: true },
+    robots: process.env.VERCEL_ENV === "preview"
+      ? { index: false, follow: false }
+      : { index: true, follow: true },
   };
 }
 
