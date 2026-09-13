@@ -218,6 +218,8 @@ const manualDeliveryChoices: readonly ManualChoice[] = [
   { value: "other", label: "Other" },
 ];
 
+const manualCarrierChoices = ["Aramex NZ", "NZ Couriers", "NZ Post", "DHL"] as const;
+
 const manualCustomerSourceChoices: readonly ManualChoice[] = [
   { value: "phone", label: "Phone" },
   { value: "messenger", label: "Messenger" },
@@ -1067,7 +1069,10 @@ export function ProductionJobForm({
         {!isWebOrder ? <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Shipping / Tracking</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <label><span>Carrier</span><input name="trackingCarrier" defaultValue={existingOrder?.trackingCarrier ?? ""} maxLength={190} disabled={formDisabled} /></label>
+            <label><span>Carrier</span><select name="trackingCarrier" defaultValue={existingOrder?.trackingCarrier ?? ""} disabled={formDisabled}>
+              <option value="">Select carrier</option>
+              {manualCarrierChoices.map((carrier) => <option key={carrier} value={carrier}>{carrier}</option>)}
+            </select></label>
             <label><span>Tracking number</span><input name="trackingNumber" defaultValue={existingOrder?.trackingNumber ?? ""} maxLength={190} disabled={formDisabled} /></label>
             <label><span>Tracking URL</span><input name="trackingUrl" type="url" defaultValue={existingOrder?.trackingUrl ?? ""} maxLength={2_000} disabled={formDisabled} /></label>
           </div>

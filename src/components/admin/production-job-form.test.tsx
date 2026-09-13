@@ -114,6 +114,11 @@ describe("ProductionJobForm", () => {
     expect(within(manualGroup("Size")).getByRole("radio", { name: "A2" })).toBeChecked();
     expect(screen.getByLabelText("Cust.Name")).toHaveValue("Saved Customer");
     expect(screen.getByLabelText("Remark")).toHaveValue("Saved remark");
+    expect(screen.getByLabelText("Carrier")).toHaveValue("");
+    expect(within(screen.getByLabelText("Carrier")).getByRole("option", { name: "Select carrier" })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Carrier")).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Select carrier", "Aramex NZ", "NZ Couriers", "NZ Post", "DHL",
+    ]);
     expect(within(manualGroup("File Sent")).getByRole("radio", { name: "YES" })).toBeChecked();
     expect(screen.getByText("Production Job Created")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save order" })).not.toBeInTheDocument();
@@ -905,7 +910,7 @@ describe("ProductionJobForm", () => {
     const delivered = manualGroup("Shipped");
     expect(within(delivered).getAllByRole("radio").map((option) => option.parentElement?.textContent)).toEqual(["YES", "NO", "HOLD"]);
     expect(within(delivered).getByRole("radio", { name: "NO" })).toBeChecked();
-    expect(screen.queryAllByRole("combobox")).toHaveLength(0);
+    expect(screen.queryAllByRole("combobox")).toHaveLength(1);
     expect(screen.getByText("Change history will appear after this manual order is submitted.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Submit order" })).toBeInTheDocument();
   });
