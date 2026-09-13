@@ -132,7 +132,7 @@ function GalleryArtworkCard({
             width={item.width}
             height={item.height}
             sizes={sizes}
-            quality={60}
+            quality={50}
             loading="lazy"
           />
         </div>
@@ -256,7 +256,8 @@ export function HomepageV3({
                 alt={homepageV3ImageSlots.heroShowcase.alt}
                 width={4608}
                 height={2592}
-                sizes="(max-width: 760px) 100vw, (max-width: 1080px) calc(100vw - 4rem), (max-width: 1440px) 70vw, 944px"
+                sizes="(max-width: 760px) 100vw, (max-width: 1080px) calc(100vw - 4rem), (max-width: 1352px) calc(67vw + 1.17125rem), (max-width: 1427px) calc(17vw + 43.42125rem), (max-width: 1440px) calc(50vw + 14rem), 944px"
+                quality={60}
                 loading="eager"
                 fetchPriority="high"
               />

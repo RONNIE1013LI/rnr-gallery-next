@@ -108,6 +108,13 @@ describe("HomepageV3", () => {
     const showcaseImage = screen.getByRole("img", {
       name: "Wall hanging banner, custom canvas and roll-up banner displayed together",
     });
+    expect(declaredImageWidth(showcaseImage, 1280)).toBeCloseTo(876.34, 1);
+    expect(declaredImageWidth(showcaseImage, 1365)).toBeCloseTo(926.79, 1);
+    expect(declaredImageWidth(showcaseImage, 1440)).toBe(944);
+    expect(productionCandidateFor(showcaseImage, 1365, 1)).toBe(960);
+    expect(readFileSync("src/components/homepage-v3.tsx", "utf8")).toMatch(
+      /src=\{homepageV3ImageSlots.heroShowcase.src[\s\S]*?quality=\{60\}[\s\S]*?loading="eager"/,
+    );
     expect(showcaseImage).toHaveAttribute("fetchpriority", "high");
     expect(showcaseImage).toHaveAttribute("loading", "eager");
     expect(showcaseImage).toHaveAttribute("width", "4608");
@@ -1007,6 +1014,7 @@ describe("HomepageV3", () => {
       expect(image).toHaveAttribute("sizes", expectedSizes[index]);
     });
 
+    expect(productionCandidateFor(galleryImages[2], 1350, 1)).toBe(672);
     const widthsAt900 = galleryImages.map((image) => declaredImageWidth(image, 900));
     expect(widthsAt900).toEqual([
       expect.closeTo(275.48, 1),
@@ -1016,12 +1024,12 @@ describe("HomepageV3", () => {
       expect.closeTo(179.33, 1),
     ]);
     expect(galleryImages.map((image) => productionCandidateFor(image, 900))).toEqual([
-      640, 320, 1080, 480, 384,
+      640, 320, 960, 480, 384,
     ]);
 
     const source = readFileSync("src/components/homepage-v3.tsx", "utf8");
     expect(source).toMatch(
-      /src=\{`\/gallery-images\/\$\{item\.id\}[\s\S]*?quality=\{60\}[\s\S]*?loading="lazy"/,
+      /src=\{`\/gallery-images\/\$\{item\.id\}[\s\S]*?quality=\{50\}[\s\S]*?loading="lazy"/,
     );
   });
 
