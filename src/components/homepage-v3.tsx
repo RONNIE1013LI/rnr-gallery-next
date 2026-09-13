@@ -257,7 +257,8 @@ export function HomepageV3({
                 width={4608}
                 height={2592}
                 sizes="(max-width: 760px) 100vw, (max-width: 1080px) calc(100vw - 4rem), (max-width: 1440px) 70vw, 944px"
-                preload
+                loading="eager"
+                fetchPriority="high"
               />
             </figure>
           </div>

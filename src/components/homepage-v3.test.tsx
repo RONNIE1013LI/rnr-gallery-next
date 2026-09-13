@@ -108,6 +108,8 @@ describe("HomepageV3", () => {
     const showcaseImage = screen.getByRole("img", {
       name: "Wall hanging banner, custom canvas and roll-up banner displayed together",
     });
+    expect(showcaseImage).toHaveAttribute("fetchpriority", "high");
+    expect(showcaseImage).toHaveAttribute("loading", "eager");
     expect(showcaseImage).toHaveAttribute("width", "4608");
     expect(showcaseImage).toHaveAttribute("height", "2592");
     expect(heroSection).not.toHaveTextContent(
