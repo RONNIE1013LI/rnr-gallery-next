@@ -125,7 +125,7 @@ export function proxy(request: NextRequest) {
     });
   }
   if (isNonProductionSeoHost(request) && request.nextUrl.pathname === "/robots.txt") {
-    return new NextResponse("User-agent: *\\nDisallow: /\\n", {
+    return new NextResponse("User-agent: *\\nAllow: /\\n", {
       headers: { "Content-Type": "text/plain; charset=utf-8", "X-Robots-Tag": "noindex, nofollow, noarchive" },
     });
   }
