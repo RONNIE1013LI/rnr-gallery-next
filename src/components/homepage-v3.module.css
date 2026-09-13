@@ -572,7 +572,7 @@
   .heroCopy > h1 {
     max-width: 23.5rem;
     margin: clamp(0.875rem, 4.5vw, 1.25rem) 0 0;
-    font-size: clamp(2.5rem, calc(16vw - 1.1rem), 3.2rem);
+    font-size: clamp(2.25rem, 9vw, 2.5rem);
     line-height: 1.02;
     letter-spacing: -0.035em;
   }

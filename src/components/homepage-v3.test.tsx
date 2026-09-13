@@ -269,7 +269,7 @@ describe("HomepageV3", () => {
     const mobile = stylesheet.match(/@media \(max-width: 760px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
     const narrow = stylesheet.match(/@media \(max-width: 375px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
 
-    expect(mobile).toMatch(/\.heroCopy > h1\s*\{[\s\S]*?font-size:\s*clamp\(2\.5rem, calc\(16vw - 1\.1rem\), 3\.2rem\);/);
+    expect(mobile).toMatch(/\.heroCopy > h1\s*\{[\s\S]*?font-size:\s*clamp\(2\.25rem, 9vw, 2\.5rem\);/);
     expect(narrow).toMatch(/\.heroCopy > h1\s*\{[\s\S]*?max-width:\s*20\.5rem;/);
     expect(narrow).toMatch(/font-size:\s*clamp\(2\.2rem, 10vw, 2\.35rem\);/);
     expect(narrow).toMatch(/line-height:\s*1\.04;/);
@@ -290,7 +290,7 @@ describe("HomepageV3", () => {
     )?.[0] ?? "";
 
     expect(headlineRules).toMatch(
-      /font-size:\s*clamp\(2\.5rem,\s*calc\(16vw\s*-\s*1\.1rem\),\s*3\.2rem\)/,
+      /font-size:\s*clamp\(2\.25rem,\s*9vw,\s*2\.5rem\)/,
     );
     expect(headlineRules).toMatch(/line-height:\s*1\.02/);
     expect(headlineRules).toMatch(/letter-spacing:\s*-0\.035em/);
