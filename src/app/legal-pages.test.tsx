@@ -93,9 +93,10 @@ describe("legal pages", () => {
 
     const contact = screen.getByRole("main");
     expect(contact).toHaveTextContent("R&R Gallery Ltd");
-    expect(contact).toHaveTextContent("11 Para Close");
+    expect(contact).not.toHaveTextContent("11 Para Close");
     expect(contact).toHaveTextContent("Fairview Heights");
-    expect(contact).toHaveTextContent("Auckland 0632");
+    expect(contact).toHaveTextContent("Fairview Heights, Auckland, New Zealand");
+    expect(contact).toHaveTextContent("Pickup available by appointment.");
     expect(contact).toHaveTextContent("New Zealand");
     expect(screen.getByRole("link", { name: "+64 21 023 48948" }))
       .toHaveAttribute("href", "tel:+642102348948");

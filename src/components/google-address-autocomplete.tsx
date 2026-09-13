@@ -134,6 +134,7 @@ type GoogleAddressAutocompleteProps = {
   errorId: string;
   errors?: string[];
   inputId: string;
+  label?: string;
   onChange(value: AddressInput): void;
   value: AddressInput;
 };
@@ -151,6 +152,7 @@ export function GoogleAddressAutocomplete({
   errorId,
   errors = [],
   inputId,
+  label = "Street address",
   onChange,
   value,
 }: GoogleAddressAutocompleteProps) {
@@ -320,7 +322,7 @@ export function GoogleAddressAutocomplete({
       className={`${styles.formField} ${styles.addressAutocomplete}`}
       ref={containerRef}
     >
-      <label htmlFor={inputId}><span>Street address</span></label>
+      <label htmlFor={inputId}><span>{label}</span></label>
       <input
         aria-activedescendant={activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
         aria-autocomplete="list"

@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+import { CartProductImage } from "./cart-product-image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AnalyticsEventTracker } from "@/components/analytics-event-tracker";
@@ -232,7 +232,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
               onClick={() => removeItemFromCart(item.id)}
             >×</button>
             <div className={styles.cartItemMedia}>
-              <Image src={item.imageSrc} alt="" width={96} height={96} />
+              <CartProductImage src={item.imageSrc} productSlug={item.productSlug} title={item.productTitle} />
             </div>
             <div className={styles.cartItemDetails}>
               <h2>{item.productTitle}</h2>

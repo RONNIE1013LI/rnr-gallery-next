@@ -33,7 +33,7 @@ describe("CheckoutStartPage", () => {
 
     expect(screen.getByRole("heading", {
       level: 1,
-      name: "Sign in for faster checkout.",
+      name: "Continue to checkout.",
     })).toBeInTheDocument();
 
     const account = screen.getByRole("region", {
@@ -48,7 +48,7 @@ describe("CheckoutStartPage", () => {
     expect(account).toContainElement(email);
     expect(guestCheckout).toContainElement(guest);
     expect(google.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(account.compareDocumentPosition(guestCheckout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(guestCheckout.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(guest).toHaveAttribute("href", "/checkout");
     expect(google).toBeEnabled();
     expect(email).toBeEnabled();

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { GuestCheckoutLink } from "@/components/guest-checkout-link";
 import { AuthGateway } from "@/components/auth-gateway";
 import styles from "@/components/storefront.module.css";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
@@ -9,7 +10,7 @@ import { getConfiguredSocialProviderIds } from "@/server/auth/social-provider-co
 import type { SocialProviderId } from "@/server/auth/social-provider-config";
 
 export const metadata: Metadata = {
-  title: "Sign in for faster checkout",
+  title: "Checkout",
   robots: { index: false, follow: false },
 };
 
@@ -30,10 +31,21 @@ export default async function CheckoutStartPage() {
           <Link className={styles.checkoutBackLink} href="/cart">
             <span aria-hidden="true">←</span> Back to cart
           </Link>
-          <h1>Sign in for faster checkout.</h1>
+          <h1>Continue to checkout.</h1>
         </header>
 
         <div className={styles.checkoutEntryLayout}>
+          <section
+            aria-labelledby="guest-checkout-title"
+            className={styles.checkoutGuestPanel}
+          >
+            <h2 id="guest-checkout-title">Guest Checkout</h2>
+            <p className={styles.checkoutGuestDescription}>
+              Proceed now and create an account later.
+            </p>
+            <GuestCheckoutLink />
+          </section>
+
           <section
             aria-labelledby="checkout-account-title"
             className={styles.checkoutContinuation}
@@ -46,19 +58,6 @@ export default async function CheckoutStartPage() {
               returnTo="/checkout"
               showIntro={false}
             />
-          </section>
-
-          <section
-            aria-labelledby="guest-checkout-title"
-            className={styles.checkoutGuestPanel}
-          >
-            <h2 id="guest-checkout-title">Guest Checkout</h2>
-            <p className={styles.checkoutGuestDescription}>
-              Proceed now and create an account later.
-            </p>
-            <Link className={styles.primaryButton} href="/checkout">
-              Continue as Guest
-            </Link>
           </section>
         </div>
       </div>

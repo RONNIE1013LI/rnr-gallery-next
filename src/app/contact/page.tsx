@@ -18,10 +18,8 @@ export default function ContactPage() {
         <h2>Customer support</h2>
         <address>
           R&amp;R Gallery Ltd<br />
-          11 Para Close<br />
-          Fairview Heights<br />
-          Auckland 0632<br />
-          New Zealand<br />
+          Fairview Heights, Auckland, New Zealand<br />
+          Pickup available by appointment.<br />
           <a href="tel:+642102348948">+64 21 023 48948</a><br />
           <a href="mailto:customerservice@rnrgallery.com">customerservice@rnrgallery.com</a>
         </address>

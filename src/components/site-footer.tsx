@@ -142,7 +142,8 @@ export function SiteFooter({
 
       <div className="site-footer__legal">
         <address className="site-footer__business-line">
-          11 Para Close, Fairview Heights, Auckland 0632, New Zealand
+          Fairview Heights, Auckland, New Zealand<br />
+          Pickup available by appointment.
         </address>
         <span
           className="site-footer__copyright"

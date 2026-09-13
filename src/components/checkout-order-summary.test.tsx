@@ -4,6 +4,10 @@ import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 
 describe("CheckoutOrderSummary", () => {
+  it("explains how to calculate delivery before totals are available", () => {
+    render(<CheckoutOrderSummary cart={null} shipping={null} />);
+    expect(screen.getByText("Enter your delivery address to calculate shipping and confirm your total.")).toBeVisible();
+  });
   it("shows the trusted gallery snapshot without affecting totals", () => {
     const designId = "a".repeat(64);
     const cart = {

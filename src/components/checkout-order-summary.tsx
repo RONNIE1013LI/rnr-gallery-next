@@ -16,7 +16,7 @@ export function CheckoutOrderSummary({ cart, shipping }: {
   cart: RepricedCheckoutCart | null;
   shipping: PublicShippingDTO["option"] | null;
 }) {
-  if (!cart) return <p>Review delivery to see authoritative totals.</p>;
+  if (!cart) return <p>Enter your delivery address to calculate shipping and confirm your total.</p>;
   const shippingGst = shipping?.gstCents ?? 0;
   const shippingTotal = shipping?.amountInclGstCents ?? 0;
   const currency = cart.currency ?? "NZD";

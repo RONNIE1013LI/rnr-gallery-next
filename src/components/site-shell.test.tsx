@@ -14,6 +14,13 @@ const { usePathname, push, refresh } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ usePathname, useRouter: () => ({ push, refresh }) }));
 
 describe("site shell", () => {
+  it("shows appointment-only locality in the public footer", () => {
+    render(<SiteFooter />);
+    const footer = screen.getByRole("contentinfo");
+    expect(footer).not.toHaveTextContent("11 Para Close");
+    expect(footer).toHaveTextContent("Fairview Heights, Auckland, New Zealand");
+    expect(footer).toHaveTextContent("Pickup available by appointment.");
+  });
   beforeEach(() => {
     usePathname.mockReturnValue("/");
     localStorage.clear();
@@ -454,7 +461,7 @@ describe("site shell", () => {
     expect(contact).not.toHaveTextContent("11 Para Close");
     const businessLine = footer.querySelector<HTMLElement>(".site-footer__business-line");
     expect(businessLine).toHaveTextContent(
-      "11 Para Close, Fairview Heights, Auckland 0632, New Zealand",
+      "Fairview Heights, Auckland, New Zealand",
     );
     expect(businessLine).not.toHaveTextContent("R&R Gallery Ltd");
     expect(businessLine?.querySelector("strong")).toBeNull();

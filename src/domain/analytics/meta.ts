@@ -97,6 +97,15 @@ export function isMetaAnalyticsRequired(): boolean {
 export function emitMetaAnalyticsEvent(event: AnalyticsEvent): boolean {
   try {
     if (typeof window === "undefined" || !isMetaAnalyticsRequired()) return false;
+    // Runtime data can outlive the TypeScript contract (for example, a restored cart).
+    // Never send formatted money or an invalid amount to either Pixel or CAPI.
+    if ("items" in event && (
+      (event.currency !== "NZD" && event.currency !== "AUD")
+      || typeof event.value !== "number" || !Number.isFinite(event.value) || event.value < 0
+      || (event.event === "purchase" && (
+        typeof event.total !== "number" || !Number.isFinite(event.total) || event.total < 0
+      ))
+    )) return false;
     const purchaseKey = event.event === "purchase"
       ? `${PURCHASE_DELIVERY_KEY_PREFIX}:${encodeURIComponent(event.transaction_id)}`
       : null;

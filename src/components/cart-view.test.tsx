@@ -138,6 +138,15 @@ describe("CartView", () => {
     analytics.emitAnalyticsEvent.mockClear();
   });
 
+  it.each(["later", "upload"] as const)("labels failed product images for %s photo submission", (method) => {
+    localStorage.setItem("rnr:commerce:v1:guest:cart", JSON.stringify({ version: 1, items: [{ ...cartItem, photoSubmissionMethod: method }] }));
+    const { container } = render(<CartView market="NZ" />);
+    const image = container.querySelector("img")!;
+    fireEvent.error(image);
+    expect(screen.getByText("Custom artwork")).toBeVisible();
+    expect(screen.getByRole("img", { name: "Photo Print Canvas preview unavailable" })).toBeVisible();
+  });
+
   it("shows a useful empty state", () => {
     render(<CartView market="NZ" />);
     const heading = screen.getByRole("heading", { level: 2, name: "Your cart is empty" });
