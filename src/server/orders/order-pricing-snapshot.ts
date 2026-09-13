@@ -14,6 +14,7 @@ export type OrderPricingSnapshot = Readonly<{
     productKey: string;
     sizeKey: string;
     quantity: number;
+    configurationTiming?: Readonly<{ eventDate?: string; productionDate: string; isRush: boolean; productionWorkingDays: number; rushFeeInclTaxCents: number }>;
     unitPrice: RepricedCheckoutCart["items"][number]["unitPrice"];
     lineSubtotalExTaxCents: number;
     lineTaxCents: number;
@@ -78,6 +79,13 @@ export function buildOrderPricingSnapshot(
       sizeKey: item.sizeKey,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
+      configurationTiming: Object.freeze({
+        ...(item.eventDate ? { eventDate: item.eventDate } : {}),
+        productionDate: item.neededDate,
+        isRush: item.urgentServiceConfirmed,
+        productionWorkingDays: item.urgentService.workingDays,
+        rushFeeInclTaxCents: item.urgentService.feeInclGstCents,
+      }),
       lineSubtotalExTaxCents: item.lineSubtotalExGstCents,
       lineTaxCents: item.lineGstCents,
       lineTotalInclTaxCents: item.lineTotalInclGstCents,

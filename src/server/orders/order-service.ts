@@ -82,6 +82,11 @@ function canonicalInputFrom(snapshot: RepricedCheckoutCart) {
       notes: item.notes,
       neededDate: item.neededDate,
       urgentServiceConfirmed: item.urgentServiceConfirmed,
+      productionWorkingDays: item.urgentService.workingDays,
+      urgentFeeInclGstCents: item.urgentService.feeInclGstCents,
+      configuredUnitPriceInclTaxCents: item.unitPrice.totalInclGstCents,
+      configuredCurrency: snapshot.currency,
+      ...(item.eventDate ? { eventDate: item.eventDate } : {}),
       quantity: item.quantity,
       uploadReferences: [...item.uploadReferences],
       ...(item.mainPhotoUploadId ? { mainPhotoUploadId: item.mainPhotoUploadId } : {}),
@@ -173,6 +178,7 @@ export function createOrderService({
         ?? 0;
       const cart = repriceCart(canonicalInputFrom(state.cartSnapshot), {
         now: pricingTime,
+        orderDate: state.cartSnapshot.orderDate,
         galleryDesigns: new Map(
           state.cartSnapshot.items.flatMap((item) =>
             item.galleryDesign ? [[item.galleryDesign.id, item.galleryDesign] as const] : [],

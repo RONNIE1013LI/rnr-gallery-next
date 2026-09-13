@@ -1,10 +1,16 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render as renderCollapsed, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as analytics from "@/domain/analytics/client";
 import { getProductBySlug } from "@/domain/catalogue/products";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import { ConfigurePageContent } from "./page-content";
+
+function render(...args: Parameters<typeof renderCollapsed>) {
+  const result = renderCollapsed(...args);
+  result.container.querySelectorAll<HTMLButtonElement>('button[data-configuration-step][aria-expanded="false"]').forEach((button) => fireEvent.click(button));
+  return result;
+}
 
 vi.mock("@/domain/analytics/client", () => ({
   emitAnalyticsEvent: vi.fn(() => true),
@@ -82,4 +88,11 @@ describe("ConfigurePageContent", () => {
       }],
     }));
   });
+});
+
+it("routes edit requests through the identity-scoped client editor", () => {
+  const product = getProductBySlug("photo-print-canvas")!;
+  render(<ConfigurePageContent product={product} schema={getConfigurationSchema(product.key)!} pricing={defaultProductRegistry.pricing} orderDate="2026-08-17" selectedDesign={null} relatedDesigns={[]} editItemId="missing-item" />);
+  expect(screen.getByRole("link", { name: "Return to cart" })).toBeVisible();
+  expect(document.querySelector("form#customise")).toBeNull();
 });

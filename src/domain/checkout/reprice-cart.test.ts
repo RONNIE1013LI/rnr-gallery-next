@@ -163,6 +163,7 @@ describe("authoritative checkout repricing", () => {
       peoplePets: 1,
       neededDate: "2026-08-07",
       urgentServiceConfirmed: true,
+      urgentFeeInclGstCents: 5500,
     }), { now: MONDAY_IN_AUCKLAND, registry, registryRevision: 7 });
 
     expect(result.items[0].unitPrice.lines).toEqual([
@@ -252,13 +253,23 @@ describe("authoritative checkout repricing", () => {
       }]]),
     })).toThrow("selected gallery design is unavailable");
   });
+  it("validates calendar and service consistency without rejecting past valid dates", () => {
+    expect(() => repriceCart(cart({ neededDate: "2026-02-31" }), { now: MONDAY_IN_AUCKLAND })).toThrow();
+    expect(() => repriceCart(cart({ urgentServiceConfirmed: true, productionWorkingDays: 3, urgentFeeInclGstCents: 0 }), { now: MONDAY_IN_AUCKLAND })).toThrow();
+    expect(() => repriceCart(cart({ neededDate: "2020-01-01" }), { now: MONDAY_IN_AUCKLAND })).not.toThrow();
+  });
+
+  it("rejects a changed configured rush fee or unit price without substituting a new price", () => {
+    expect(() => repriceCart(cart({ urgentFeeInclGstCents: 1 }), { now: MONDAY_IN_AUCKLAND })).toThrow("saved configuration needs review");
+    expect(() => repriceCart(cart({ configuredUnitPriceInclTaxCents: 1 }), { now: MONDAY_IN_AUCKLAND })).toThrow("saved price needs review");
+  });
+
   it("ignores browser money and labels and resolves canonical product data", () => {
     const result = repriceCart(
       cart({
         productTitle: "Free canvas",
         productSlug: "tampered",
         sizeLabel: "Any size",
-        urgentFeeInclGstCents: 1,
         price: {
           lines: [],
           subtotalExGstCents: 0,
@@ -505,7 +516,7 @@ describe("authoritative checkout repricing", () => {
     ["2026-08-07", 4, 0, 0, 12_075],
     ["2026-08-10", 5, 0, 0, 12_075],
   ])(
-    "recalculates %s as working day %i with urgent fee %i",
+    "verifies the configured %s service %i without consulting dates",
     (
       neededDate,
       workingDays,
@@ -519,12 +530,14 @@ describe("authoritative checkout repricing", () => {
           peoplePets: 1,
           neededDate,
           urgentServiceConfirmed: feeInclGstCents > 0,
+          productionWorkingDays: Math.min(workingDays, 3),
+          urgentFeeInclGstCents: feeInclGstCents,
         }),
         { now: MONDAY_IN_AUCKLAND },
       );
 
       expect(result.items[0].urgentService).toEqual({
-        workingDays,
+        workingDays: Math.min(workingDays, 3),
         feeInclGstCents,
       });
       expect(result.items[0].unitPrice.totalInclGstCents).toBe(totalInclGstCents);
@@ -543,17 +556,15 @@ describe("authoritative checkout repricing", () => {
     },
   );
 
-  it.each([undefined, false])(
-    "rejects a fee-bearing date unless urgent confirmation is exactly true: %s",
-    (urgentServiceConfirmed) => {
-      expect(() =>
-        repriceCart(
-          cart({ neededDate: "2026-08-05", urgentServiceConfirmed }),
-          { now: MONDAY_IN_AUCKLAND },
-        ),
-      ).toThrow("Urgent service must be confirmed");
-    },
-  );
+  it.each(["2026-08-05", "2026-08-01"])("does not require rush for the advisory date %s", (neededDate) => {
+    const result = repriceCart(cart({ neededDate, urgentServiceConfirmed: false }), { now: MONDAY_IN_AUCKLAND });
+    expect(result.items[0].urgentService.feeInclGstCents).toBe(0);
+  });
+
+  it("retains an explicitly chosen production service when a saved cart date has passed", () => {
+    const result = repriceCart(cart({ neededDate: "2026-08-01", productionWorkingDays: 2, urgentServiceConfirmed: true }), { now: MONDAY_IN_AUCKLAND });
+    expect(result.items[0]).toMatchObject({ neededDate: "2026-08-01", urgentService: { workingDays: 2, feeInclGstCents: 5000 } });
+  });
 
   it("multiplies authoritative unit amounts by quantity", () => {
     const result = repriceCart(cart({ quantity: 2 }), {
@@ -578,7 +589,6 @@ describe("authoritative checkout repricing", () => {
     const tampered = repriceCart(
       cart({
         productTitle: "Tampered",
-        urgentFeeInclGstCents: Number.MAX_VALUE,
         price: {
           subtotalExGstCents: Number.MAX_VALUE,
           gstCents: Number.MAX_VALUE,

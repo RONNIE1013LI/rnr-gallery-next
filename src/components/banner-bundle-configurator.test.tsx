@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render as renderCollapsed, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getProductBySlug } from "@/domain/catalogue/products";
@@ -12,6 +12,14 @@ import {
   productionCandidateFor,
 } from "@/test/image-candidate-assertions";
 import { BannerBundleConfigurator } from "./banner-bundle-configurator";
+
+// Existing commerce assertions inspect all sections; expand through the public accordion controls.
+function render(...args: Parameters<typeof renderCollapsed>) {
+  const result = renderCollapsed(...args);
+  result.container.querySelectorAll<HTMLButtonElement>('button[data-configuration-step][aria-expanded="false"]').forEach((button) => fireEvent.click(button));
+  result.container.querySelectorAll('details').forEach((details) => { details.open = true; });
+  return result;
+}
 
 const analytics = vi.hoisted(() => ({
   emitAnalyticsEvent: vi.fn<(event: unknown) => boolean>(() => true),
@@ -38,6 +46,26 @@ function enabledAustraliaRegistry() {
 }
 
 describe("BannerBundleConfigurator", () => {
+  it("keeps both component briefs through the real Next and Back journey", () => {
+    renderCollapsed(<BannerBundleConfigurator product={product} schema={schema} registry={defaultProductRegistry} orderDate="2026-08-17" createId={() => "stepped-bundle"} />);
+    fireEvent.click(screen.getByRole("button", { name: "Next: step 2" }));
+    fireEvent.click(within(screen.getByRole("region", { name: "Roll-Up Banner customisation" })).getByText("Send Photos After Ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Next: step 3" }));
+    fireEvent.change(screen.getByLabelText("Roll-Up Banner customisation: Text for your design"), { target: { value: "Roll-Up wording" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next: step 4" }));
+    fireEvent.click(within(screen.getByRole("region", { name: "Wall Banner customisation" })).getByText("Send Photos After Ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Next: step 5" }));
+    fireEvent.change(screen.getByLabelText("Wall Banner customisation: Text for your design"), { target: { value: "Wall wording" } });
+    fireEvent.click(screen.getByRole("button", { name: "Next: step 6" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back: step 5" }));
+    expect(screen.getByLabelText("Wall Banner customisation: Text for your design")).toHaveValue("Wall wording");
+    fireEvent.click(screen.getByRole("button", { name: "Next: step 6" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next: step 7" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to Cart — Send Photos Later" }));
+    const item = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0];
+    expect(item.neededDate).toBe("2026-08-20");
+    expect(item.bundleComponents.map((component: { designText: string }) => component.designText)).toEqual(["Roll-Up wording", "Wall wording"]);
+  });
   beforeEach(() => {
     localStorage.clear();
     analytics.emitAnalyticsEvent.mockReset();
@@ -87,21 +115,14 @@ describe("BannerBundleConfigurator", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Production completion date"), {
-      target: { value: "2026-08-18" },
+    fireEvent.change(screen.getByLabelText("When do you need the finished item?"), {
+      target: { value: "2026-08-21" },
     });
 
-    expect(screen.getByText(
-      "I need production completed by the selected date and confirm urgent service.",
-    )).toBeInTheDocument();
-    const urgentConfirmation = screen
-      .getByLabelText("Confirm urgent service")
-      .closest("label");
-    const urgentDetails = urgentConfirmation?.querySelectorAll("small");
-    expect(urgentDetails).toHaveLength(2);
-    expect(urgentDetails?.[1]).toHaveTextContent(
-      "Delivery time is not included in this timeframe.",
-    );
+    expect(screen.getByLabelText("Production service")).toHaveValue("3");
+    fireEvent.change(screen.getByLabelText("Production service"), { target: { value: "1" } });
+    expect(screen.getByLabelText("Production service")).toHaveValue("1");
+    expect(screen.getByText(/Delivery time is separate and is not guaranteed/)).toBeInTheDocument();
   });
 
   it("simplifies Bundle size labels and omits GST only from size-card prices", () => {

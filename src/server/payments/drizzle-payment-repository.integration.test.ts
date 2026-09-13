@@ -491,6 +491,8 @@ describe("Drizzle payment repository", () => {
   });
 
   it("emails only a newly admitted website order, after commit, with persisted recipient and paid balance", async () => {
+    vi.stubEnv("BETTER_AUTH_SECRET", "isolated-invoice-test-secret-at-least-32-characters");
+    try {
     const scheduled: string[] = [];
     const repo = createDrizzlePaymentRepository(database, { onNewInvoiceOrder: (id) => { scheduled.push(id); } });
     const order = await createOrder();
@@ -517,6 +519,7 @@ describe("Drizzle payment repository", () => {
     expect(message.html.match(/Kind regards/g)).toHaveLength(1);
     const audits = await database.select().from(adminAuditLogs).where(eq(adminAuditLogs.resourceId, doc!.id));
     expect(audits).toEqual(expect.arrayContaining([expect.objectContaining({ result: "success", action: "invoice.email.sent", afterSummary: expect.objectContaining({ source: "automatic", trigger: "website_order_created" }) })]));
+    } finally { vi.unstubAllEnvs(); }
   });
 
   afterAll(async () => {

@@ -42,6 +42,10 @@ const cart = {
 } as const satisfies RepricedCheckoutCart;
 
 describe("immutable order pricing snapshot", () => {
+  it("persists the configured advisory date and service with the final order", () => {
+    const snapshot = buildOrderPricingSnapshot({ ...cart, items: [{ ...cart.items[0], eventDate: "2026-08-01" }] }, { kind: "pickup" });
+    expect(snapshot.items[0]).toMatchObject({ configurationTiming: { eventDate: "2026-08-01", productionDate: "2026-08-24", isRush: false, productionWorkingDays: 5, rushFeeInclTaxCents: 0 } });
+  });
   it("captures Banner Bundle market, currency, tax and price lines without personal customisation", () => {
     const snapshot = buildOrderPricingSnapshot(cart, {
       kind: "post",

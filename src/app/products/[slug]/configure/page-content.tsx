@@ -1,3 +1,4 @@
+import { CartConfigurationEditor } from "@/components/cart-configuration-editor";
 import {
   ProductConfigurator,
   type ProductConfiguratorRelatedDesign,
@@ -59,6 +60,7 @@ export function ConfigurePageContent({
   selectedDesign,
   relatedDesigns,
   initialSizeKey,
+  editItemId,
 }: Readonly<{
   product: Product;
   schema: ProductConfigurationSchema;
@@ -69,6 +71,7 @@ export function ConfigurePageContent({
   selectedDesign: GalleryDesignSelection | null;
   relatedDesigns: readonly ProductConfiguratorRelatedDesign[];
   initialSizeKey?: string;
+  editItemId?: string;
 }>) {
   const sharedProps = {
     product,
@@ -101,7 +104,7 @@ export function ConfigurePageContent({
         <h1>{product.title}</h1>
         <p>{product.summary}</p>
       </header>
-      {product.key === "banner-bundle" ? (
+      {editItemId !== undefined ? <CartConfigurationEditor {...sharedProps} editItemId={editItemId} /> : product.key === "banner-bundle" ? (
         <BannerBundleConfigurator {...sharedProps} />
       ) : (
         <ProductConfigurator {...sharedProps} />

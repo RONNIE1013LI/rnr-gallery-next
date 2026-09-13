@@ -39,6 +39,9 @@ export function CheckoutOrderSummary({ cart, shipping }: {
           <div>
             <strong>{item.productTitle} × {item.quantity}</strong>
             <span>{item.sizeLabel}</span>
+            <small>{item.urgentServiceConfirmed ? "Rush" : "Non-Rush"} · {item.urgentService.workingDays} working {item.urgentService.workingDays === 1 ? "day" : "days"}</small>
+            {item.eventDate ? <small>Event date: {item.eventDate} · advisory only</small> : null}
+            {item.urgentService.feeInclGstCents > 0 ? <small>Confirmed rush fee: {formatMarketMoney(item.urgentService.feeInclGstCents, currency)}</small> : null}
             {item.galleryDesign && <small>{item.galleryDesign.title}</small>}
             {item.bundleComponents?.map((component) => {
               const componentLabel = component.componentKey === "roll-up"

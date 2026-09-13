@@ -400,3 +400,8 @@
 @media (prefers-reduced-motion: reduce) {
   .carousel { scroll-behavior: auto; }
 }
+
+.compact { padding-block: 2.5rem; }
+.compact > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; align-items: center; }
+.compact h2 { margin-block: 0 .75rem; }
+@media (max-width: 767px) { .compact > div { grid-template-columns: 1fr; } }

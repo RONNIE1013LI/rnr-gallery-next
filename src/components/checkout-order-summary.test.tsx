@@ -38,6 +38,7 @@ describe("CheckoutOrderSummary", () => {
 
     render(<CheckoutOrderSummary cart={cart} shipping={null} />);
     expect(screen.getByText("Family at sunset")).toBeInTheDocument();
+    expect(screen.getByText("Non-Rush · 5 working days")).toBeVisible();
     expect(screen.getByRole("img", { name: "Family at sunset" })).toBeInTheDocument();
     expect(screen.getByText("Products incl GST")).toBeInTheDocument();
     expect(screen.getByText("Shipping incl GST")).toBeInTheDocument();

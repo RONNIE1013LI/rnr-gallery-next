@@ -45,7 +45,8 @@
     "reply-assistant:evaluate:learning": "tsx scripts/evaluate-customer-service-learning.ts",
     "reply-assistant:evaluate:website": "tsx scripts/evaluate-website-customer-service.ts",
     "reply-assistant:fixtures:images": "tsx scripts/generate-reply-assistant-image-fixtures.ts",
-    "reply-assistant:images:cleanup": "tsx scripts/cleanup-customer-service-attachments.ts"
+    "reply-assistant:images:cleanup": "tsx scripts/cleanup-customer-service-attachments.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@better-auth/core": "1.6.25",
@@ -73,6 +74,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",

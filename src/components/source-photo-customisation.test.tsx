@@ -66,6 +66,24 @@ describe("SourcePhotoCustomisation", () => {
     vi.mocked(analytics.emitAnalyticsEvent).mockClear();
   });
 
+  it("links photo, file and proof questions to existing Help sections while retaining this form", () => {
+    render(<TwoGroups />);
+    const photos = screen.getByRole("region", { name: "Roll-Up Banner customisation" });
+    const artwork = screen.getByRole("region", { name: "Roll-Up Banner customisation artwork direction" });
+    for (const [scope, label, href] of [
+      [photos, "Choosing photos (opens in new tab)", "/help#photos"],
+      [photos, "File formats and limits (opens in new tab)", "/help#files"],
+      [artwork, "Proofs and revisions (opens in new tab)", "/help#proofs"],
+    ] as const) {
+      const link = within(scope).getByRole("link", { name: label });
+      expect(link).toHaveAttribute("href", href);
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    }
+    fireEvent.change(within(artwork).getByRole("textbox", { name: "Roll-Up Banner customisation: Text for your design" }), { target: { value: "Keep this wording" } });
+    expect(within(artwork).getByDisplayValue("Keep this wording")).toBeInTheDocument();
+  });
+
   it("tracks only product ID and count after upload, plus an explicit send-later choice", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,

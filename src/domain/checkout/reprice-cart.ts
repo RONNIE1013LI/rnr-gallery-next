@@ -14,7 +14,7 @@ import { InvalidPricingInputError } from "@/domain/pricing/types";
 import type { Market } from "@/domain/markets/types";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
 import type { ProductConfigurationSchema } from "@/domain/configuration/types";
-import { getUrgentService } from "@/domain/scheduling/urgent-service";
+import { STANDARD_PRODUCTION_WORKING_DAYS } from "@/domain/scheduling/urgent-service";
 import { parseCheckoutCartInput } from "./input-schema";
 import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
 import {
@@ -33,6 +33,7 @@ import {
 
 export type RepriceCartOptions = Readonly<{
   now?: Date;
+  orderDate?: string;
   galleryDesigns?: ReadonlyMap<string, GalleryDesignSnapshot>;
   registry?: ProductRegistryDocument;
   market?: Market;
@@ -223,7 +224,6 @@ function freezeUnitPrice(
 
 function repriceItem(
   item: CanonicalCheckoutItemInput,
-  orderDate: string,
   galleryDesigns: ReadonlyMap<string, GalleryDesignSnapshot>,
   registry: ProductRegistryDocument,
   market: Market,
@@ -274,14 +274,22 @@ function repriceItem(
     }
     return fee.amountInclTaxCents as number;
   });
-  const urgentService = getUrgentService(
-    orderDate,
-    normalizedItem.neededDate,
-    marketUrgentFees,
-  );
-  if (urgentService.requiresConfirmation && normalizedItem.urgentServiceConfirmed !== true) {
-    throw new InvalidCheckoutCartError("Urgent service must be confirmed.");
+  // Verify the selected service and fee. Never derive eligibility from dates,
+  // addresses or delivery estimates after configuration.
+  const confirmedRush = normalizedItem.urgentServiceConfirmed === true;
+  const legacyFeeIndex = normalizedItem.urgentFeeInclGstCents === undefined ? -1
+    : marketUrgentFees.findIndex((fee) => fee === normalizedItem.urgentFeeInclGstCents);
+  const workingDays = normalizedItem.productionWorkingDays
+    ?? (confirmedRush && legacyFeeIndex >= 0 ? legacyFeeIndex + 1 : confirmedRush ? undefined : STANDARD_PRODUCTION_WORKING_DAYS);
+  if (workingDays === undefined) throw new InvalidCheckoutCartError("Please return to the product configuration to confirm your production service.");
+  const expectedRushFee = confirmedRush ? marketUrgentFees[workingDays - 1] ?? 0 : 0;
+  if ((confirmedRush && workingDays >= STANDARD_PRODUCTION_WORKING_DAYS && expectedRushFee === 0)
+    || (!confirmedRush && workingDays < STANDARD_PRODUCTION_WORKING_DAYS)
+    || (normalizedItem.urgentFeeInclGstCents !== undefined && normalizedItem.urgentFeeInclGstCents !== expectedRushFee)
+    || (normalizedItem.configuredCurrency !== undefined && normalizedItem.configuredCurrency !== (market === "AU" ? "AUD" : "NZD"))) {
+    throw new InvalidCheckoutCartError("Your saved configuration needs review. Return to the product configuration before continuing.");
   }
+  const urgentService = { workingDays, feeInclGstCents: expectedRushFee };
 
   const unitPrice = freezeUnitPrice(
     quoteMarketConfiguration(
@@ -302,6 +310,9 @@ function repriceItem(
       },
     ),
   );
+  if (normalizedItem.configuredUnitPriceInclTaxCents !== undefined && normalizedItem.configuredUnitPriceInclTaxCents !== unitPrice.totalInclGstCents) {
+    throw new InvalidCheckoutCartError("Your saved price needs review. Return to the product configuration before continuing.");
+  }
   const lineSubtotalExGstCents = unitPrice.subtotalExGstCents * normalizedItem.quantity;
   const lineGstCents = unitPrice.gstCents * normalizedItem.quantity;
   const lineTotalInclGstCents = unitPrice.totalInclGstCents * normalizedItem.quantity;
@@ -326,6 +337,7 @@ function repriceItem(
     designText: normalizedItem.designText,
     notes: normalizedItem.notes,
     neededDate: normalizedItem.neededDate,
+    ...(normalizedItem.eventDate ? { eventDate: normalizedItem.eventDate } : {}),
     urgentServiceConfirmed: normalizedItem.urgentServiceConfirmed === true,
     urgentService: Object.freeze({
       workingDays: urgentService.workingDays,
@@ -398,7 +410,7 @@ export function repriceCart(
         "Upload references cannot be shared between cart items.",
       );
     }
-    const orderDate = getAucklandDate(options.now ?? new Date());
+    const orderDate = options.orderDate ?? getAucklandDate(options.now ?? new Date());
     const registry = options.registry ?? defaultProductRegistry;
     const market = options.market ?? "NZ";
     assertMarketCheckoutReady(registry, market);
@@ -409,7 +421,6 @@ export function repriceCart(
     const items = Object.freeze(
       input.items.map((item) => repriceItem(
         item,
-        orderDate,
         options.galleryDesigns ?? new Map(),
         registry,
         market,

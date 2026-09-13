@@ -4,6 +4,7 @@ import { fabricBannerDefaults } from "./fabric-banner-3d/defaults";
 import { FabricBannerPreview } from "./fabric-banner-preview";
 
 import Image from "next/image";
+import { GalleryArtwork } from "./gallery-artwork";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Product } from "@/domain/catalogue/types";
@@ -12,6 +13,8 @@ import {
   type ProductRegistryDocument,
   type ProductRegistryPricing,
 } from "@/domain/catalogue/product-registry";
+import { getActiveCartStorageKey } from "@/domain/cart/browser-cart-scope";
+import { needsProductionServiceReview, restoreCartPhotos, replaceConfiguredCartItem } from "./cart-configuration-edit";
 import { createBrowserCartRepository } from "@/domain/cart/browser-cart-repository";
 import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 import { addCartItem, setCartDeliveryPreference } from "@/domain/cart/cart";
@@ -23,7 +26,11 @@ import type {
   Orientation,
   ProductConfigurationSchema,
 } from "@/domain/configuration/types";
-import { deliveryCopy } from "@/domain/content/delivery-copy";
+import { estimatedArrival, getCustomerTiming } from "@/domain/scheduling/customer-timing";
+import { ConfigurationFlow, ConfigurationStep, ConfigurationReviewButton } from "./configuration-flow";
+import { ConfigurationTiming } from "./configuration-timing";
+import { ConfigurationDraft } from "./configuration-draft";
+import flowStyles from "./configuration-flow.module.css";
 import { quoteConfiguration } from "@/domain/configuration/quote";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
 import { addNzdGst, formatMarketMoney } from "@/domain/money";
@@ -78,6 +85,8 @@ export type ProductConfiguratorProps = Readonly<{
   selectedDesign?: GalleryDesignSelection | null;
   relatedDesigns?: readonly ProductConfiguratorRelatedDesign[];
   initialSizeKey?: string;
+  editingItem?: CartItem;
+  editingCartStorageKey?: string;
 }>;
 
 export function ProductConfigurator({
@@ -91,6 +100,8 @@ export function ProductConfigurator({
   selectedDesign = null,
   relatedDesigns = [],
   initialSizeKey,
+  editingItem,
+  editingCartStorageKey,
 }: ProductConfiguratorProps) {
   const ProductPreview = product.slug === "roll-up-banner" ? RollUpBannerPreview : fabricBannerDefaults[product.slug] ? FabricBannerPreview : CanvasProductPreview;
   const designInspiration = selectedDesign;
@@ -103,7 +114,7 @@ export function ProductConfigurator({
   const canvasExample = product.category === "canvas" ? canvas3DExamples[product.key] : undefined;
   const canvas3DImage = designInspiration?.imageUrl ?? canvasExample?.src ?? previewImage;
   const artwork = designInspiration ?? canvasExample;
-  const [orientationSelection, setOrientationSelection] = useState<{ imageSrc: string; value: Orientation }>();
+  const [orientationSelection, setOrientationSelection] = useState<{ imageSrc: string; value: Orientation } | undefined>(() => editingItem?.orientation ? { imageSrc: previewImage, value: editingItem.orientation } : undefined);
   const [loadedArtwork, setLoadedArtwork] = useState<{ imageSrc: string; width: number; height: number }>();
   const detectOrientation = product.category === "canvas" && schema.orientationMode === "choice";
   const hasDesignDimensions = !!artwork && artwork.width > 0 && artwork.height > 0;
@@ -129,19 +140,24 @@ export function ProductConfigurator({
     image.src = canvas3DImage;
     return () => { active = false; image.onload = null; };
   }, [detectOrientation, hasDesignDimensions, previewImage, canvas3DImage]);
-  const [peoplePets, setPeoplePets] = useState(schema.defaultPeoplePets);
+  const [peoplePets, setPeoplePets] = useState(editingItem?.peoplePets ?? schema.defaultPeoplePets);
   const [sourcePhotoCustomisation, setSourcePhotoCustomisation] =
-    useState<SourcePhotoCustomisationValue>({
+    useState<SourcePhotoCustomisationValue>(() => editingItem ? restoreCartPhotos(editingItem) : {
       photoSubmissionMethod: schema.defaultPhotoSubmissionMethod,
       designText: "",
       notes: "",
       uploadedFiles: [],
       extraBackgroundRemovalUploadIds: [],
     });
-  const [neededDate, setNeededDate] = useState(() => addWorkingDays(orderDate, STANDARD_PRODUCTION_WORKING_DAYS));
-  const [urgentServiceConfirmed, setUrgentServiceConfirmed] = useState(false);
+  const [needByDate, setNeedByDate] = useState(() => editingItem?.eventDate ?? estimatedArrival(addWorkingDays(orderDate, STANDARD_PRODUCTION_WORKING_DAYS), market, schema.defaultDeliveryPreference).end);
+  const [productionDays, setProductionDays] = useState(editingItem && [1, 2, 3].includes(editingItem.productionWorkingDays ?? 3) ? editingItem.productionWorkingDays ?? 3 : 3);
+  const [productionServiceReviewed, setProductionServiceReviewed] = useState(!editingItem || !needsProductionServiceReview(editingItem));
+  const [saveError, setSaveError] = useState("");
+  const urgentServiceConfirmed = productionDays < STANDARD_PRODUCTION_WORKING_DAYS;
   const [deliveryPreference, setDeliveryPreference] =
-    useState<DeliveryPreference>(schema.defaultDeliveryPreference);
+    useState<DeliveryPreference>(editingItem?.deliveryPreference ?? schema.defaultDeliveryPreference);
+  const neededDate = addWorkingDays(orderDate, productionDays);
+  const timing = getCustomerTiming(orderDate, needByDate, market, market === "AU" ? "post" : deliveryPreference, neededDate);
   const [uploading, setUploading] = useState(false);
   const [added, setAdded] = useState(false);
   const [isPreviewZoomOpen, setIsPreviewZoomOpen] = useState(false);
@@ -191,8 +207,6 @@ export function ProductConfigurator({
   const showArtworkDirection = schema.artworkDirectionMode !== "none";
   const artworkStepNumber = sourceStepNumber + 1;
   const timingStepNumber = artworkStepNumber + (showArtworkDirection ? 1 : 0);
-  const supportsBackgroundRemoval =
-    schema.extraBackgroundRemovalFeeInclGstCents !== undefined;
   const uploadReferences =
     photoSubmissionMethod === "upload" ? uploadedFiles.map((file) => file.id) : [];
   const activeBackgroundRemovalUploadIds =
@@ -285,23 +299,24 @@ export function ProductConfigurator({
   const uploadRequired =
     photoSubmissionMethod === "upload" &&
     uploadedFiles.length < schema.minimumSourcePhotos;
-  const urgentConfirmationRequired = Boolean(
-    urgentService?.requiresConfirmation && !urgentServiceConfirmed,
-  );
   const addDisabled =
-    uploading || uploadRequired || !urgentService || urgentConfirmationRequired;
+    uploading || uploadRequired || !urgentService || !productionServiceReviewed;
 
   function addToCart() {
     if (addDisabled || !urgentService) return;
+    if (editingItem && editingCartStorageKey !== getActiveCartStorageKey()) {
+      setSaveError("Your customer session changed. Return to your cart and open the item again.");
+      return;
+    }
     const effectiveDeliveryPreference = market === "AU" ? "post" : deliveryPreference;
     const repository = createBrowserCartRepository(window.localStorage);
     const item: CartItem = {
-      id: createId(),
+      id: editingItem?.id ?? createId(),
       productKey: product.key,
       productSlug: product.slug,
       productTitle: product.title,
       imageSrc: product.image.src,
-      ...(designInspiration ? { galleryDesignId: designInspiration.id } : {}),
+      ...((designInspiration?.id ?? editingItem?.galleryDesignId) ? { galleryDesignId: designInspiration?.id ?? editingItem?.galleryDesignId } : {}),
       sizeKey,
       sizeLabel,
       orientation,
@@ -310,35 +325,42 @@ export function ProductConfigurator({
       designText,
       notes,
       neededDate,
+      productionWorkingDays: productionDays,
+      eventDate: needByDate,
       urgentServiceConfirmed,
       urgentFeeInclGstCents: urgentService.feeInclGstCents,
       deliveryPreference: effectiveDeliveryPreference,
-      quantity: 1,
+      quantity: editingItem?.quantity ?? 1,
       price: quote,
       uploadReferences,
-      ...(supportsBackgroundRemoval && photoSubmissionMethod === "upload" && mainPhotoUploadId
+      ...(photoSubmissionMethod === "upload" && mainPhotoUploadId
         ? { mainPhotoUploadId }
         : {}),
       ...(activeBackgroundRemovalUploadIds.length > 0
         ? { extraBackgroundRemovalUploadIds: activeBackgroundRemovalUploadIds }
         : {}),
     };
-    const cart = setCartDeliveryPreference(
-      addCartItem(repository.load(), item),
-      effectiveDeliveryPreference,
-    );
-    repository.save(cart);
+    try {
+      const current = repository.load();
+      const cart = editingItem
+        ? replaceConfiguredCartItem(current, editingItem, item)
+        : setCartDeliveryPreference(addCartItem(current, item), effectiveDeliveryPreference);
+      repository.save(cart);
+    } catch {
+      setSaveError("This cart item changed while you were editing. Return to your cart and open it again.");
+      return;
+    }
     notifyCartChanged();
     setAdded(true);
     try {
-      emitAnalyticsEvent(buildCartItemEvent("add_to_cart", item));
+      if (!editingItem) emitAnalyticsEvent(buildCartItemEvent("add_to_cart", item));
     } catch {
       // Analytics must never change a successfully persisted cart action.
     }
   }
 
   return (
-    <>
+    <ConfigurationFlow total={timingStepNumber + 1}>
       <AnalyticsEventTracker
         event={designInspiration ? {
           event: "design_selected",
@@ -347,14 +369,13 @@ export function ProductConfigurator({
         } : null}
         scopeKey={`${product.key}:${designInspiration?.id ?? "none"}`}
       />
-      <div className={styles.priceAtStart} aria-label="Current price">
-        <strong>{formatMarketMoney(quote.totalInclGstCents, currency)}{taxSuffix}</strong>
-        <p>Selected options included. Delivery is calculated at checkout.</p>
-        <p>Order and pay → Receive your design proof → Approve before printing.</p>
-        <Link href="/contact">Need help choosing? Send your photos, occasion and required date.</Link>
+      <div className={flowStyles.compactSummary} aria-label="Current price">
+        <div><strong>{formatMarketMoney(quote.totalInclGstCents, currency)}{taxSuffix}</strong>
+        <p>Selected options included. Delivery calculated at checkout.</p></div>
+        <ConfigurationReviewButton />
       </div>
-      <div className={styles.configuratorLayout}>
-        <div className={styles.configuratorSidebar}>
+      <div className={`${styles.configuratorLayout} ${flowStyles.layout}`}>
+        <div className={`${styles.configuratorSidebar} ${flowStyles.sidebar}`}>
         <section className={styles.artworkPreview} aria-label="Artwork preview">
         <ProductPreview productSlug={product.slug} imageSrc={product.slug === "roll-up-banner" ? designInspiration?.imageUrl ?? "/roll-up-banner-3d/default-artwork.avif" : fabricBannerDefaults[product.slug] ? designInspiration?.imageUrl ?? fabricBannerDefaults[product.slug] : canvas3DImage} sizeKey={product.category === "canvas" || fabricBannerDefaults[product.slug] ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
         <div className={styles.artworkPreviewMedia}>
@@ -456,55 +477,7 @@ export function ProductConfigurator({
           </div>
         ) : null}
 
-        <aside className={styles.priceSummary} aria-label="Order summary">
-          <p className={styles.eyebrow}>Estimated price</p>
-          <h2>Order summary</h2>
-          <p>{product.title}</p>
-          <dl className={styles.summaryDetails}>
-            <div><dt>Size</dt><dd>{sizeLabel}</dd></div>
-            {orientation && <div><dt>Orientation</dt><dd>{orientation === "landscape" ? "Landscape" : "Portrait"}</dd></div>}
-            {schema.peoplePetsMode === "required" && <div><dt>People / pets</dt><dd>{peoplePets}</dd></div>}
-          </dl>
-          <dl className={styles.priceLines}>
-            {quote.lines.map((line) => (
-              <div key={line.key}>
-                <dt>{line.label}</dt>
-                <dd>
-                  {formatMarketMoney(getPriceLineAmountInclGstCents(line), currency)}{taxSuffix}
-                </dd>
-              </div>
-            ))}
-            {taxRegistered ? <div>
-              <dt>{market === "NZ" ? "Includes GST (15%)" : "Includes Australian GST"}</dt>
-              <dd>{formatMarketMoney(quote.gstCents, currency)}</dd>
-            </div> : null}
-            <div className={styles.priceTotal}>
-              <dt>{taxRegistered ? "Total incl GST" : "Total"}</dt>
-              <dd>{formatMarketMoney(quote.totalInclGstCents, currency)}</dd>
-            </div>
-          </dl>
-          <PurchaseTrustStrip />
-          <button
-            className={styles.primaryButton}
-            type="button"
-            disabled={addDisabled}
-            onClick={addToCart}
-          >
-            {uploadRequired
-              ? "Upload a source photo to continue"
-              : urgentConfirmationRequired
-                ? "Confirm urgent service to continue"
-                : photoSubmissionMethod === "later"
-                  ? "Add to Cart — Send Photos Later"
-                  : "Add to cart"}
-          </button>
-          {added && (
-            <p className={styles.addedMessage} role="status">
-              <span>Added to your cart.</span>
-              <Link className={styles.addedMessageAction} href="/cart">View cart</Link>
-            </p>
-          )}
-        </aside>
+
       </div>
 
         <form
@@ -515,8 +488,21 @@ export function ProductConfigurator({
           addToCart();
         }}
       >
+        {!editingItem ? <ConfigurationDraft
+          scope={`${market}:${product.key}:${designInspiration?.id ?? "none"}`}
+          allowedSizes={schema.sizes.map((option) => option.key)}
+          options={{ sizeKey, orientation, peoplePets, needByDate, deliveryPreference, photoMethods: [photoSubmissionMethod] }}
+          onRestore={(draft) => {
+            setSizeKey(draft.sizeKey); setNeedByDate(draft.needByDate); setDeliveryPreference(market === "AU" ? "post" : draft.deliveryPreference); setProductionDays(STANDARD_PRODUCTION_WORKING_DAYS);
+            if (draft.orientation && schema.orientationMode === "choice") setOrientationSelection({ imageSrc: previewImage, value: draft.orientation });
+            if (schema.peoplePetsMode === "required") setPeoplePets(Math.max(1, draft.peoplePets));
+            setSourcePhotoCustomisation((value) => ({ ...value, photoSubmissionMethod: draft.photoMethods[0] }));
+          }}
+        /> : null}
+
         {showFormatStep && (
-        <section className={styles.configuratorStep}>
+        <ConfigurationStep number={formatStepNumber} title="Choose the format">
+<section className={styles.configuratorStep}>
           <div className={styles.stepHeading}>
             <span>{String(formatStepNumber).padStart(2, "0")}</span>
             <div>
@@ -587,10 +573,12 @@ export function ProductConfigurator({
             )}
           </div>
         </section>
+        </ConfigurationStep>
         )}
 
         {schema.peoplePetsMode === "required" && (
-          <section className={styles.configuratorStep}>
+          <ConfigurationStep number={peopleStepNumber} title="People or pets">
+<section className={styles.configuratorStep}>
             <div className={styles.stepHeading}>
               <span>{String(peopleStepNumber).padStart(2, "0")}</span>
               <div>
@@ -616,6 +604,7 @@ export function ProductConfigurator({
               </div>
             </div>
           </section>
+        </ConfigurationStep>
         )}
 
         <SourcePhotoCustomisation
@@ -632,7 +621,8 @@ export function ProductConfigurator({
           onUploadingChange={setUploading}
         />
 
-        <section className={styles.configuratorStep}>
+        <ConfigurationStep number={timingStepNumber} title="Timing and delivery">
+<section className={styles.configuratorStep}>
           <div className={styles.stepHeading}>
             <span>{String(timingStepNumber).padStart(2, "0")}</span>
             <div>
@@ -640,54 +630,18 @@ export function ProductConfigurator({
               <p>Tell us when you need it and how you prefer to receive it.</p>
             </div>
           </div>
-          <div className={styles.timingPolicy}>
-            <p>{deliveryCopy.production}</p>
-            <p>Estimated delivery times after production are:</p>
-            {market === "NZ" ? (
-              <ul>
-                <li>{deliveryCopy.newZealand}</li>
-              </ul>
-            ) : (
-              <>
-                <p>{deliveryCopy.australiaDhl}</p>
-                <p>{deliveryCopy.australiaStandard}</p>
-                <p>{deliveryCopy.australiaRemote}</p>
-              </>
-            )}
-            <p><strong>This is the production completion date, not the delivery date.</strong> Allow additional time for shipping.</p>
-            <p>If your order is <strong>urgent</strong>, please make sure to clearly let us know when placing your order so that we can arrange it accordingly and avoid any delays.</p>
-          </div>
+          <ConfigurationTiming orderDate={orderDate} needByDate={needByDate} market={market} deliveryPreference={deliveryPreference} productionDate={neededDate} onChange={setNeedByDate} />
           <div className={`${styles.fieldGrid} ${styles.timingFields}`}>
             <label className={styles.formField}>
-              <span>Production completion date</span>
-              <input
-                type="date"
-                required
-                min={addWorkingDays(orderDate, 1)}
-                value={neededDate}
-                onChange={(event) => {
-                  setNeededDate(event.target.value);
-                  setUrgentServiceConfirmed(false);
-                }}
-              />
+              <span>Production service</span>
+              {!productionServiceReviewed ? <p role="status">Please choose your production service again. Your saved cart stays unchanged until you save.</p> : null}
+              <select aria-label="Production service" value={productionServiceReviewed ? productionDays : ""} onChange={(event) => { setProductionDays(Number(event.target.value)); setProductionServiceReviewed(true); }}>
+                {!productionServiceReviewed ? <option value="" disabled>Choose production service</option> : null}
+                <option value={3}>Standard — 3 business days</option>
+                {[2, 1].map((days) => <option key={days} value={days}>Optional rush — {days} business {days === 1 ? "day" : "days"} (+{formatMarketMoney(getUrgentService(orderDate, addWorkingDays(orderDate, days), urgentFees).feeInclGstCents, currency)}{taxSuffix})</option>)}
+              </select>
+              <small>Selecting optional rush confirms its displayed fee. Delivery time is separate and is not guaranteed.</small>
             </label>
-            {urgentService?.requiresConfirmation && (
-              <label className={styles.urgentConfirmation}>
-                <input
-                  type="checkbox"
-                  checked={urgentServiceConfirmed}
-                  onChange={(event) => setUrgentServiceConfirmed(event.target.checked)}
-                  aria-label="Confirm urgent service"
-                />
-                <span>
-                  <strong>I need production completed by the selected date and confirm urgent service.</strong>
-                  <small>{formatMarketMoney(urgentService.feeInclGstCents, currency)}{taxSuffix}</small>
-                  <small className={styles.urgentDateClarification}>
-                    Delivery time is not included in this timeframe.
-                  </small>
-                </span>
-              </label>
-            )}
             {market === "NZ" ? <fieldset className={styles.formField} role="radiogroup">
               <legend>Delivery</legend>
               <div className={styles.deliveryChoices}>
@@ -696,7 +650,7 @@ export function ProductConfigurator({
                     type="radio"
                     name="delivery-preference"
                     checked={deliveryPreference === "post"}
-                    onChange={() => setDeliveryPreference("post")}
+                    onChange={() => { setDeliveryPreference("post"); }}
                   />
                   Post
                 </label>
@@ -705,7 +659,7 @@ export function ProductConfigurator({
                     type="radio"
                     name="delivery-preference"
                     checked={deliveryPreference === "pickup"}
-                    onChange={() => setDeliveryPreference("pickup")}
+                    onChange={() => { setDeliveryPreference("pickup"); }}
                   />
                   Pickup
                 </label>
@@ -714,7 +668,62 @@ export function ProductConfigurator({
             </fieldset> : null}
           </div>
         </section>
+        </ConfigurationStep>
 
+        <ConfigurationStep number={timingStepNumber + 1} title={editingItem ? "Review and save configuration" : "Review and add to cart"}>
+        <aside className={styles.priceSummary} aria-label="Order summary">
+          <p className={styles.eyebrow}>Estimated price</p>
+          <h2>Order summary</h2>
+          <p>{product.title}</p>
+          <dl className={styles.summaryDetails}>
+            <div><dt>Size</dt><dd>{sizeLabel}</dd></div>
+            {orientation && <div><dt>Orientation</dt><dd>{orientation === "landscape" ? "Landscape" : "Portrait"}</dd></div>}
+            {schema.peoplePetsMode === "required" && <div><dt>People / pets</dt><dd>{peoplePets}</dd></div>}
+          </dl>
+          <dl className={styles.priceLines}>
+            {quote.lines.map((line) => (
+              <div key={line.key}>
+                <dt>{line.label}</dt>
+                <dd>
+                  {formatMarketMoney(getPriceLineAmountInclGstCents(line), currency)}{taxSuffix}
+                </dd>
+              </div>
+            ))}
+            {taxRegistered ? <div>
+              <dt>{market === "NZ" ? "Includes GST (15%)" : "Includes Australian GST"}</dt>
+              <dd>{formatMarketMoney(quote.gstCents, currency)}</dd>
+            </div> : null}
+            <div className={styles.priceTotal}>
+              <dt>{taxRegistered ? "Total incl GST" : "Total"}</dt>
+              <dd>{formatMarketMoney(quote.totalInclGstCents, currency)}</dd>
+            </div>
+          </dl>
+          <p>Need-by date: {needByDate || "Choose a date"}. Estimated production completion: {neededDate}.</p>
+          {timing.error ? <p role="status" className={flowStyles.warning}>{timing.error}</p> : null}
+          <PurchaseTrustStrip />
+          <button
+            className={styles.primaryButton}
+            type="button"
+            disabled={addDisabled || Boolean(editingItem && added)}
+            onClick={addToCart}
+          >
+            {uploadRequired
+              ? "Upload a source photo to continue"
+              : editingItem ? "Save configuration"
+
+                : photoSubmissionMethod === "later"
+                  ? "Add to Cart — Send Photos Later"
+                  : "Add to cart"}
+          </button>
+          {saveError ? <p role="alert">{saveError} <Link href="/cart">Return to cart</Link></p> : null}
+          {added && (
+            <p className={styles.addedMessage} role="status">
+              <span>{editingItem ? "Configuration saved." : "Added to your cart."}</span>
+              <Link className={styles.addedMessageAction} href="/cart">View cart</Link>
+            </p>
+          )}
+        </aside>
+        </ConfigurationStep>
         </form>
       </div>
 
@@ -736,7 +745,7 @@ export function ProductConfigurator({
                 href={`${market === "AU" ? "/au" : ""}/products/${design.productSlug}/configure?design=${design.id}`}
                 key={design.id}
               >
-                <Image
+                <GalleryArtwork
                   src={design.imageUrl}
                   alt={design.altText}
                   width={design.width}
@@ -748,6 +757,6 @@ export function ProductConfigurator({
           </div>
         </section>
       )}
-    </>
+    </ConfigurationFlow>
   );
 }

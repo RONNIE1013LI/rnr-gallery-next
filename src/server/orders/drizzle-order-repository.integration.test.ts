@@ -576,10 +576,10 @@ describe("Drizzle atomic order repository", () => {
       .resolves.toBeNull();
   });
 
-  it("creates and reads a customer order needed more than five working days away", async () => {
+  it("preserves the configured standard service even when completion is more than five working days away", async () => {
     const snapshot = cart([], "2026-08-20");
     expect(snapshot.items[0].urgentService).toEqual({
-      workingDays: 13,
+      workingDays: 3,
       feeInclGstCents: 0,
     });
     const state = await checkout({ customerId: customerIds[0], snapshot });
@@ -594,7 +594,7 @@ describe("Drizzle atomic order repository", () => {
       items: [{
         neededDate: "2026-08-20",
         urgentServiceConfirmed: false,
-        urgentWorkingDays: 13,
+        urgentWorkingDays: 3,
       }],
     });
     await expect(queryService.accountOrders(customerIds[0])).resolves.toEqual(

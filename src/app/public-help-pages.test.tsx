@@ -39,7 +39,16 @@ describe("public help pages", () => {
     expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();
     expect(screen.getByText(/Standard delivery.*7–10 days/i)).toBeVisible();
     expect(screen.getByText(/remote areas.*around two weeks/i)).toBeVisible();
-    expect(screen.queryByText(/refund|guaranteed delivery|damage compensation/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/guaranteed delivery|damage compensation/i)).not.toBeInTheDocument();
+  });
+
+  it("links photo, timing, payment and cancellation help without inventing policy", () => {
+    render(<HelpPage />);
+    for (const id of ["photos", "files", "main-photo", "background-removal", "proofs", "timing", "payment", "refunds", "existing-orders"]) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+    expect(screen.getByText(/25 MB per image/)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Cancellations and refunds" })).toHaveAttribute("href", "/returns-refunds");
   });
 
   it.each([

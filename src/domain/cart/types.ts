@@ -25,6 +25,8 @@ export type CartItem = Readonly<{
   notes: string;
   neededDate: string;
   urgentServiceConfirmed?: boolean;
+  productionWorkingDays?: number;
+  eventDate?: string;
   urgentFeeInclGstCents?: number;
   deliveryPreference: DeliveryPreference;
   quantity: number;

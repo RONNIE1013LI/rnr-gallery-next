@@ -7,6 +7,7 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   test: {
+    exclude: ["**/node_modules/**", "e2e/**"],
     css: { include: /(storefront|payment-request|customer-chat)\.module\.css$/ },
     environment: "jsdom",
     fileParallelism: !process.env.TEST_DATABASE_URL,

@@ -647,6 +647,7 @@ export function CheckoutView({
       event={buildCartEvent("begin_checkout", cart)}
       scopeKey={getActiveCartStorageKey()}
     />
+    {!checkoutLocked ? <p>To change your event date, size or production service, <Link href="/cart">return to Cart and edit configuration</Link>.</p> : null}
     <div className={styles.checkoutLayout}>
     <form aria-label="Checkout details" className={styles.checkoutForm} noValidate onSubmit={(event) => { event.preventDefault(); void review(); }}>
       {Object.values(billingErrors).some((errors) => errors?.length) || (different && Object.values(deliveryErrors).some((errors) => errors?.length)) ?

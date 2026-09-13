@@ -54,3 +54,10 @@ it("falls back when exact style images are unavailable and prefers available exa
   mocks.available.mockImplementation(async (key: string) => key !== "exact.jpg");
   expect((await ConfigurePage(props)).props.relatedDesigns.map((d: { id: string }) => d.id)).toEqual(["family"]);
 });
+
+it("passes the cart edit identifier without treating it as server-owned cart data", async () => {
+  mocks.candidates.mockResolvedValue([]);
+  const result = await ConfigurePage({ params: Promise.resolve({ slug: "photo-print-canvas" }), searchParams: Promise.resolve({ edit: ["cart-item", "ignored"], size: "a4" }) });
+  expect(result.props.editItemId).toBe("cart-item");
+  expect(result.props.initialSizeKey).toBe("a4");
+});

@@ -17,7 +17,7 @@ function validStagingIsolationSnapshot(): StagingIsolationSnapshot {
     domain: {
       name: "staging.rnrgallery.com",
       projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
-      gitBranch: "codex/invoice-email-release-20260912",
+      gitBranch: "codex/ui-ux-audit-20260913",
       verified: true,
     },
     alias: {
@@ -28,7 +28,7 @@ function validStagingIsolationSnapshot(): StagingIsolationSnapshot {
     deployment: {
       id: "dpl_staging",
       projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
-      branch: "codex/invoice-email-release-20260912",
+      branch: "codex/ui-ux-audit-20260913",
       ready: true,
       target: null,
     },
@@ -150,7 +150,7 @@ function stagingIsolationFetcher(pagination: "absent" | null | string = "absent"
         name: "staging.rnrgallery.com",
         apexName: "rnrgallery.com",
         projectId: "prj_6HHmxCsLMm8oTwUhMWkpphH7rBlO",
-        gitBranch: "codex/invoice-email-release-20260912",
+        gitBranch: "codex/ui-ux-audit-20260913",
         verified: true,
       });
     }
@@ -170,7 +170,7 @@ function stagingIsolationFetcher(pagination: "absent" | null | string = "absent"
         target: null,
         readyState: "READY",
         meta: {
-          githubCommitRef: "codex/invoice-email-release-20260912",
+          githubCommitRef: "codex/ui-ux-audit-20260913",
           githubCommitSha: "b".repeat(40),
         },
       });
@@ -448,7 +448,7 @@ describe("Vercel Production adapter", () => {
 
     expect(snapshot.deployment).toMatchObject({
       target: null,
-      branch: "codex/invoice-email-release-20260912",
+      branch: "codex/ui-ux-audit-20260913",
     });
     expect(snapshot.productionDeploymentId).toBe("dpl_production");
     expect(snapshot.databaseEnvironmentMetadata.actual)

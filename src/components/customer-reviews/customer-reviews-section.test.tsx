@@ -19,6 +19,12 @@ const section: PublicCustomerReviewSection = {
 };
 
 describe("CustomerReviewsSection", () => {
+  it("keeps compact trust to one real review and its source", () => {
+    render(<CustomerReviewsSection data={section} compact />);
+    expect(screen.getByText("Aroha Te Rangi")).toBeInTheDocument();
+    expect(screen.queryByText("Mereana K.")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("href", section.summary!.reviewsPageUrl);
+  });
   it("renders the Facebook trust badge from the published summary and the Featured review exactly once", () => {
     render(<CustomerReviewsSection data={section} />);
 

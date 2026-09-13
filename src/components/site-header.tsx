@@ -302,8 +302,8 @@ export function SiteHeader({
               items={galleryMenu}
               pathname={pathname}
             />
-            <Link className="site-header__nav-link" href="/how-it-works">How It Works</Link>
-            <Link className="site-header__nav-link" href="/help">Help</Link>
+            <Link className="site-header__nav-link" href="/how-it-works" aria-current={isCurrentRoute(pathname, "/how-it-works") ? "page" : undefined}>How It Works</Link>
+            <Link className="site-header__nav-link" href="/help" aria-current={isCurrentRoute(pathname, "/help") ? "page" : undefined}>Help</Link>
           </nav>
 
           <div className="site-header__actions">
@@ -323,10 +323,11 @@ export function SiteHeader({
             <CartCount onClick={closeMobileMenuImmediately} />
             <Link
               className="site-header__start-design"
-              href={shopHref}
+              href="/contact"
+              aria-current={isCurrentRoute(pathname, "/contact") ? "page" : undefined}
               onClick={closeMobileMenuImmediately}
             >
-              Start a Design
+              Contact
             </Link>
             <div ref={mobileMenuRef} className={`mobile-menu${isMobileMenuOpen ? " mobile-menu--open" : ""}${isMobileMenuClosing ? " mobile-menu--closing" : ""}`}>
               <button
@@ -383,10 +384,11 @@ export function SiteHeader({
                     </Link>
                     <Link
                       className="mobile-menu__start-design"
-                      href={shopHref}
+                      href="/contact"
+                      aria-current={isCurrentRoute(pathname, "/contact") ? "page" : undefined}
                       onClick={closeMobileMenuImmediately}
                     >
-                      Start a Design
+                      Contact
                     </Link>
                   </nav>
                 </>

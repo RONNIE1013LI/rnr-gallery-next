@@ -1,0 +1,26 @@
+.form, .success { color: #173d50; background: #fff; border: 1px solid #b9c8d0; border-radius: 18px; padding: clamp(18px, 3vw, 32px); margin: 24px 0 36px; }
+.form h2, .success h2 { margin-top: 0; }
+.form p, .success p { line-height: 1.6; }
+.fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.field { display: grid; align-content: start; gap: 8px; margin-bottom: 18px; min-width: 0; }
+.field label, .photos > label { font-weight: 600; }
+.field input, .field select, .field textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 46px; border: 1px solid #889da8; border-radius: 8px; padding: 10px 12px; font: inherit; color: #173d50; background: white; }
+.field textarea { resize: vertical; }
+.fieldError { color: #962b24; margin: 0; }
+.errorSummary { background: #fff3f0; border-left: 4px solid #962b24; padding: 14px; margin-bottom: 18px; color: #70271f; }
+.errorSummary a { color: inherit; }
+.form :focus-visible { outline: 3px solid #28657e; outline-offset: 3px; }
+.photos { padding: 18px; background: #f1f5f7; border-radius: 12px; }
+.photos input { max-width: 100%; min-height: 44px; font: inherit; }
+.photoList { padding: 0; list-style: none; }
+.photoList li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #bdcbd2; }
+.photoList span { min-width: 0; overflow-wrap: anywhere; }
+.photoList small { display: block; }
+.photoList button, .clearPhotos { min-height: 44px; padding: 8px 12px; border: 1px solid #173d50; border-radius: 8px; background: white; color: #173d50; font: inherit; }
+.submit { min-height: 48px; padding: 12px 24px; border: 1px solid #173d50; border-radius: 10px; background: #173d50; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+.submit:disabled { opacity: .65; cursor: wait; }
+.progress { display: grid; gap: 8px; margin-bottom: 16px; }
+.progress progress { width: 100%; }
+.honeypot, .visuallyHidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 600px) { .grid { grid-template-columns: minmax(0, 1fr); gap: 0; } .submit { width: 100%; } }

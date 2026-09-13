@@ -128,32 +128,18 @@ describe("market selection route", () => {
     });
   });
 
-  it("returns actionable target-market urgent issues without setting a cookie", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-08-24T00:00:00.000Z"));
+  it("keeps configured non-rush for an AU cart with a near event date", async () => {
     const route = createMarketRoute({
       current: vi.fn().mockResolvedValue({ revision: 9, registry: enabledAuRegistry() }),
       trustedOrigin: origin,
     });
-
-    try {
-      const response = await route.POST(request("AU", urgentCart()));
-
-      expect(response.status).toBe(409);
-      expect(response.headers.get("Set-Cookie")).toBeNull();
-      expect(await response.json()).toEqual({
-        error: "Confirm urgent service or choose another completion date.",
-        code: "urgent_confirmation_required",
-        issues: expect.arrayContaining([
-          expect.objectContaining({
-            clientItemId: "00000000-0000-4000-8000-000000000010",
-            currency: "AUD",
-          }),
-        ]),
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+    const response = await route.POST(request("AU", urgentCart()));
+    expect(response.status).toBe(200);
+    expect((await response.json()).cart.items[0]).toMatchObject({
+      urgentServiceConfirmed: false,
+      urgentService: { workingDays: 3, feeInclGstCents: 0 },
+      neededDate: "2026-08-25",
+    });
   });
 
   it("does not expose unknown runtime details", async () => {

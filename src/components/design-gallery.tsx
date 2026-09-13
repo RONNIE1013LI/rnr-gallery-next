@@ -1,4 +1,5 @@
-import Image from "next/image";
+import { GalleryFilterPanel } from "./gallery-filter-panel";
+import { GalleryArtwork } from "./gallery-artwork";
 import Link from "next/link";
 import {
   galleryPageHref,
@@ -26,16 +27,9 @@ type Props = Readonly<{ query: GalleryQuery; result: GalleryResult }>;
 
 const productTypeLabels: Readonly<Record<GalleryProductTypeSlug, string>> = {
   canvas: "Canvas",
-  "grave-cover": "Grave covers",
-  "roll-up-banner": "Roll-up banners",
-  "wall-hanging-banners": "Wall banners",
-};
-
-const productTypeMobileLabels: Readonly<Record<GalleryProductTypeSlug, string>> = {
-  canvas: "Canvas",
-  "grave-cover": "Grave cover",
-  "roll-up-banner": "Roll-up banner",
-  "wall-hanging-banners": "Wall banner",
+  "grave-cover": "Grave Cover",
+  "roll-up-banner": "Roll-up Banner",
+  "wall-hanging-banners": "Wall Banner",
 };
 
 const occasionLabels = {
@@ -83,7 +77,20 @@ function FilterCheckbox({
 }
 
 export function DesignGallery({ query, result }: Props) {
-  const advancedOpen = query.showFilters || query.birthdayAges.length > 0 || query.themes.length > 0;
+  const advancedOpen = query.showFilters;
+  const selectedFilters = [
+    ...(query.productSlug ? [{ key: "product", value: query.productSlug, label: query.productSlug.split("-").join(" ") }] : []),
+    ...query.productTypes.map((value) => ({ key: "design_type", value, label: productTypeLabels[value] })),
+    ...query.occasions.map((value) => ({ key: "occasion", value, label: occasionLabels[value] })),
+    ...query.birthdayAges.map((value) => ({ key: "birthday_age", value, label: value })),
+    ...query.themes.map((value) => ({ key: "theme", value, label: themeLabels[value] })),
+  ];
+  function removeFilter(key: string, value: string) {
+    const params = new URLSearchParams(galleryPageHref(query, 1).split("?")[1]);
+    params.delete(key, value);
+    params.delete("filters");
+    return `/design-gallery?${params.toString()}`;
+  }
   const noSecondaryFilters = !query.productSlug && query.birthdayAges.length === 0 && query.themes.length === 0;
   const onlyOccasion = (occasion: string) => noSecondaryFilters
     && query.productTypes.length === 0
@@ -118,8 +125,8 @@ export function DesignGallery({ query, result }: Props) {
         {quickFilters.map(([label, href, active]) => <Link aria-current={active ? "page" : undefined} key={label} href={href}>{label}</Link>)}
       </nav>
 
-      <details id="browse-by-occasion" className={styles.galleryFilters} open={advancedOpen}>
-        <summary>Filters +</summary>
+      <GalleryFilterPanel count={selectedFilters.length} initiallyOpen={Boolean(advancedOpen)}>
+        <div className={styles.galleryFilters}>
         <form action="/design-gallery" method="get">
           {query.productSlug ? <input type="hidden" name="product" value={query.productSlug} /> : null}
           <fieldset>
@@ -144,7 +151,12 @@ export function DesignGallery({ query, result }: Props) {
             <Link href="/design-gallery">Clear all filters</Link>
           </div>
         </form>
-      </details>
+        </div>
+      </GalleryFilterPanel>
+      {selectedFilters.length ? <nav className={styles.galleryQuickFilters} aria-label="Selected filters">
+        {selectedFilters.map(({ key, value, label }) => <Link key={`${key}-${value}`} href={removeFilter(key, value)} aria-label={`Remove ${label} filter`}>{label} <span aria-hidden="true">×</span></Link>)}
+        <Link href="/design-gallery">Clear all filters</Link>
+      </nav> : null}
 
       <div className={styles.galleryResultHeader} aria-live="polite">
         <span>{result.total} artworks</span>
@@ -168,7 +180,7 @@ export function DesignGallery({ query, result }: Props) {
                   href={`/designs/${publicSlug}?from=${encodeURIComponent(returnTo)}`}
                 >
                   <div className={styles.galleryCardMedia}>
-                    <Image
+                    <GalleryArtwork
                       src={`/gallery-images/${item.id}?v=${item.contentHash}`}
                       alt={item.altText}
                       width={item.width}
@@ -180,7 +192,7 @@ export function DesignGallery({ query, result }: Props) {
                         : "(max-width: 767px) calc((100vw - 2.75rem) / 2), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px"}
                     />
                     <span className={styles.galleryCardBadge}>
-                      {productTypeMobileLabels[item.productTypeSlug]}
+                      {productTypeLabels[item.productTypeSlug]}
                     </span>
                   </div>
                   <div className={styles.galleryCardBody}>
