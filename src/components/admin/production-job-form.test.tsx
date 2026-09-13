@@ -156,7 +156,7 @@ describe("ProductionJobForm", () => {
     />);
 
     expect(within(manualGroup("File Sent")).getByRole("radio", { name: "YES" })).toBeDisabled();
-    expect(within(manualGroup("Delivered")).getByRole("radio", { name: "HOLD" })).toBeDisabled();
+    expect(within(manualGroup("Shipped")).getByRole("radio", { name: "HOLD" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Save order" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Updated Customer" } });
     fireEvent.blur(screen.getByLabelText("Cust.Name"));
@@ -872,6 +872,7 @@ describe("ProductionJobForm", () => {
       "Design & Notes",
       "Delivery",
       "Customer info",
+      "Shipping / Tracking",
       "Internal Production Status",
       "Cost / Profit",
       "Change log",
@@ -901,7 +902,7 @@ describe("ProductionJobForm", () => {
       expect(within(control).getAllByRole("radio").map((option) => option.parentElement?.textContent)).toEqual(["YES", "NO"]);
       expect(within(control).getByRole("radio", { name: "NO" })).toBeChecked();
     }
-    const delivered = manualGroup("Delivered");
+    const delivered = manualGroup("Shipped");
     expect(within(delivered).getAllByRole("radio").map((option) => option.parentElement?.textContent)).toEqual(["YES", "NO", "HOLD"]);
     expect(within(delivered).getByRole("radio", { name: "NO" })).toBeChecked();
     expect(screen.queryAllByRole("combobox")).toHaveLength(0);
@@ -930,7 +931,7 @@ describe("ProductionJobForm", () => {
     expect(screen.getByText(/Rosemary/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save order" })).not.toBeInTheDocument();
 
-    chooseManualOption("Delivered", "HOLD");
+    chooseManualOption("Shipped", "HOLD");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       manualStatus: "on_hold",
@@ -965,7 +966,7 @@ describe("ProductionJobForm", () => {
     expect(screen.queryByRole("button", { name: "LOAD MORE" })).not.toBeInTheDocument();
   });
 
-  it("submits explicit manual production statuses and maps Delivered HOLD to on hold", async () => {
+  it("submits explicit manual production statuses and maps Shipped HOLD to on hold", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: "created",
       job: { id: "ec5a34e2-2ca4-4ed7-906a-eb07aa781a03", jobNumber: "08000" },
@@ -982,7 +983,7 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("PhoneNo."), { target: { value: "021 000 0000" } });
     chooseManualOption("Size", "A2");
     chooseManualOption("File Sent", "YES");
-    chooseManualOption("Delivered", "HOLD");
+    chooseManualOption("Shipped", "HOLD");
     fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());

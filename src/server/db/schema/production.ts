@@ -149,6 +149,9 @@ export const productionJobs = pgTable(
     neededDate: text("needed_date").notNull(),
     deliveryMethod: text("delivery_method").$type<ProductionDeliveryMethod>().notNull(),
     deliveryAddress: text("delivery_address").default("").notNull(),
+    trackingCarrier: text("tracking_carrier"),
+    trackingNumber: text("tracking_number"),
+    trackingUrl: text("tracking_url"),
     paymentReconciliationStatus: text("payment_reconciliation_status")
       .$type<PaymentReconciliationStatus>()
       .default("Not checked")

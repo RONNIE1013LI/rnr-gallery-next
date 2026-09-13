@@ -48,6 +48,9 @@ export type ExistingProductionOrder = Readonly<{
   neededDate: string;
   deliveryMethod: string;
   deliveryAddress: string;
+  trackingCarrier?: string | null;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
   paymentReconciliationStatus: string;
   assignedUserId: string | null;
   internalNotes: string;
@@ -799,7 +802,10 @@ export function ProductionJobForm({
         urgent: form.get("urgent") === "on",
         neededDate: String(form.get("neededDate") ?? ""),
         deliveryMethod: String(form.get("deliveryMethod") ?? "post"),
-        deliveryAddress,
+          deliveryAddress,
+          trackingCarrier: String(form.get("trackingCarrier") ?? "").trim() || null,
+          trackingNumber: String(form.get("trackingNumber") ?? "").trim() || null,
+          trackingUrl: String(form.get("trackingUrl") ?? "").trim() || null,
         paymentReconciliationStatus: canManageFinance
           ? String(form.get("paymentReconciliationStatus") ?? "Not checked")
           : "Not checked",
@@ -854,6 +860,11 @@ export function ProductionJobForm({
           neededDate: body.neededDate,
           deliveryMethod: body.deliveryMethod,
           deliveryAddress: body.deliveryAddress,
+          ...(!isWebOrder ? {
+            trackingCarrier: body.trackingCarrier,
+            trackingNumber: body.trackingNumber,
+            trackingUrl: body.trackingUrl,
+          } : {}),
           assignedUserId: body.assignedUserId,
           internalNotes: body.internalNotes,
           ...(canUpdateDeliveryStatus && !isWebOrder ? { manualStatus: body.manualStatus } : {}),
@@ -1053,12 +1064,21 @@ export function ProductionJobForm({
           <p className={styles.fieldHint}>Enter at least an email address or phone number.</p>
         </section>
 
+        {!isWebOrder ? <section className={styles.formPanel}>
+          <div className={styles.formSectionHeading}><div><h2>Shipping / Tracking</h2></div></div>
+          <div className={styles.manualFieldRows}>
+            <label><span>Carrier</span><input name="trackingCarrier" defaultValue={existingOrder?.trackingCarrier ?? ""} maxLength={190} disabled={formDisabled} /></label>
+            <label><span>Tracking number</span><input name="trackingNumber" defaultValue={existingOrder?.trackingNumber ?? ""} maxLength={190} disabled={formDisabled} /></label>
+            <label><span>Tracking URL</span><input name="trackingUrl" type="url" defaultValue={existingOrder?.trackingUrl ?? ""} maxLength={2_000} disabled={formDisabled} /></label>
+          </div>
+        </section> : null}
+
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Internal Production Status</h2></div></div>
           <div className={styles.manualFieldRows}>
             <ManualChoiceRow label="Assign Artist" name="assignedUserId" defaultValue={existingOrder?.assignedUserId ?? ""} choices={[{ value: "", label: "NO" }, ...assignees.map((person) => ({ value: person.id, label: person.name }))]} disabled={formDisabled} />
             {([ ["fileSent", "File Sent"], ["downloaded", "Download"], ["printed", "Printed"], ["completed", "Completed"], ["customerNotified", "Cust.Notified"] ] as const).map(([name, text]) => <ManualChoiceRow key={name} label={text} name={name} defaultValue={existingOrder?.milestones[name] ? "yes" : "no"} choices={manualYesNoChoices} disabled={formDisabled || !canUpdateProductionStatus} />)}
-            <ManualChoiceRow label="Delivered" name="delivered" defaultValue={existingOrder?.manualStatus === "on_hold" ? "hold" : existingOrder?.milestones.delivered ? "yes" : "no"} choices={isWebOrder ? manualYesNoChoices : [...manualYesNoChoices, { value: "hold", label: "HOLD" }]} disabled={formDisabled || !canUpdateDeliveryStatus} />
+            <ManualChoiceRow label="Shipped" name="delivered" defaultValue={existingOrder?.manualStatus === "on_hold" ? "hold" : existingOrder?.milestones.delivered ? "yes" : "no"} choices={isWebOrder ? manualYesNoChoices : [...manualYesNoChoices, { value: "hold", label: "HOLD" }]} disabled={formDisabled || !canUpdateDeliveryStatus} />
           </div>
         </section>
 
