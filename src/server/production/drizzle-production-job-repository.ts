@@ -45,6 +45,8 @@ import {
   productionFieldDefinitions,
   productionFieldValues,
   manualOrderNotificationOutbox,
+  orderNotificationOutbox,
+  orderStatusHistory,
   user,
   type OrderFulfilmentStatus,
   type OrderPaymentStatus,
@@ -896,6 +898,17 @@ export function createDrizzleProductionJobRepository(
         if (current.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
           return "conflict" as const;
         }
+        const websiteShipped = current.source === "web"
+          && current.deliveredAt === null
+          && input.deliveredAt !== undefined
+          && input.deliveredAt !== null;
+        const [linkedOrder] = current.source === "web" && current.orderId
+          ? await transaction.select({
+              id: orders.id,
+              status: orders.fulfilmentStatus,
+              customerEmail: orders.customerEmail,
+            }).from(orders).where(eq(orders.id, current.orderId)).limit(1)
+          : [];
         if (current.source === "web" && (
           input.manualStatus || input.finance || input.customerName !== undefined ||
           input.customerEmail !== undefined || input.customerPhone !== undefined || input.items
@@ -929,6 +942,7 @@ export function createDrizzleProductionJobRepository(
         )];
         const values: Partial<typeof productionJobs.$inferInsert> = {
           updatedAt: input.updatedAt,
+          ...(websiteShipped ? { completedAt: input.updatedAt } : {}),
         };
         for (const [key, value] of [
           ["customerName", input.customerName],
@@ -1047,6 +1061,42 @@ export function createDrizzleProductionJobRepository(
             createdAt: input.updatedAt,
             updatedAt: input.updatedAt,
           }).onConflictDoNothing({ target: manualOrderNotificationOutbox.eventKey });
+        }
+
+        if (current.source === "web" && current.orderId) {
+          const trackingValues = Object.fromEntries([
+            ["trackingCarrier", input.trackingCarrier],
+            ["trackingNumber", input.trackingNumber],
+            ["trackingUrl", input.trackingUrl],
+          ].filter(([, value]) => value !== undefined));
+          if (Object.keys(trackingValues).length) {
+            await transaction.update(orders).set({ ...trackingValues, updatedAt: input.updatedAt }).where(eq(orders.id, current.orderId));
+          }
+          if (websiteShipped && linkedOrder && linkedOrder.status !== "completed") {
+            await transaction.update(orders).set({
+              fulfilmentStatus: "completed",
+              completedAt: input.updatedAt,
+              updatedAt: input.updatedAt,
+            }).where(eq(orders.id, current.orderId));
+            await transaction.insert(orderStatusHistory).values({
+              orderId: current.orderId,
+              fromStatus: linkedOrder.status,
+              toStatus: "completed",
+              actorUserId: input.actor.userId,
+              reason: "Completed automatically when Shipped was confirmed in the order system",
+              idempotencyKey: input.idempotencyKey,
+              createdAt: input.updatedAt,
+            }).onConflictDoNothing({ target: [orderStatusHistory.orderId, orderStatusHistory.idempotencyKey] });
+            await transaction.insert(orderNotificationOutbox).values({
+              eventKey: `order-shipped:${current.orderId}`,
+              kind: "order_shipped",
+              orderId: current.orderId,
+              recipientEmail: linkedOrder.customerEmail,
+              availableAt: input.updatedAt,
+              createdAt: input.updatedAt,
+              updatedAt: input.updatedAt,
+            }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
+          }
         }
 
         const changedFields = changes.map((change) => change.field);
