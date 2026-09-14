@@ -137,15 +137,15 @@ function normalizedForField(field: FilterDefinition, people: readonly FilterOpti
 }
 
 function splitCommonConditions(conditions: readonly FormFilterCondition[]) {
-  let updatedFrom = "";
-  let updatedTo = "";
+  let submittedFrom = "";
+  let submittedTo = "";
   let artist = "";
   const advanced: FormFilterCondition[] = [];
 
   for (const condition of conditions) {
-    if (!updatedFrom && condition.field === "updatedAt" && condition.operator === "between" && Array.isArray(condition.value)) {
-      updatedFrom = condition.value[0] ?? "";
-      updatedTo = condition.value[1] ?? "";
+    if (!submittedFrom && condition.field === "submittedAt" && condition.operator === "between" && Array.isArray(condition.value)) {
+      submittedFrom = condition.value[0] ?? "";
+      submittedTo = condition.value[1] ?? "";
     } else if (!artist && condition.field === "assignedUserId" && condition.operator === "equals" && typeof condition.value === "string") {
       artist = condition.value;
     } else {
@@ -154,8 +154,8 @@ function splitCommonConditions(conditions: readonly FormFilterCondition[]) {
   }
 
   return {
-    updatedFrom,
-    updatedTo,
+    submittedFrom,
+    submittedTo,
     artist,
     advanced: advanced.length ? advanced : [newCondition()],
   };
@@ -163,15 +163,15 @@ function splitCommonConditions(conditions: readonly FormFilterCondition[]) {
 
 function compileFilterGroup(
   match: "and" | "or",
-  updatedFrom: string,
-  updatedTo: string,
+  submittedFrom: string,
+  submittedTo: string,
   artist: string,
   draft: readonly DraftFilterCondition[],
 ): FormFilterGroup | null {
-  if (filterDraftError(updatedFrom, updatedTo, artist, draft)) return null;
+  if (filterDraftError(submittedFrom, submittedTo, artist, draft)) return null;
   const conditions: FormFilterCondition[] = [];
-  if (updatedFrom && updatedTo) {
-    conditions.push({ field: "updatedAt", operator: "between", value: [updatedFrom, updatedTo] });
+  if (submittedFrom && submittedTo) {
+    conditions.push({ field: "submittedAt", operator: "between", value: [submittedFrom, submittedTo] });
   }
   if (artist) conditions.push({ field: "assignedUserId", operator: "equals", value: artist });
   for (const condition of draft) {
@@ -186,18 +186,18 @@ function compileFilterGroup(
 }
 
 function filterDraftError(
-  updatedFrom: string,
-  updatedTo: string,
+  submittedFrom: string,
+  submittedTo: string,
   artist: string,
   draft: readonly DraftFilterCondition[],
 ) {
-  if ((updatedFrom && !updatedTo) || (!updatedFrom && updatedTo) || (updatedFrom && updatedTo && updatedFrom > updatedTo)) {
+  if ((submittedFrom && !submittedTo) || (!submittedFrom && submittedTo) || (submittedFrom && submittedTo && submittedFrom > submittedTo)) {
     return "Choose both dates in chronological order.";
   }
   if (draft.some((condition) => condition.field && (condition.operator === "isAnyOf" || condition.operator === "isNoneOf") && (!Array.isArray(condition.value) || condition.value.length === 0))) {
     return "Choose at least one value for each multi-value condition.";
   }
-  const total = (updatedFrom && updatedTo ? 1 : 0) + (artist ? 1 : 0) + draft.filter((condition) => condition.field).length;
+  const total = (submittedFrom && submittedTo ? 1 : 0) + (artist ? 1 : 0) + draft.filter((condition) => condition.field).length;
   return total > MAX_FILTER_CONDITIONS ? `Use no more than ${MAX_FILTER_CONDITIONS} total conditions.` : null;
 }
 
@@ -233,8 +233,8 @@ export function FormsFilterBuilder({
   const [open, setOpen] = useState(false);
   const initial = splitCommonConditions(conditions);
   const [draftMatch, setDraftMatch] = useState<"and" | "or">(match);
-  const [draftUpdatedFrom, setDraftUpdatedFrom] = useState(initial.updatedFrom);
-  const [draftUpdatedTo, setDraftUpdatedTo] = useState(initial.updatedTo);
+  const [draftSubmittedFrom, setDraftSubmittedFrom] = useState(initial.submittedFrom);
+  const [draftSubmittedTo, setDraftSubmittedTo] = useState(initial.submittedTo);
   const [draftArtist, setDraftArtist] = useState(initial.artist);
   const [draft, setDraft] = useState<readonly DraftFilterCondition[]>(initial.advanced);
   const peopleOptions = people.map((person) => ({ value: person.id, label: person.name }));
@@ -247,8 +247,8 @@ export function FormsFilterBuilder({
   function show() {
     const next = splitCommonConditions(conditions);
     setDraftMatch("and");
-    setDraftUpdatedFrom(next.updatedFrom);
-    setDraftUpdatedTo(next.updatedTo);
+    setDraftSubmittedFrom(next.submittedFrom);
+    setDraftSubmittedTo(next.submittedTo);
     setDraftArtist(next.artist);
     setDraft(next.advanced);
     setOpen(true);
@@ -284,7 +284,7 @@ export function FormsFilterBuilder({
   }
 
   function apply() {
-    const group = compileFilterGroup(draftMatch, draftUpdatedFrom, draftUpdatedTo, draftArtist, draft);
+    const group = compileFilterGroup(draftMatch, draftSubmittedFrom, draftSubmittedTo, draftArtist, draft);
     if (!group) return;
     close();
     onApply(group);
@@ -292,8 +292,8 @@ export function FormsFilterBuilder({
 
   function resetDraft() {
     setDraftMatch("and");
-    setDraftUpdatedFrom("");
-    setDraftUpdatedTo("");
+    setDraftSubmittedFrom("");
+    setDraftSubmittedTo("");
     setDraftArtist("");
     setDraft([newCondition()]);
     onPresetChange?.("all");
@@ -307,15 +307,15 @@ export function FormsFilterBuilder({
     });
     const next = splitCommonConditions(parsed.conditions);
     setDraftMatch(parsed.match);
-    setDraftUpdatedFrom(next.updatedFrom);
-    setDraftUpdatedTo(next.updatedTo);
+    setDraftSubmittedFrom(next.submittedFrom);
+    setDraftSubmittedTo(next.submittedTo);
     setDraftArtist(next.artist);
     setDraft(next.advanced);
   }
 
-  const draftError = filterDraftError(draftUpdatedFrom, draftUpdatedTo, draftArtist, draft);
-  const compiledDraft = compileFilterGroup(draftMatch, draftUpdatedFrom, draftUpdatedTo, draftArtist, draft);
-  const occupiedSlots = draft.length + (draftUpdatedFrom || draftUpdatedTo ? 1 : 0) + (draftArtist ? 1 : 0);
+  const draftError = filterDraftError(draftSubmittedFrom, draftSubmittedTo, draftArtist, draft);
+  const compiledDraft = compileFilterGroup(draftMatch, draftSubmittedFrom, draftSubmittedTo, draftArtist, draft);
+  const occupiedSlots = draft.length + (draftSubmittedFrom || draftSubmittedTo ? 1 : 0) + (draftArtist ? 1 : 0);
 
   return (
     <div className={styles.filterBuilder}>
@@ -360,19 +360,19 @@ export function FormsFilterBuilder({
           </label>
           <h3 className={styles.filterGroupTitle}>Common conditions</h3>
           <div className={styles.filterCommonRow}>
-            <span>Updated date</span>
+            <span>Submitted date</span>
             <input
-              aria-label="Updated date from"
+              aria-label="Submitted date from"
               type="date"
-              value={draftUpdatedFrom}
-              onChange={(event) => setDraftUpdatedFrom(event.target.value)}
+              value={draftSubmittedFrom}
+              onChange={(event) => setDraftSubmittedFrom(event.target.value)}
             />
             <span className={styles.filterRangeSeparator}>to</span>
             <input
-              aria-label="Updated date to"
+              aria-label="Submitted date to"
               type="date"
-              value={draftUpdatedTo}
-              onChange={(event) => setDraftUpdatedTo(event.target.value)}
+              value={draftSubmittedTo}
+              onChange={(event) => setDraftSubmittedTo(event.target.value)}
             />
             <select aria-label="Artist" value={draftArtist} onChange={(event) => setDraftArtist(event.target.value)}>
               <option value="">Artist</option>
