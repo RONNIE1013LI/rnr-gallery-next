@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { createClientId } from "@/lib/client-id";
+import { renderEmailTemplateHtml } from "@/server/notifications/order-email-templates";
 import {
   customerEmailSignatureKeys,
   renderCustomerEmailSignature,
@@ -108,6 +109,9 @@ function EmailTemplateEditor({ entry, canPublish, value, onValueChange }: Readon
           {entry.allowedVariables.map((variable) => <code key={variable}>{`{{${variable}}}`}</code>)}
         </div>
       ) : <p className={styles.templateVariables}>No variables are available for this field.</p>}
+      {entry.surface === "email" ? (
+        <p className={styles.templateVariables}>Links: [link text](https://example.com)</p>
+      ) : null}
       {entry.multiline ? <textarea {...fieldProps} rows={7} /> : <input {...fieldProps} />}
       <div className={styles.contentMeta}>
         <span>{value.length} / {entry.maxLength}</span>
@@ -116,7 +120,7 @@ function EmailTemplateEditor({ entry, canPublish, value, onValueChange }: Readon
       {entry.group !== "Customer email signature" ? (
         <div className={styles.contentPreview}>
           <strong>Sample preview</strong>
-          <p>{preview(value)}</p>
+          <p dangerouslySetInnerHTML={{ __html: renderEmailTemplateHtml(preview(value)) }} />
         </div>
       ) : null}
       <p className={styles.liveValue}>Live: {entry.publishedValue}</p>

@@ -4,6 +4,7 @@ import {
   orderEmailTemplateDefinitions,
   orderEmailTemplateKeys,
   renderOrderEmailTemplate,
+  renderEmailTemplateHtml,
 } from "./order-email-templates";
 
 const variables = Object.freeze({
@@ -15,6 +16,13 @@ const variables = Object.freeze({
 });
 
 describe("order email templates", () => {
+  it("renders editable HTTPS markdown links as safe email anchors", () => {
+    expect(renderEmailTemplateHtml("Contact [Messenger客服](https://m.me/RandRgallery) or [our site](https://rnrgallery.com)."))
+      .toBe("Contact <a href=\"https://m.me/RandRgallery\">Messenger客服</a> or <a href=\"https://rnrgallery.com\">our site</a>.");
+    expect(renderEmailTemplateHtml("[unsafe](javascript:alert(1))"))
+      .toBe("[unsafe](javascript:alert(1))");
+  });
+
   it("defines three unique fields for all four order notification kinds", () => {
     expect(orderEmailTemplateDefinitions).toHaveLength(15);
     expect(new Set(orderEmailTemplateKeys).size).toBe(15);

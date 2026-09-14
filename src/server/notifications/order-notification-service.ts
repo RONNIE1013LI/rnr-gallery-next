@@ -13,6 +13,8 @@ import {
 } from "./customer-email-signature";
 import {
   defaultOrderEmailTemplateValues,
+  renderEmailTemplateHtml,
+  renderEmailTemplateText,
   renderOrderEmailTemplate,
   type OrderEmailTemplateValues,
 } from "./order-email-templates";
@@ -105,8 +107,8 @@ function orderMessage(
   return Object.freeze({
     to: event.recipientEmail,
     subject,
-    text: [greeting, "", ...paragraphs, ...(actionUrl ? ["", `${actionLabel}: ${actionUrl}`] : []), "", footer.text].join("\n"),
-    html: `<p>${escapeHtml(greeting)}</p>${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}${actionUrl ? `<p><a href="${escapeHtml(actionUrl)}">${escapeHtml(actionLabel)}</a></p>` : ""}${footer.html}`,
+    text: [greeting, "", ...paragraphs.map(renderEmailTemplateText), ...(actionUrl ? ["", `${actionLabel}: ${actionUrl}`] : []), "", footer.text].join("\n"),
+    html: `<p>${escapeHtml(greeting)}</p>${paragraphs.map((paragraph) => `<p>${renderEmailTemplateHtml(paragraph)}</p>`).join("")}${actionUrl ? `<p><a href="${escapeHtml(actionUrl)}">${escapeHtml(actionLabel)}</a></p>` : ""}${footer.html}`,
     idempotencyKey: event.eventKey,
   });
 }

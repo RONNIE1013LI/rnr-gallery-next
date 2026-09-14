@@ -122,6 +122,34 @@ function substitute(template: string, variables: OrderEmailTemplateVariables) {
   return template.replace(/{{\s*([a-z_]+)\s*}}/g, (_, name: EmailVariable) => values[name] ?? "");
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]!);
+}
+
+const markdownLinkPattern = /\[([^\]\n]+)\]\((https:\/\/[^)\s]+)\)/g;
+
+export function renderEmailTemplateHtml(value: string) {
+  let html = "";
+  let cursor = 0;
+  for (const match of value.matchAll(markdownLinkPattern)) {
+    const index = match.index ?? 0;
+    html += escapeHtml(value.slice(cursor, index));
+    html += `<a href="${escapeHtml(match[2])}">${escapeHtml(match[1])}</a>`;
+    cursor = index + match[0].length;
+  }
+  return html + escapeHtml(value.slice(cursor));
+}
+
+export function renderEmailTemplateText(value: string) {
+  return value.replace(markdownLinkPattern, "$1 ($2)");
+}
+
 export function renderOrderEmailTemplate(
   kind: OrderNotificationKind | "invoice_sent",
   values: Partial<OrderEmailTemplateValues>,

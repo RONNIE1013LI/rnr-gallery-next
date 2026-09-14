@@ -60,6 +60,19 @@ describe("EmailTemplateForm", () => {
     expect(screen.getByText("{{customer_name}}", { exact: true })).toBeInTheDocument();
     expect(screen.getByText("{{order_number}}", { exact: true })).toBeInTheDocument();
     expect(screen.getByText("{{amount}}", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("Links: [link text](https://example.com)")).toBeInTheDocument();
+  });
+
+  it("previews editable links as clickable anchors", () => {
+    render(<EmailTemplateForm entries={[{
+      ...entries[0],
+      draftValue: "Contact [Messenger客服](https://m.me/RandRgallery)",
+    }]} canPublish siteUrl="https://rnrgallery.com" />);
+
+    expect(screen.getByRole("link", { name: "Messenger客服" })).toHaveAttribute(
+      "href",
+      "https://m.me/RandRgallery",
+    );
   });
 
   it("renders one complete live customer-signature preview", () => {
