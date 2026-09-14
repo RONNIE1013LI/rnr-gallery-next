@@ -14,13 +14,30 @@ vi.mock("@/server/payment-requests/public-payment-request-runtime", () => ({
   }),
 }));
 
-import PaymentRequestPage, { dynamic, metadata } from "./page";
+import PaymentRequestPage, { dynamic, generateMetadata } from "./page";
 
 describe("Payment Request page", () => {
-  it("is dynamic and noindex", () => {
+  it("is dynamic and noindex", async () => {
     expect(dynamic).toBe("force-dynamic");
-    expect(metadata).toMatchObject({
+    expect(await generateMetadata({ params: Promise.resolve({ token: "token" }) })).toMatchObject({
       robots: { index: false, follow: false, noarchive: true, nosnippet: true },
+    });
+  });
+
+  it("publishes the homepage social preview for crawlers", async () => {
+    expect(await generateMetadata({ params: Promise.resolve({ token: "A token/with spaces" }) })).toMatchObject({
+      title: "Secure payment",
+      description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
+      openGraph: {
+        title: "Secure payment",
+        description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
+        url: "https://rnrgallery.com/pay/A%20token%2Fwith%20spaces",
+        images: [{ url: "https://rnrgallery.com/media/social/rr-gallery-social-share-2026.webp" }],
+      },
+      twitter: {
+        card: "summary_large_image",
+        images: ["https://rnrgallery.com/media/social/rr-gallery-social-share-2026.webp"],
+      },
     });
   });
 
