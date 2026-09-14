@@ -7,6 +7,8 @@ import { FORM_LIST_COLUMNS, type FormInlineFieldKey } from "@/domain/forms/forms
 import { hasFormPermission, type FormPermission } from "@/server/forms/forms-permissions";
 import { requireFormPermission, type FormAccess } from "@/server/forms/require-forms";
 import { getCustomerNotificationRuntime } from "@/server/notifications/customer-notification-runtime";
+import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
+import { after } from "next/server";
 import {
   assertTrustedMutationRequest,
   parseBoundedJson,
@@ -189,7 +191,11 @@ async function updateFields(
 
 export function createFormsJobRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const production = getAdminProductionRuntime();
+    const production = getAdminProductionRuntime(
+      createImmediateNotificationDeliveryObserver({
+        scheduleAfter: (task) => after(task),
+      }),
+    );
     const proof = getAdminProductionProofRuntime();
     return {
       requirePermission: requireFormPermission,
