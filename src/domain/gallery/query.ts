@@ -1,7 +1,6 @@
 import {
   publicGalleryBirthdayAges,
   publicGalleryOccasions,
-  normalizePublicOccasion,
   normalizePublicSubOccasion,
   type PublicGalleryOccasionSlug,
 } from "./public-taxonomy";
