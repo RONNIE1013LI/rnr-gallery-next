@@ -40,6 +40,12 @@ describe("admin content service", () => {
       "email.payment_confirmed.subject",
       "  Payment received — {{order_number}}  ",
     )).toBe("Payment received — {{order_number}}");
+    const bodyWithLinks =
+      "Visit [R&R Gallery website](https://rnrgallery.com) or message [customer service on Messenger](https://m.me/RandRgallery).";
+    expect(parseContentValue(
+      "email.payment_confirmed.body",
+      bodyWithLinks,
+    )).toBe(bodyWithLinks);
     expect(() => parseContentValue(
       "email.payment_confirmed.body",
       "Hello {{email}}",
@@ -47,6 +53,18 @@ describe("admin content service", () => {
     expect(() => parseContentValue(
       "email.payment_confirmed.body",
       "Open https://example.test",
+    )).toThrow("Email template URLs are managed by the system");
+    expect(() => parseContentValue(
+      "email.payment_confirmed.body",
+      "[Open](http://example.test)",
+    )).toThrow("Email template URLs are managed by the system");
+    expect(() => parseContentValue(
+      "email.payment_confirmed.body",
+      "[Open](javascript:alert(1))",
+    )).toThrow("Email template URLs are managed by the system");
+    expect(() => parseContentValue(
+      "email.payment_confirmed.subject",
+      "[Open](https://example.test)",
     )).toThrow("Email template URLs are managed by the system");
     expect(() => parseContentValue(
       "email.payment_confirmed.body",

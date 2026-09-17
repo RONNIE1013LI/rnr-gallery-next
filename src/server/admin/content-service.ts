@@ -71,6 +71,9 @@ function definitionFor(key: string) {
   return contentDefinitions.find((definition) => definition.key === key);
 }
 
+const editableEmailBodyMarkdownLinkPattern = /\[([^\]\n]+)\]\((https:\/\/[^)\s]+)\)/g;
+const markdownLinkLikePattern = /\[[^\]\n]+\]\([^)\n]*\)/;
+
 export function parseContentValue(key: string, input: unknown): string {
   const definition = definitionFor(key);
   if (!definition) throw new ContentValidationError("Unknown content field");
@@ -85,7 +88,15 @@ export function parseContentValue(key: string, input: unknown): string {
     throw new ContentValidationError("Advertising tracking must be enabled or disabled");
   }
   if (definition.surface === "email") {
-    if (/https?:\/\//i.test(value) || /\bwww\./i.test(value)) {
+    const isEditableEmailBody = definition.key.endsWith(".body");
+    const valueWithoutApprovedLinks = isEditableEmailBody
+      ? value.replace(editableEmailBodyMarkdownLinkPattern, "")
+      : value;
+    if (
+      /https?:\/\//i.test(valueWithoutApprovedLinks)
+      || /\bwww\./i.test(valueWithoutApprovedLinks)
+      || (isEditableEmailBody && markdownLinkLikePattern.test(valueWithoutApprovedLinks))
+    ) {
       throw new ContentValidationError("Email template URLs are managed by the system");
     }
     const variablePattern = /{{\s*([a-z_]+)\s*}}/g;
