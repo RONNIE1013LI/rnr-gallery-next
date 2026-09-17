@@ -28,6 +28,17 @@ function galleryItem(
     mimeType: "image/jpeg",
     width: 1200,
     height: 900,
+    publicSlug: `test-design-${id.slice(0, 8)}`,
+    displayTitle: "Test Gallery Design",
+    seoTitle: "Test Gallery Design",
+    seoDescription: "Test gallery design description.",
+    intro: "Test gallery design introduction.",
+    secondaryOccasions: [],
+    palette: [],
+    seoIndex: true,
+    hiddenFromListings: false,
+    canonicalDesignId: null,
+    canonicalPublicSlug: null,
     ...overrides,
   };
 }
@@ -910,6 +921,8 @@ describe("HomepageV3", () => {
       productTypeSlug: "wall-hanging-banners",
       productSlug: "custom-themed-wall-banner",
       altText: "A real 21st birthday wall banner",
+      publicSlug: "21st-birthday-a62ca089",
+      displayTitle: "21st Birthday",
       },
     );
 

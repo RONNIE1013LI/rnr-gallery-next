@@ -8,7 +8,10 @@ import { OccasionLandingPage } from "./occasion-landing-page";
 vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });
 const artwork: PublicGalleryItem = {
   id: "a".repeat(64), productTypeSlug: "roll-up-banner", productSlug: "roll-up-banner", occasionSlug: "birthday",
-  subOccasion: "1st Birthday", themeSlugs: [], altText: "Birthday portrait banner example", contentHash: "b".repeat(64), mimeType: "image/jpeg", width: 850, height: 2000,
+  subOccasion: "1st-birthday", themeSlugs: [], altText: "Birthday portrait banner example", contentHash: "b".repeat(64), mimeType: "image/jpeg", width: 850, height: 2000,
+  publicSlug: "1st-birthday-aaaaaaaa", displayTitle: "1st Birthday", seoTitle: "1st Birthday Roll-Up Banner Design",
+  seoDescription: "First birthday roll-up banner design.", intro: "A first birthday roll-up banner design.",
+  secondaryOccasions: [], palette: [], seoIndex: true, hiddenFromListings: false, canonicalDesignId: null, canonicalPublicSlug: null,
 };
 
 describe("occasion landing output", () => {

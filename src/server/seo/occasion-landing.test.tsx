@@ -7,7 +7,7 @@ import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service"
 vi.mock("next/headers", () => ({ cookies: vi.fn(), headers: vi.fn() }));
 vi.mock("@/server/admin/product-registry-runtime", () => ({ getSafePublicProductRegistry: vi.fn() }));
 vi.mock("@/server/gallery/gallery-runtime", () => ({ getGalleryRuntime: vi.fn() }));
-const item: PublicGalleryItem = { id: "a".repeat(64), productTypeSlug: "roll-up-banner", productSlug: "roll-up-banner", occasionSlug: "birthday", subOccasion: "1st Birthday", themeSlugs: [], altText: "Birthday", contentHash: "b".repeat(64), mimeType: "image/jpeg", width: 850, height: 2000 };
+const item: PublicGalleryItem = { id: "a".repeat(64), productTypeSlug: "roll-up-banner", productSlug: "roll-up-banner", occasionSlug: "birthday", subOccasion: "1st-birthday", themeSlugs: [], altText: "Birthday", contentHash: "b".repeat(64), mimeType: "image/jpeg", width: 850, height: 2000, publicSlug: "1st-birthday-aaaaaaaa", displayTitle: "1st Birthday", seoTitle: "1st Birthday Roll-Up Banner Design", seoDescription: "First birthday roll-up banner design.", intro: "A first birthday roll-up banner design.", secondaryOccasions: [], palette: [], seoIndex: true, hiddenFromListings: false, canonicalDesignId: null, canonicalPublicSlug: null };
 
 describe("occasion gallery loader", () => {
   it.each(Object.values(occasionLandingPages))("uses bounded cached public queries for $path", async (content) => {

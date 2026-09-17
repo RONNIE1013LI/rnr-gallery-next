@@ -1,3 +1,4 @@
+import { getPublicDesignClassification } from "@/domain/gallery/public-classification";
 import type { GalleryProductSlug } from "@/domain/gallery/types";
 import type { GalleryPublicCandidate } from "./gallery-repository";
 
@@ -31,7 +32,7 @@ export function createDesignSelectionService(dependencies: Dependencies) {
       if (!await dependencies.imageAvailable(design.storageKey)) return null;
       return Object.freeze({
         id: design.id,
-        title: design.subOccasion ?? design.altText,
+        title: getPublicDesignClassification(design.id)?.displayTitle ?? design.subOccasion ?? design.altText,
         altText: design.altText,
         imageUrl: `/gallery-images/${design.id}?v=${design.contentHash}`,
         contentHash: design.contentHash,

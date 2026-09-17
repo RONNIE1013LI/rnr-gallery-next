@@ -21,6 +21,8 @@ const pages = [
   ["/21st-birthday-banners", 0.8, "weekly"],
   ["/memorial-banners", 0.8, "weekly"],
   ["/graduation-banners", 0.8, "weekly"],
+  ["/anniversary-designs", 0.8, "weekly"],
+  ["/welcome-home-banners", 0.8, "weekly"],
   ["/polynesian-banners", 0.8, "weekly"],
   ["/how-it-works", 0.6, "monthly"],
   ["/about", 0.5, "monthly"],
@@ -91,7 +93,7 @@ async function generatePublicSitemap(): Promise<MetadataRoute.Sitemap> {
 
 const getCachedPublicSitemap = cachePublicData(
   generatePublicSitemap,
-  "sitemap-occasion-pages-v1",
+  "sitemap-occasion-pages-v2",
   [
     PUBLIC_CACHE_TAGS.sitemap,
     PUBLIC_CACHE_TAGS.products,

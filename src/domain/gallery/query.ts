@@ -1,36 +1,27 @@
 import {
-  galleryOccasions,
+  publicGalleryBirthdayAges,
+  publicGalleryOccasions,
+  normalizePublicOccasion,
+  normalizePublicSubOccasion,
+  type PublicGalleryOccasionSlug,
+} from "./public-taxonomy";
+import {
   galleryProductTypes,
   galleryThemes,
 } from "./taxonomy";
 import type {
-  GalleryOccasionSlug,
   GalleryProductSlug,
   GalleryProductTypeSlug,
   GalleryThemeSlug,
 } from "./types";
 
-export const galleryBirthdayAges = Object.freeze([
-  "1st Birthday",
-  "3rd Birthday",
-  "5th Birthday",
-  "16th Birthday",
-  "18th Birthday",
-  "21st Birthday",
-  "40th Birthday",
-  "50th Birthday",
-  "60th Birthday",
-  "65th Birthday",
-  "70th Birthday",
-  "80th Birthday",
-  "100th Birthday",
-] as const);
+export const galleryBirthdayAges = publicGalleryBirthdayAges;
 
 export type GalleryQuery = Readonly<{
   page: number;
   productSlug?: GalleryProductSlug;
   productTypes: readonly GalleryProductTypeSlug[];
-  occasions: readonly GalleryOccasionSlug[];
+  occasions: readonly PublicGalleryOccasionSlug[];
   birthdayAges: readonly string[];
   themes: readonly GalleryThemeSlug[];
   showFilters?: boolean;
@@ -59,11 +50,28 @@ function approved<T extends string>(
   );
 }
 
+function normalizedOccasions(candidates: readonly string[]) {
+  const normalized = candidates.map((value) =>
+    value === "religious" ? "religious-church" : value,
+  );
+  return approved(normalized, publicGalleryOccasions);
+}
+
+function normalizedBirthdayAges(candidates: readonly string[]) {
+  const normalized = candidates
+    .map((value) => normalizePublicSubOccasion(value))
+    .filter((value): value is string => Boolean(value));
+  return approved(normalized, publicGalleryBirthdayAges);
+}
+
 export function parseGalleryQuery(input: QueryInput): GalleryQuery {
   const rawPage = values(input, "page")[0];
   const parsedPage = Number.parseInt(rawPage ?? "1", 10);
   const showFilters = values(input, "filters")[0] === "1";
-  const product = approved(values(input, "product"), Object.values(galleryProductTypes).flat())[0];
+  const product = approved(
+    values(input, "product"),
+    Object.values(galleryProductTypes).flat(),
+  )[0];
   return Object.freeze({
     ...(product ? { productSlug: product } : {}),
     page: Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1,
@@ -71,8 +79,8 @@ export function parseGalleryQuery(input: QueryInput): GalleryQuery {
       values(input, "design_type"),
       Object.keys(galleryProductTypes) as GalleryProductTypeSlug[],
     ),
-    occasions: approved(values(input, "occasion"), galleryOccasions),
-    birthdayAges: approved(values(input, "birthday_age"), galleryBirthdayAges),
+    occasions: normalizedOccasions(values(input, "occasion")),
+    birthdayAges: normalizedBirthdayAges(values(input, "birthday_age")),
     themes: approved(values(input, "theme"), galleryThemes),
     ...(showFilters ? { showFilters: true } : {}),
   });

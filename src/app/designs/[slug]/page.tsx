@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { CanvasProductPreview } from "@/components/canvas-product-preview";
 import { RollUpBannerPreview } from "@/components/roll-up-banner-preview";
 import { StructuredData } from "@/components/structured-data";
@@ -14,9 +14,11 @@ import {
   getRegistryProductBySlug,
 } from "@/domain/catalogue/product-registry";
 import {
-  buildPublicDesignSlug,
-  publicDesignTitle,
-} from "@/domain/gallery/public-design-slug";
+  publicSecondaryOccasionLabel,
+} from "@/domain/gallery/public-classification";
+import {
+  publicGalleryOccasionLabels,
+} from "@/domain/gallery/public-taxonomy";
 import { formatMarketMoney } from "@/domain/money";
 import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
@@ -41,26 +43,6 @@ const productTypeLabels = {
   "grave-cover": "Grave cover",
   "roll-up-banner": "Roll-up banner",
   "wall-hanging-banners": "Wall banner",
-} as const;
-
-const productTypeMetadataLabels = {
-  ...productTypeLabels,
-  "grave-cover": "Grave Cover",
-  "roll-up-banner": "Roll-up Banner",
-  "wall-hanging-banners": "Wall Banner",
-} as const;
-
-const occasionLabels = {
-  "baby-kids": "Baby / Kids",
-  birthday: "Birthday",
-  "business-promotion": "Business / Promotion",
-  "family-portrait": "Family Portrait",
-  "general-celebration": "General Celebration",
-  graduation: "Graduation",
-  memorial: "Memorial",
-  "personalised-artwork": "Personalised Artwork",
-  religious: "Religious",
-  wedding: "Wedding",
 } as const;
 
 function scalar(value: string | string[] | undefined) {
@@ -90,16 +72,21 @@ async function getDesign(slug: string): Promise<PublicGalleryItem | null> {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const design = await getDesign((await params).slug);
   if (!design) return { title: "Design not found", robots: { index: false, follow: false } };
-  const title = publicDesignTitle(design);
-  const productType = productTypeMetadataLabels[design.productTypeSlug];
-  const slug = buildPublicDesignSlug(title, design.id);
-  return buildPublicMetadata({
-    title: `${title} ${productType} Design`,
-    description: `Explore the ${title} ${productType.toLowerCase()} design and customise it with your own photos and wording at R&R Gallery.`,
-    path: `/designs/${slug}`,
+
+  const canonicalSlug = design.canonicalPublicSlug ?? design.publicSlug;
+  const metadata = buildPublicMetadata({
+    title: design.seoTitle,
+    description: design.seoDescription,
+    path: `/designs/${canonicalSlug}`,
     image: `/gallery-images/${design.id}?v=${design.contentHash}`,
     imageAlt: design.altText,
   });
+
+  if (design.seoIndex && !design.canonicalPublicSlug) return metadata;
+  return {
+    ...metadata,
+    robots: { index: false, follow: true },
+  };
 }
 
 export default async function DesignDetailPage({ params, searchParams }: Props) {
@@ -112,14 +99,21 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
   ]);
   const design = await getDesign(slug);
   if (!design) notFound();
+
+  if (design.canonicalPublicSlug) {
+    permanentRedirect(`/designs/${design.canonicalPublicSlug}`);
+  }
+  if (slug !== design.publicSlug) {
+    permanentRedirect(`/designs/${design.publicSlug}`);
+  }
+
   const product = getRegistryProductBySlug(registry, design.productSlug);
   const registryProduct = registry.products.find((candidate) => candidate.slug === design.productSlug);
   if (!product?.active || !registryProduct?.active) notFound();
 
-  const title = publicDesignTitle(design);
-  const canonicalSlug = buildPublicDesignSlug(title, design.id);
+  const title = design.displayTitle;
   const productType = productTypeLabels[design.productTypeSlug];
-  const occasion = occasionLabels[design.occasionSlug];
+  const occasion = publicGalleryOccasionLabels[design.occasionSlug];
   const savedMarket = parseMarketCookie(requestHeaders.get("x-rnr-resolved-market"))
     ?? parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value);
   const market = savedMarket === "AU" && registry.markets.AU.enabled
@@ -138,56 +132,66 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
     : `/products/${product.slug}/configure`;
   const returnTo = safeGalleryReturnPath(scalar(query.from))
     ?? `/design-gallery?occasion=${encodeURIComponent(design.occasionSlug)}&design_type=${encodeURIComponent(design.productTypeSlug)}`;
+
   let related: readonly PublicGalleryItem[] = [];
   try {
-    const result = await getGalleryRuntime().publicService.list({
-      page: 1,
-      productTypes: [design.productTypeSlug],
-      occasions: [design.occasionSlug],
-      birthdayAges: [],
-      themes: [],
-    }, 5);
-    related = result.items.filter((candidate) => candidate.id !== design.id).slice(0, 4);
+    related = await getGalleryRuntime().publicService.listRelated(design.id, 4);
   } catch {
     related = [];
   }
 
-  const ProductPreview = design.productTypeSlug === "roll-up-banner" ? RollUpBannerPreview : fabricBannerDefaults[registryProduct.slug] ? FabricBannerPreview : CanvasProductPreview;
+  const ProductPreview = design.productTypeSlug === "roll-up-banner"
+    ? RollUpBannerPreview
+    : fabricBannerDefaults[registryProduct.slug]
+      ? FabricBannerPreview
+      : CanvasProductPreview;
+
   return (
     <main id="main-content" className={styles.designDetailPage}>
       <StructuredData id="rnr-design-breadcrumbs" data={buildBreadcrumbData([
         { name: "Home", path: market === "AU" ? "/au" : "/" },
         { name: "Design Gallery", path: "/design-gallery" },
-        { name: title, path: `/designs/${canonicalSlug}` },
+        { name: title, path: `/designs/${design.publicSlug}` },
       ])} />
       <section className={styles.designDetailHero}>
         <div className={styles.designDetailMedia}>
           <ProductPreview
             productSlug={registryProduct.slug}
             imageSrc={`/gallery-images/${design.id}?v=${design.contentHash}`}
-            sizeKey={design.productTypeSlug === "canvas" ? (registryProduct.configuration.sizes.some(size=>size.key==="a0") ? "a0" : registryProduct.configuration.sizes[0]?.key ?? "") : ""}
-            sizes={registryProduct.configuration.sizes.map(size=>size.key)}
+            sizeKey={design.productTypeSlug === "canvas"
+              ? (registryProduct.configuration.sizes.some((size) => size.key === "a0")
+                  ? "a0"
+                  : registryProduct.configuration.sizes[0]?.key ?? "")
+              : ""}
+            sizes={registryProduct.configuration.sizes.map((size) => size.key)}
             orientation={design.width >= design.height ? "landscape" : "portrait"}
           >
-          <Image
-            src={`/gallery-images/${design.id}?v=${design.contentHash}`}
-            alt={design.altText}
-            width={design.width}
-            height={design.height}
-            priority
-            sizes="(max-width: 560px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px"
-          />
+            <Image
+              src={`/gallery-images/${design.id}?v=${design.contentHash}`}
+              alt={design.altText}
+              width={design.width}
+              height={design.height}
+              priority
+              sizes="(max-width: 560px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px"
+            />
           </ProductPreview>
         </div>
         <div className={styles.designDetailCopy}>
           <p className={styles.eyebrow}>{productType} · {occasion}</p>
           <h1>{title}</h1>
-          <p className={styles.productDetailLead}>
-            A {productType.toLowerCase()} design that can be customised with your own photos and wording.
-          </p>
+          <p className={styles.productDetailLead}>{design.intro}</p>
           <dl className={styles.designDetailFacts}>
             <div><dt>Product type</dt><dd>{productType}</dd></div>
             <div><dt>Occasion</dt><dd>{occasion}</dd></div>
+            {design.palette.length ? (
+              <div><dt>Colour palette</dt><dd>{design.palette.join(" · ")}</dd></div>
+            ) : null}
+            {design.secondaryOccasions.length ? (
+              <div>
+                <dt>Also features</dt>
+                <dd>{design.secondaryOccasions.map(publicSecondaryOccasionLabel).join(" · ")}</dd>
+              </div>
+            ) : null}
             <div>
               <dt>Available sizes</dt>
               <dd>
@@ -215,26 +219,23 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
         <section className={styles.designRelated} aria-label="Related designs">
           <div className={styles.sectionHeading}><h2>Related designs</h2></div>
           <div className={styles.galleryGrid}>
-            {related.map((item) => {
-              const relatedTitle = publicDesignTitle(item);
-              return (
-                <article className={styles.galleryCard} key={item.id}>
-                  <Link className={styles.galleryCardLink} href={`/designs/${buildPublicDesignSlug(relatedTitle, item.id)}`}>
-                    <div className={styles.galleryCardMedia}>
-                      <Image
-                        src={`/gallery-images/${item.id}?v=${item.contentHash}`}
-                        alt={item.altText}
-                        width={item.width}
-                        height={item.height}
-                        loading="lazy"
-                        sizes="(max-width: 560px) calc((100vw - 3.25rem) / 2), (max-width: 767px) calc(46vw - 0.375rem), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px"
-                      />
-                    </div>
-                    <div className={styles.galleryCardBody}><h3>{relatedTitle}</h3></div>
-                  </Link>
-                </article>
-              );
-            })}
+            {related.map((item) => (
+              <article className={styles.galleryCard} key={item.id}>
+                <Link className={styles.galleryCardLink} href={`/designs/${item.publicSlug}`}>
+                  <div className={styles.galleryCardMedia}>
+                    <Image
+                      src={`/gallery-images/${item.id}?v=${item.contentHash}`}
+                      alt={item.altText}
+                      width={item.width}
+                      height={item.height}
+                      loading="lazy"
+                      sizes="(max-width: 560px) calc((100vw - 3.25rem) / 2), (max-width: 767px) calc(46vw - 0.375rem), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px"
+                    />
+                  </div>
+                  <div className={styles.galleryCardBody}><h3>{item.displayTitle}</h3></div>
+                </Link>
+              </article>
+            ))}
           </div>
         </section>
       ) : null}

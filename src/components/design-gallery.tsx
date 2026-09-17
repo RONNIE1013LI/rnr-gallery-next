@@ -5,9 +5,8 @@ import {
   type GalleryQuery,
 } from "@/domain/gallery/query";
 import {
-  buildPublicDesignSlug,
-  publicDesignTitle,
-} from "@/domain/gallery/public-design-slug";
+  publicGalleryOccasionLabels,
+} from "@/domain/gallery/public-taxonomy";
 import { galleryThemes } from "@/domain/gallery/taxonomy";
 import type { GalleryProductTypeSlug } from "@/domain/gallery/types";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
@@ -37,19 +36,6 @@ const productTypeMobileLabels: Readonly<Record<GalleryProductTypeSlug, string>> 
   "roll-up-banner": "Roll-up banner",
   "wall-hanging-banners": "Wall banner",
 };
-
-const occasionLabels = {
-  "baby-kids": "Baby / Kids",
-  birthday: "Birthday",
-  "business-promotion": "Business / Promotion",
-  "family-portrait": "Family Portrait",
-  "general-celebration": "General Celebration",
-  graduation: "Graduation",
-  memorial: "Memorial",
-  "personalised-artwork": "Personalised Artwork",
-  religious: "Religious",
-  wedding: "Wedding",
-} as const;
 
 const themeLabels = {
   "colour-style": "Colour Style",
@@ -97,7 +83,9 @@ export function DesignGallery({ query, result }: Props) {
     ["Birthday", quickHref([["occasion", "birthday"]]), onlyOccasion("birthday")],
     ["Family", quickHref([["occasion", "family-portrait"]]), onlyOccasion("family-portrait")],
     ["Wedding", quickHref([["occasion", "wedding"]]), onlyOccasion("wedding")],
-    ["Religious", quickHref([["occasion", "religious"]]), onlyOccasion("religious")],
+    ["Anniversary", quickHref([["occasion", "anniversary"]]), onlyOccasion("anniversary")],
+    ["Welcome Home", quickHref([["occasion", "welcome-home"]]), onlyOccasion("welcome-home")],
+    ["Church / Religious", quickHref([["occasion", "religious-church"]]), onlyOccasion("religious-church")],
     ["Canvas", quickHref([["design_type", "canvas"]]), onlyProducts(["canvas"])],
     ["Banners", quickHref([
       ["design_type", "grave-cover"],
@@ -153,8 +141,6 @@ export function DesignGallery({ query, result }: Props) {
       {result.items.length > 0 ? (
         <section className={styles.galleryGrid} aria-label="Design gallery artworks">
           {result.items.map((item, index) => {
-            const title = item.subOccasion ?? occasionLabels[item.occasionSlug];
-            const publicSlug = buildPublicDesignSlug(publicDesignTitle(item), item.id);
             const returnTo = galleryPageHref(query, result.page);
             const mobileSpan = item.productTypeSlug === "wall-hanging-banners" ? "wide" : "compact";
             return (
@@ -165,7 +151,7 @@ export function DesignGallery({ query, result }: Props) {
               >
                 <Link
                   className={styles.galleryCardLink}
-                  href={`/designs/${publicSlug}?from=${encodeURIComponent(returnTo)}`}
+                  href={`/designs/${item.publicSlug}?from=${encodeURIComponent(returnTo)}`}
                 >
                   <div className={styles.galleryCardMedia}>
                     <Image
@@ -184,8 +170,8 @@ export function DesignGallery({ query, result }: Props) {
                     </span>
                   </div>
                   <div className={styles.galleryCardBody}>
-                    <h2>{title}</h2>
-                    <p>{occasionLabels[item.occasionSlug]} · {productTypeLabels[item.productTypeSlug]}</p>
+                    <h2>{item.displayTitle}</h2>
+                    <p>{publicGalleryOccasionLabels[item.occasionSlug]} · {productTypeLabels[item.productTypeSlug]}</p>
                     <span className={styles.galleryCardAction}>View design</span>
                   </div>
                 </Link>

@@ -12,18 +12,18 @@ describe("parseGalleryQuery", () => {
     expect(parseGalleryQuery({ product: "invalid-product" })).not.toHaveProperty("productSlug");
   });
 
-  it("keeps only approved repeated filters and clamps invalid pages", () => {
+  it("normalises legacy filters and accepts the expanded public taxonomy", () => {
     expect(parseGalleryQuery({
       page: "-2",
-      occasion: ["birthday", "bad", "birthday"],
+      occasion: ["birthday", "anniversary", "religious", "bad", "birthday"],
       design_type: ["canvas", "unknown"],
       theme: ["cultural-island", "bad"],
-      birthday_age: ["21st Birthday", "999th Birthday"],
+      birthday_age: ["21st Birthday", "10th-birthday", "999th Birthday"],
     })).toEqual({
       page: 1,
       productTypes: ["canvas"],
-      occasions: ["birthday"],
-      birthdayAges: ["21st Birthday"],
+      occasions: ["birthday", "anniversary", "religious-church"],
+      birthdayAges: ["21st-birthday", "10th-birthday"],
       themes: ["cultural-island"],
     });
   });
@@ -31,14 +31,14 @@ describe("parseGalleryQuery", () => {
   it("accepts URLSearchParams and ignores unrelated keys", () => {
     const params = new URLSearchParams();
     params.append("occasion", "memorial");
-    params.append("occasion", "religious");
+    params.append("occasion", "welcome-home");
     params.set("page", "3");
     params.set("redirect", "https://attacker.example");
 
     expect(parseGalleryQuery(params)).toEqual({
       page: 3,
       productTypes: [],
-      occasions: ["memorial", "religious"],
+      occasions: ["memorial", "welcome-home"],
       birthdayAges: [],
       themes: [],
     });
@@ -46,15 +46,15 @@ describe("parseGalleryQuery", () => {
 });
 
 describe("galleryPageHref", () => {
-  it("preserves active filters while changing only the page", () => {
+  it("preserves active public filters while changing only the page", () => {
     expect(galleryPageHref({
       page: 1,
       productTypes: ["canvas"],
       occasions: ["birthday", "memorial"],
-      birthdayAges: ["21st Birthday"],
+      birthdayAges: ["21st-birthday"],
       themes: [],
     }, 2)).toBe(
-      "/design-gallery?design_type=canvas&occasion=birthday&occasion=memorial&birthday_age=21st+Birthday&page=2",
+      "/design-gallery?design_type=canvas&occasion=birthday&occasion=memorial&birthday_age=21st-birthday&page=2",
     );
   });
 });

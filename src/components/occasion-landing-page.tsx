@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { getRegistryProductBySlug, type ProductRegistryDocument } from "@/domain/catalogue/product-registry";
-import { buildPublicDesignSlug, publicDesignTitle } from "@/domain/gallery/public-design-slug";
 import type { Market } from "@/domain/markets/types";
 import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
 import { occasionLandingPages, type OccasionLandingContent } from "@/domain/seo/occasion-landing-pages";
@@ -55,10 +54,10 @@ export function OccasionLandingPage({ content, registry, market, artwork, artwor
         {content.artworkNote ? <p className={landing.note}>{content.artworkNote}</p> : null}
         {artwork.length ? <div className={styles.galleryGrid}>
           {artwork.map((item) => {
-            const title = publicDesignTitle(item);
+            const title = item.displayTitle;
             const wide = item.productTypeSlug === "wall-hanging-banners";
             return <article key={item.id} className={styles.galleryCard} data-gallery-mobile-span={wide ? "wide" : "compact"}>
-              <Link className={styles.galleryCardLink} href={`/designs/${buildPublicDesignSlug(title, item.id)}`}>
+              <Link className={styles.galleryCardLink} href={`/designs/${item.publicSlug}`}>
                 <div className={styles.galleryCardMedia}>
                   <OccasionArtworkModel item={item}><Image src={`/gallery-images/${item.id}?v=${item.contentHash}`} alt={item.altText} width={item.width} height={item.height} loading="lazy"
                     sizes={wide ? "(max-width: 767px) 92vw, (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px" : "(max-width: 560px) calc((100vw - 3.25rem) / 2), (max-width: 767px) calc(46vw - 0.375rem), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px"} /></OccasionArtworkModel>

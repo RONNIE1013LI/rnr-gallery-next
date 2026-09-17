@@ -17,24 +17,31 @@ function createRuntime() {
   const publicService = Object.freeze({
     listSitemapDesigns: cachePublicData(
       () => uncachedPublicService.listSitemapDesigns(),
-      "gallery-sitemap-designs",
+      "gallery-sitemap-designs-public-taxonomy-v3",
       [PUBLIC_CACHE_TAGS.gallery, PUBLIC_CACHE_TAGS.sitemap],
     ),
     findByPublicSlug: cachePublicData(
       (slug: string) => uncachedPublicService.findByPublicSlug(slug),
-      "gallery-public-slug-product-classification-v2",
+      "gallery-public-slug-public-taxonomy-v3",
       [PUBLIC_CACHE_TAGS.gallery],
     ),
     findByIds: cachePublicData(
       (designIds: readonly string[]) => uncachedPublicService.findByIds(designIds),
-      "gallery-design-ids-product-classification-v2",
+      "gallery-design-ids-public-taxonomy-v3",
       [PUBLIC_CACHE_TAGS.gallery],
     ),
     list: cachePublicData(
       (query: Parameters<typeof uncachedPublicService.list>[0], requestedPageSize?: number) => (
         uncachedPublicService.list(query, requestedPageSize)
       ),
-      "gallery-list-product-classification-v2",
+      "gallery-list-public-taxonomy-v3",
+      [PUBLIC_CACHE_TAGS.gallery],
+    ),
+    listRelated: cachePublicData(
+      (designId: string, requestedLimit?: number) => (
+        uncachedPublicService.listRelated(designId, requestedLimit)
+      ),
+      "gallery-related-public-taxonomy-v3",
       [PUBLIC_CACHE_TAGS.gallery],
     ),
   });

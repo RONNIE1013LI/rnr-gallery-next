@@ -6,10 +6,6 @@ import {
   getRegistryProducts,
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
-import {
-  buildPublicDesignSlug,
-  publicDesignTitle,
-} from "@/domain/gallery/public-design-slug";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
 import type { Market } from "@/domain/markets/types";
 import type { PublicCustomerReviewSection } from "@/domain/customer-reviews/types";
@@ -122,7 +118,7 @@ function GalleryArtworkCard({
     <Link
       className={`${styles.galleryCard} ${className}`}
       data-homepage-gallery-slot={slot}
-      href={`/designs/${buildPublicDesignSlug(publicDesignTitle(item), item.id)}`}
+      href={`/designs/${item.publicSlug}`}
     >
       <figure className={styles.galleryFigure}>
         <div className={styles.galleryRealMedia}>

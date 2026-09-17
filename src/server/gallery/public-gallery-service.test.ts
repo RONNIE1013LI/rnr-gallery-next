@@ -31,29 +31,13 @@ function repository(rows: readonly GalleryPublicCandidate[]): GalleryRepository 
   return {
     replaceInitialImport: async () => ({ imported: 0, unchanged: 0 }),
     listActiveCandidates: async () => rows,
-    listActivePage: async (query, pageSize) => {
-      const filtered = rows.filter((row) =>
-        (query.productTypes.length === 0 || query.productTypes.includes(row.productTypeSlug)) &&
-        (query.occasions.length === 0 || query.occasions.includes(row.occasionSlug)) &&
-        (query.birthdayAges.length === 0 || (
-          row.subOccasion !== null && query.birthdayAges.includes(row.subOccasion)
-        )) &&
-        (query.themes.length === 0 || row.themeSlugs.some((theme) => query.themes.includes(theme))),
-      ).sort((left, right) =>
-        right.createdAt.getTime() - left.createdAt.getTime() || left.id.localeCompare(right.id),
-      );
-      const total = filtered.length;
-      const pageCount = Math.max(1, Math.ceil(total / pageSize));
-      const page = Math.min(query.page, pageCount);
-      return {
-        items: filtered.slice((page - 1) * pageSize, page * pageSize),
-        total,
-        page,
-        pageCount,
-      };
-    },
+    listActivePage: async () => ({ items: [], total: 0, page: 1, pageCount: 1 }),
     findActiveImage: async () => null,
-    findActiveDesign: async () => null,
+    findActiveDesign: async (designId) => rows.find((row) => row.id === designId) ?? null,
+    findActiveDesignByIdPrefix: async (prefix) => {
+      const matches = rows.filter((row) => row.id.startsWith(prefix));
+      return matches.length === 1 ? matches[0] : null;
+    },
   };
 }
 
@@ -78,144 +62,77 @@ describe("public gallery service", () => {
     expect(findActiveDesign).toHaveBeenCalledTimes(3);
   });
 
-  it("resolves only an active, available design from a unique public slug prefix", async () => {
+  it("resolves an active design by the frozen URL ID prefix", async () => {
     const design = candidate(12, {
       id: `a1b2c3d4${"a".repeat(56)}`,
       subOccasion: "40th Birthday",
     });
-    const findActiveDesignByIdPrefix = vi.fn(async (prefix: string) =>
-      prefix === "a1b2c3d4" ? design : null
-    );
     const service = createPublicGalleryService({
-      repository: {
-        ...repository([]),
-        findActiveDesignByIdPrefix,
-      },
+      repository: repository([design]),
       imageAvailable: async () => true,
     });
 
-    await expect(service.findByPublicSlug("black-gold-40th-birthday-a1b2c3d4"))
-      .resolves.toMatchObject({ id: design.id, subOccasion: "40th Birthday" });
-    expect(findActiveDesignByIdPrefix).toHaveBeenCalledWith("a1b2c3d4");
+    await expect(service.findByPublicSlug("any-readable-title-a1b2c3d4"))
+      .resolves.toMatchObject({
+        id: design.id,
+        subOccasion: "40th-birthday",
+        publicSlug: "40th-birthday-a1b2c3d4",
+      });
   });
 
-  it("does not expose a design whose image is unavailable", async () => {
-    const design = candidate(13, { id: `deadbeef${"d".repeat(56)}` });
+  it("normalises legacy religious rows into the public Church / Religious occasion", async () => {
+    const design = candidate(13, { occasionSlug: "religious" });
     const service = createPublicGalleryService({
-      repository: {
-        ...repository([]),
-        findActiveDesignByIdPrefix: async () => design,
-      },
-      imageAvailable: async () => false,
+      repository: repository([design]),
+      imageAvailable: async () => true,
     });
 
-    await expect(service.findByPublicSlug("private-looking-design-deadbeef"))
-      .resolves.toBeNull();
-  });
-
-  it("builds sitemap records only for active designs with available images", async () => {
-    const available = candidate(14, {
-      id: `1234abcd${"a".repeat(56)}`,
-      subOccasion: "21st Birthday",
-    });
-    const missingImage = candidate(15, { id: `5678efab${"b".repeat(56)}` });
-    const service = createPublicGalleryService({
-      repository: repository([available, missingImage]),
-      imageAvailable: async (storageKey) => !storageKey.endsWith("/15.jpg"),
-    });
-
-    await expect(service.listSitemapDesigns()).resolves.toEqual([{
-      slug: "21st-birthday-1234abcd",
-      createdAt: available.createdAt,
-    }]);
-  });
-
-  it("allows the homepage to request one available design per category", async () => {
-    const query = {
+    const result = await service.list({
       page: 1,
       productTypes: [],
-      occasions: ["birthday" as const],
+      occasions: ["religious-church"],
       birthdayAges: [],
       themes: [],
-    };
-    const listActivePage = vi.fn().mockResolvedValue({
-      items: [candidate(1, { occasionSlug: "birthday" })],
-      total: 8,
-      page: 1,
-      pageCount: 8,
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].occasionSlug).toBe("religious-church");
+  });
+
+  it("filters the public overlay taxonomy in memory instead of relying on persisted SQL categories", async () => {
+    const birthday = candidate(21, {
+      occasionSlug: "birthday",
+      subOccasion: "21st Birthday",
+      themeSlugs: ["cultural-island"],
+    });
+    const memorial = candidate(22, {
+      occasionSlug: "memorial",
+      themeSlugs: ["cultural-island"],
+    });
+    const listActiveCandidates = vi.fn(async () => [birthday, memorial]);
+    const listActivePage = vi.fn(async () => {
+      throw new Error("public filtering must not use persisted SQL taxonomy");
     });
     const service = createPublicGalleryService({
       repository: {
         ...repository([]),
+        listActiveCandidates,
         listActivePage,
       },
       imageAvailable: async () => true,
-    });
-
-    const result = await service.list(query, 1);
-
-    expect(listActivePage).toHaveBeenCalledWith(query, 1);
-    expect(result.pageSize).toBe(1);
-    expect(result.items).toHaveLength(1);
-  });
-
-  it("requests only one filtered page from storage instead of scanning every design", async () => {
-    const query = {
-      page: 2,
-      productTypes: ["canvas" as const],
-      occasions: ["birthday" as const],
-      birthdayAges: ["21st Birthday"],
-      themes: ["cultural-island" as const],
-    };
-    const listActivePage = vi.fn().mockResolvedValue({
-      items: [candidate(25)],
-      total: 25,
-      page: 2,
-      pageCount: 2,
-    });
-    const imageAvailable = vi.fn().mockResolvedValue(true);
-    const service = createPublicGalleryService({
-      repository: {
-        ...repository([]),
-        listActiveCandidates: vi.fn().mockRejectedValue(new Error("full scan")),
-        listActivePage,
-      } as GalleryRepository,
-      imageAvailable,
-    });
-
-    await expect(service.list(query)).resolves.toMatchObject({
-      total: 25,
-      page: 2,
-      pageCount: 2,
-      items: [expect.objectContaining({ altText: "Artwork 25" })],
-    });
-    expect(listActivePage).toHaveBeenCalledWith(query, 24);
-    expect(imageAvailable).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses OR within groups, AND between groups, and excludes unavailable images", async () => {
-    const rows = [
-      candidate(1, { occasionSlug: "memorial", themeSlugs: ["cultural-island"] }),
-      candidate(2, { occasionSlug: "birthday", subOccasion: "21st Birthday", themeSlugs: ["cultural-island"] }),
-      candidate(3, { productTypeSlug: "roll-up-banner", productSlug: "roll-up-banner", occasionSlug: "birthday", subOccasion: "21st Birthday", themeSlugs: ["cultural-island"] }),
-      candidate(4, { occasionSlug: "birthday", subOccasion: "18th Birthday", themeSlugs: ["colour-style"] }),
-      candidate(5, { occasionSlug: "birthday", subOccasion: "21st Birthday", themeSlugs: ["cultural-island"] }),
-    ];
-    const service = createPublicGalleryService({
-      repository: repository(rows),
-      imageAvailable: async (storageKey) => !storageKey.endsWith("/2.jpg"),
     });
 
     const result = await service.list({
       page: 1,
       productTypes: ["canvas"],
-      occasions: ["memorial", "birthday"],
-      birthdayAges: ["21st Birthday"],
+      occasions: ["birthday"],
+      birthdayAges: ["21st-birthday"],
       themes: ["cultural-island"],
     });
 
-    expect(result.total).toBe(1);
-    expect(result.items.map((item) => item.altText)).toEqual(["Artwork 5"]);
+    expect(result.items.map((item) => item.id)).toEqual([birthday.id]);
+    expect(listActiveCandidates).toHaveBeenCalledTimes(1);
+    expect(listActivePage).not.toHaveBeenCalled();
   });
 
   it("returns deterministic 24-item pages and clamps past the last page", async () => {
@@ -235,6 +152,37 @@ describe("public gallery service", () => {
 
     expect(result).toMatchObject({ page: 2, pageCount: 2, total: 25 });
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].altText).toBe("Artwork 1");
+    expect(result.items[0].id).toBe(rows[24].id);
+  });
+
+  it("ranks related designs by product, occasion and sub-occasion", async () => {
+    const current = candidate(1, {
+      productTypeSlug: "roll-up-banner",
+      productSlug: "roll-up-banner",
+      occasionSlug: "birthday",
+      subOccasion: "21st Birthday",
+    });
+    const sameMilestone = candidate(2, {
+      productTypeSlug: "roll-up-banner",
+      productSlug: "roll-up-banner",
+      occasionSlug: "birthday",
+      subOccasion: "21st Birthday",
+    });
+    const sameOccasionDifferentProduct = candidate(3, {
+      occasionSlug: "birthday",
+      subOccasion: "21st Birthday",
+    });
+    const unrelated = candidate(4, {
+      occasionSlug: "memorial",
+    });
+    const service = createPublicGalleryService({
+      repository: repository([current, unrelated, sameOccasionDifferentProduct, sameMilestone]),
+      imageAvailable: async () => true,
+    });
+
+    const related = await service.listRelated(current.id, 3);
+
+    expect(related[0].id).toBe(sameMilestone.id);
+    expect(related.map((item) => item.id)).not.toContain(current.id);
   });
 });

@@ -6,6 +6,10 @@ import type {
 } from "@/domain/gallery/types";
 import type { GalleryQuery } from "@/domain/gallery/query";
 
+export type GalleryStorageQuery = Omit<GalleryQuery, "occasions"> & Readonly<{
+  occasions: readonly GalleryOccasionSlug[];
+}>;
+
 export type GalleryImportRow = Readonly<{
   id: string;
   productTypeSlug: GalleryProductTypeSlug;
@@ -46,7 +50,7 @@ export interface GalleryRepository {
   ): Promise<Readonly<{ imported: number; unchanged: number }>>;
   listActiveCandidates(): Promise<readonly GalleryPublicCandidate[]>;
   listActivePage(
-    query: GalleryQuery,
+    query: GalleryStorageQuery,
     pageSize: number,
   ): Promise<Readonly<{
     items: readonly GalleryPublicCandidate[];

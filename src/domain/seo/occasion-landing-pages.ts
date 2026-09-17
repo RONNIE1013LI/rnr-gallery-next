@@ -2,7 +2,7 @@ import { parseGalleryQuery, type GalleryQuery } from "@/domain/gallery/query";
 import { deliveryCopy } from "@/domain/content/delivery-copy";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
 
-export type OccasionLandingSlug = "birthday-banners" | "1st-birthday-banners" | "21st-birthday-banners" | "memorial-banners" | "graduation-banners" | "polynesian-banners";
+export type OccasionLandingSlug = "birthday-banners" | "1st-birthday-banners" | "21st-birthday-banners" | "memorial-banners" | "graduation-banners" | "anniversary-designs" | "welcome-home-banners" | "polynesian-banners";
 export type OccasionLandingContent = Readonly<{
   path: `/${OccasionLandingSlug}`;
   label: string;
@@ -100,10 +100,10 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
   "graduation-banners": {
     path: "/graduation-banners", label: "Graduation Banners", title: "Custom Graduation Banners NZ",
     heading: "Personalised Graduation Banners",
-    description: "Create a graduation photo banner with a portrait, year and personal message. Explore a real graduation example and choose a wall or roll-up display.",
-    introduction: "Put the graduate's portrait and achievement at the centre of a family celebration. Add the graduation year, qualification wording and a personal message to your brief.",
+    description: "Create a personalised graduation photo banner with a portrait, year and personal message. Our published gallery does not currently include a verified graduation example.",
+    introduction: "Put the graduate's portrait and achievement at the centre of a family celebration. Add the graduation year, qualification wording and a personal message to your brief. We do not currently publish a verified graduation example in the Design Gallery.",
     query: parseGalleryQuery({ occasion: "graduation", design_type: bannerTypes }),
-    artworkHeading: "A finished graduation design", artworkNote: "Our published graduation selection is small. Use this example as a starting point, then provide your own photos and details.",
+    artworkHeading: "Graduation design service", artworkNote: "There are no verified graduation examples in the published Design Gallery right now. Use the product formats below and provide your own portrait, wording and graduation details for a custom brief.",
     productSlugs: bannerProducts, cta: "Start Your Graduation Banner",
     guidanceHeading: "Make the achievement easy to read",
     guidance: ["Start with a clear graduate portrait and write the name, graduation year and qualification exactly as you want them shown. A short message leaves more space for the photo.", "Share your preferred colours and choose the format for your venue: an upright roll-up display or a wide hanging banner. This is a personalised family or event design service; no school or university affiliation is implied."],
@@ -114,6 +114,42 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
       { question: "Which banner is easier to position for family photos?", answer: "A roll-up banner has its own stand for an upright display. A wall banner offers a wider format and needs suitable hanging space; check your venue before choosing." },
       { question: "Can we check the qualification spelling before printing?", answer: proofAnswer },
     ], related: [],
+  },
+  "anniversary-designs": {
+    path: "/anniversary-designs", label: "Anniversary Designs", title: "Custom Anniversary Canvas & Banners NZ",
+    heading: "Personalised Anniversary Canvas & Banner Designs",
+    description: "Explore real anniversary canvas and banner examples, including wedding anniversaries and milestone celebrations, then personalise a design with your own photos and wording.",
+    introduction: "Anniversary artwork can centre on a favourite couple portrait, a timeline of family photos or a milestone message. Our published examples include both canvas and wide wall-banner formats.",
+    query: parseGalleryQuery({ occasion: "anniversary", design_type: ["canvas", "wall-hanging-banners"] }),
+    artworkHeading: "Real anniversary designs",
+    productSlugs: ["digital-oil-painting-canvas", "custom-themed-wall-banner"], cta: "Start Your Anniversary Design",
+    guidanceHeading: "Build the design around the milestone",
+    guidance: ["Choose the main portrait or photo sequence and provide the anniversary year or number of years exactly as you want it shown.", "Include names, dates, a short message and your preferred colour direction. If the design refers to a wedding anniversary, identify the wedding or couple photos you want to feature."],
+    faq: [
+      { question: "Can an anniversary design combine older and recent photos?", answer: "Yes. Supply the original images separately and explain their order or importance. A timeline or multi-photo composition can be reviewed in the proof." },
+      { question: "Can I include the number of years or an anniversary date?", answer: "Yes. Send the exact number, date and wording you want printed and check every detail in the proof before approval." },
+      { question: "Should I choose canvas or a wall banner?", answer: "Canvas suits a keepsake or display piece. A wall banner suits a wider event backdrop. Review the available product sizes before deciding." },
+      { question: "Can I request my own colours and wording?", answer: "Yes. Include the colour direction, names, message and any reference ideas with your brief." },
+      { question: "Will I approve the design before printing?", answer: proofAnswer },
+    ], related: ["birthday-banners"],
+  },
+  "welcome-home-banners": {
+    path: "/welcome-home-banners", label: "Welcome Home Banners", title: "Welcome Home & Missionary Return Banners NZ",
+    heading: "Personalised Welcome Home & Missionary Return Banners",
+    description: "Explore real Welcome Home and missionary return banner examples, then personalise a wall or roll-up banner with your own photos, mission details and wording.",
+    introduction: "Create an entrance or celebration display for a return home. Our published examples are missionary-return designs using wall and roll-up banner formats; provide your own photos, mission wording and dates.",
+    query: parseGalleryQuery({ occasion: "welcome-home", design_type: bannerTypes }),
+    artworkHeading: "Real Welcome Home and missionary return designs",
+    productSlugs: bannerProducts, cta: "Start Your Welcome Home Banner",
+    guidanceHeading: "Make the homecoming details easy to read",
+    guidance: ["Choose a clear main portrait and provide the exact Welcome Home wording, mission name and dates you want included.", "If the event also marks a birthday or another celebration, explain which occasion should be the main focus so the layout can balance both messages."],
+    faq: [
+      { question: "Can the banner include the mission name and service dates?", answer: "Yes. Send the exact mission wording and dates and review them carefully in the proof." },
+      { question: "Can I combine Welcome Home wording with a birthday message?", answer: "Yes. Explain which occasion should be the primary heading and provide the exact wording for both." },
+      { question: "Which format works best at an entrance?", answer: "A roll-up banner is an upright display supplied with a stand. A wall banner gives you a wider composition when you have a suitable hanging position." },
+      { question: "Can I provide several photos?", answer: "Yes. Identify the main portrait and send the supporting photos separately with any placement preferences." },
+      { question: "Will I review the design before printing?", answer: proofAnswer },
+    ], related: ["birthday-banners"],
   },
   "polynesian-banners": {
     path: "/polynesian-banners", label: "Pacific & Cultural Banners", title: "Custom Pacific & Polynesian-Inspired Banners",
