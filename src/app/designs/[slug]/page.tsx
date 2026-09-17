@@ -14,6 +14,7 @@ import {
   getRegistryProductBySlug,
 } from "@/domain/catalogue/product-registry";
 import {
+  getPublicDesignClassificationByPublicSlug,
   publicSecondaryOccasionLabel,
 } from "@/domain/gallery/public-classification";
 import {
@@ -98,7 +99,13 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
     headers(),
   ]);
   const design = await getDesign(slug);
-  if (!design) notFound();
+  if (!design) {
+    const historical = getPublicDesignClassificationByPublicSlug(slug);
+    if (historical?.canonicalPublicSlug) {
+      permanentRedirect(`/designs/${historical.canonicalPublicSlug}`);
+    }
+    notFound();
+  }
 
   if (design.canonicalPublicSlug) {
     permanentRedirect(`/designs/${design.canonicalPublicSlug}`);

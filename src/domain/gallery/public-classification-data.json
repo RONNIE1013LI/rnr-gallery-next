@@ -1471,10 +1471,10 @@
     "seoTitle": "Wedding Anniversary Canvas Design – Blue & Red",
     "seoDescription": "A personalised wedding anniversary canvas featuring Blue & Red palette. Customise the photos and wording with R&R Gallery.",
     "intro": "This finished wedding anniversary canvas uses Blue & Red palette. Photos, wording and selected design details can be personalised for your order.",
-    "seoIndex": true,
-    "hiddenFromListings": false,
-    "canonicalDesignId": null,
-    "canonicalPublicSlug": null,
+    "seoIndex": false,
+    "hiddenFromListings": true,
+    "canonicalDesignId": "553ad993b36d4c4cbaf4b5eabade0f95aea78b0675bc40e80cdd3bd28283b413",
+    "canonicalPublicSlug": "canvas-design-example-wedding-553ad993",
     "classificationRow": 66
   },
   {

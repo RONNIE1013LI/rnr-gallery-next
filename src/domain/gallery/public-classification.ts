@@ -81,6 +81,10 @@ for (const raw of rawRecords) {
   publicSlugs.add(raw.publicSlug);
 }
 
+const recordsByPublicSlug = new Map<string, PublicDesignClassification>(
+  [...records.values()].map((record) => [record.publicSlug, record] as const),
+);
+
 for (const record of records.values()) {
   if (!record.canonicalDesignId) continue;
   const target = records.get(record.canonicalDesignId);
@@ -103,6 +107,12 @@ export function getPublicDesignClassification(
   designId: string,
 ): PublicDesignClassification | null {
   return records.get(designId) ?? null;
+}
+
+export function getPublicDesignClassificationByPublicSlug(
+  publicSlug: string,
+): PublicDesignClassification | null {
+  return recordsByPublicSlug.get(publicSlug) ?? null;
 }
 
 function fallbackText(

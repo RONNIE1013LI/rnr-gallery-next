@@ -6,10 +6,13 @@ import {
 } from "@/domain/catalogue/product-registry";
 import DesignDetailPage, { generateMetadata, revalidate } from "./page";
 
-const { findByPublicSlug, list, notFound } = vi.hoisted(() => ({
+const { findByPublicSlug, listRelated, notFound, permanentRedirect } = vi.hoisted(() => ({
   findByPublicSlug: vi.fn(),
-  list: vi.fn(),
+  listRelated: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
+  permanentRedirect: vi.fn((target: string) => {
+    throw new Error(`PERMANENT_REDIRECT:${target}`);
+  }),
 }));
 const state = vi.hoisted(() => ({
   registry: undefined as unknown,
@@ -17,9 +20,9 @@ const state = vi.hoisted(() => ({
   resolvedMarket: null as string | null,
 }));
 
-vi.mock("next/navigation", () => ({ notFound }));
+vi.mock("next/navigation", () => ({ notFound, permanentRedirect }));
 vi.mock("@/server/gallery/gallery-runtime", () => ({
-  getGalleryRuntime: () => ({ publicService: { findByPublicSlug, list } }),
+  getGalleryRuntime: () => ({ publicService: { findByPublicSlug, listRelated } }),
 }));
 vi.mock("@/server/admin/product-registry-runtime", () => ({
   getSafePublicProductRegistry: async () => ({ registry: state.registry }),
@@ -60,10 +63,21 @@ const design = {
   mimeType: "image/jpeg" as const,
   width: 1200,
   height: 2400,
+  publicSlug: "40th-birthday-a1b2c3d4",
+  displayTitle: "40th Birthday",
+  seoTitle: "40th Birthday Roll-up Banner Design",
+  seoDescription: "Personalised 40th Birthday roll-up banner design.",
+  intro: "A personalised 40th Birthday roll-up banner design.",
+  secondaryOccasions: [],
+  palette: ["Black", "Gold"],
+  seoIndex: true,
+  hiddenFromListings: false,
+  canonicalDesignId: null,
+  canonicalPublicSlug: null,
 };
 
 const props = {
-  params: Promise.resolve({ slug: "black-and-gold-40th-birthday-roll-up-a1b2c3d4" }),
+  params: Promise.resolve({ slug: "40th-birthday-a1b2c3d4" }),
   searchParams: Promise.resolve({ from: "/design-gallery?occasion=birthday&page=2" }),
 };
 
@@ -74,7 +88,7 @@ describe("public design detail page", () => {
     state.market = "NZ";
     state.resolvedMarket = null;
     findByPublicSlug.mockResolvedValue(design);
-    list.mockResolvedValue({ items: [], total: 0, page: 1, pageCount: 1, pageSize: 5 });
+    listRelated.mockResolvedValue([]);
   });
 
   it("uses the selected Australia market for price and configuration destination", async () => {
@@ -183,13 +197,16 @@ describe("public design detail page", () => {
   });
 
   it("renders related public artworks without duplicating the current design", async () => {
-    list.mockResolvedValue({
-      items: [design, { ...design, id: `e5f6a7b8${"e".repeat(56)}`, subOccasion: "50th Birthday", altText: "50th birthday roll-up banner" }],
-      total: 2,
-      page: 1,
-      pageCount: 1,
-      pageSize: 5,
-    });
+    listRelated.mockResolvedValue([
+      {
+        ...design,
+        id: `e5f6a7b8${"e".repeat(56)}`,
+        publicSlug: "50th-birthday-e5f6a7b8",
+        displayTitle: "50th Birthday",
+        subOccasion: "50th-birthday",
+        altText: "50th birthday roll-up banner",
+      },
+    ]);
     render(await DesignDetailPage(props));
 
     const related = screen.getByRole("region", { name: "Related designs" });

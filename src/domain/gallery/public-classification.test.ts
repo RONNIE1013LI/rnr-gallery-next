@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getPublicDesignClassification,
+  getPublicDesignClassificationByPublicSlug,
   publicClassificationStats,
 } from "./public-classification";
 
@@ -8,9 +9,9 @@ describe("public Gallery classification overlay", () => {
   it("freezes one classification record for every current live Design", () => {
     expect(publicClassificationStats).toEqual({
       records: 357,
-      indexable: 350,
-      hidden: 7,
-      canonicalDuplicates: 6,
+      indexable: 349,
+      hidden: 8,
+      canonicalDuplicates: 7,
     });
   });
 
@@ -33,6 +34,17 @@ describe("public Gallery classification overlay", () => {
       seoIndex: false,
       hiddenFromListings: true,
       canonicalPublicSlug: "5th-birthday-88e63ad4",
+    });
+  });
+
+  it("retains a deleted near-duplicate as a historical canonical alias", () => {
+    expect(getPublicDesignClassificationByPublicSlug(
+      "canvas-design-example-wedding-362b2e68",
+    )).toMatchObject({
+      id: "362b2e68ca7f22db30c8fbefb049f037ef3f79f4a713fcd8029b660956dd3330",
+      seoIndex: false,
+      hiddenFromListings: true,
+      canonicalPublicSlug: "canvas-design-example-wedding-553ad993",
     });
   });
 
