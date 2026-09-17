@@ -207,7 +207,7 @@
 }
 
 .galleryCardBody h2 {
-  font-family: var(--font-display);
+  font-family: var(--font-body);
   font-size: 1.35rem;
   font-weight: 500;
 }
