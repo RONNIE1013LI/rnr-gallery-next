@@ -7,6 +7,7 @@ import {
   schemaFromRegistry,
 } from "@/domain/catalogue/product-registry";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
+import { buildPublicMetadata } from "@/server/seo/metadata";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { ConfigurePageContent } from "@/app/products/[slug]/configure/page-content";
@@ -35,8 +36,18 @@ function getAucklandOrderDate(): string {
 export async function generateMetadata({ params }: ConfigurePageProps): Promise<Metadata> {
   const { registry } = await getSafePublicProductRegistry();
   const product = getRegistryProductBySlug(registry, (await params).slug);
+  if (!product) {
+    return { title: "Product not found", robots: { index: false, follow: false } };
+  }
   return {
-    title: product ? `Create ${product.title} for Australia` : "Product not found",
+    ...buildPublicMetadata({
+      title: `Create ${product.title} for Australia`,
+      description: product.summary,
+      path: `/au/products/${product.slug}/configure`,
+      image: product.image.src,
+      imageAlt: product.image.alt,
+    }),
+    // Share previews need product metadata; configurators must remain out of search.
     robots: { index: false, follow: false },
   };
 }
