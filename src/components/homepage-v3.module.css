@@ -234,6 +234,12 @@
   user-select: none;
 }
 
+.heroExperienceDetailImage {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
 .heroExperience::after {
   position: absolute;
   inset: 0;
