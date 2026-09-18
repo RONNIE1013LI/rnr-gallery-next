@@ -29,9 +29,9 @@ const timingAnswer = `${deliveryCopy.production} Allow time for delivery as well
 
 export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, OccasionLandingContent>> = {
   "birthday-banners": {
-    path: "/birthday-banners", label: "Birthday Banners", title: "Custom Birthday Banners NZ",
+    path: "/birthday-banners", label: "Birthday Banners", title: "Personalised Birthday Banners With Photos NZ",
     heading: "Custom Birthday Banners Designed From Your Photos",
-    description: "Explore real birthday banner designs and choose a personalised wall or roll-up banner with your photos, wording and a proof before printing.",
+    description: "Create personalised birthday banners with photos, custom wording and your choice of wall or roll-up format, with a proof before printing in New Zealand.",
     introduction: "Make your photos, name and birthday message the centre of the celebration. Explore finished designs across different ages, then choose a banner format for your venue.",
     query: parseGalleryQuery({ occasion: "birthday", design_type: bannerTypes }),
     artworkHeading: "Birthday designs for different milestones",
@@ -84,9 +84,9 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     path: "/memorial-banners", label: "Memorial Banners", title: "Memorial & Funeral Banners NZ",
     heading: "Custom Memorial & Funeral Banners",
     description: "Explore memorial and funeral banner examples. Choose a portrait display, wall banner or grave cover, with remembrance wording and a proof before printing.",
-    introduction: "A practical place to choose a photo display for a funeral, remembrance gathering or celebration of life. Supply the portrait, dates and wording you would like the design to include.",
+    introduction: "A practical place to choose a funeral banner, memorial photo display or grave cover for a remembrance gathering or celebration of life. Supply the portrait, dates and wording you would like the design to include.",
     query: parseGalleryQuery({ occasion: "memorial", design_type: [...bannerTypes, "grave-cover"] }),
-    artworkHeading: "Memorial designs and remembrance formats", productSlugs: [...bannerProducts, "grave-cover"], cta: "Start Your Memorial Banner",
+    artworkHeading: "Memorial designs and remembrance formats", productSlugs: ["digital-oil-painting-banner", ...bannerProducts, "grave-cover"], cta: "Start Your Memorial Banner",
     guidanceHeading: "Prepare the portrait and wording for review",
     guidance: ["Choose one main portrait, or send additional family photos with instructions about their placement. Include names and dates in the exact form you want printed.", "You may supply scripture, a remembrance message and your own background or cultural references. A roll-up or wall banner is a display format; a grave cover is a separate remembrance option. Confirm any close event deadline with the team."],
     faq: [
