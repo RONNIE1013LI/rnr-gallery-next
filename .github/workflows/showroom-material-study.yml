@@ -1,0 +1,84 @@
+name: Showroom material study
+on:
+  push:
+    branches: [build/showroom-material-study]
+    paths: [.github/workflows/showroom-material-study.yml]
+permissions:
+  contents: write
+jobs:
+  materials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            src/components/showroom
+            public/media/showroom
+            AGENTS.md
+          sparse-checkout-cone-mode: true
+      - name: Fetch and validate CC0 material maps
+        run: |
+          python -m pip install --quiet pillow
+          python - <<'PY'
+          import urllib.request,json,pathlib,hashlib,io
+          from PIL import Image
+          root=pathlib.Path('public/media/showroom/materials');root.mkdir(parents=True,exist_ok=True)
+          def get(url):
+            r=urllib.request.Request(url,headers={'User-Agent':'RNRGallery-ShowroomMaterialStudy/1.0'})
+            return urllib.request.urlopen(r,timeout=50).read()
+          catalogue=json.loads(get('https://api.polyhaven.com/assets?t=textures'))
+          candidates=[k for k in catalogue if any(t in k for t in ['travertine','marble','plaster','wood_table','fabric','linen'])]
+          print('CANDIDATES:',candidates)
+          select={
+            'plaster':next(k for k in ['plastered_wall','plastered_wall_02','plastered_wall_05'] if k in catalogue),
+            'stone':next((k for k in catalogue if 'travertine' in k),next(k for k in ['marble_01','marble_02','concrete_floor_02'] if k in catalogue)),
+            'wood':next(k for k in ['wood_table_001','wood_table_002','wood_planks_grey'] if k in catalogue),
+            'fabric':next((k for k in catalogue if 'fabric' in k and 'pattern' not in k), 'plastered_wall')
+          }
+          manifest=[]
+          for label,asset in select.items():
+            data=json.loads(get('https://api.polyhaven.com/files/'+asset))
+            for kind,names in [('color',['diff','Diffuse']),('normal',['nor_gl','Normal']),('roughness',['rough','Rough'])]:
+              key=next((n for n in names if n in data),None)
+              if key is None:continue
+              sizes=data[key]; size='1k' if '1k' in sizes else next(iter(sizes))
+              formats=sizes[size];fmt='jpg' if 'jpg' in formats else ('png' if 'png' in formats else next(iter(formats)))
+              url=formats[fmt]['url'];raw=get(url);im=Image.open(io.BytesIO(raw)).convert('RGB');im.thumbnail((1024,1024),Image.Resampling.LANCZOS)
+              dst=root/(label+'-'+kind+'.webp');im.save(dst,'WEBP',quality=88 if kind=='color' else 93,method=6)
+              manifest.append({'asset':asset,'kind':kind,'source':url,'page':'https://polyhaven.com/a/'+asset,'license':'CC0-1.0','path':str(dst),'sha256':hashlib.sha256(dst.read_bytes()).hexdigest(),'bytes':dst.stat().st_size})
+              print(label,kind,asset,dst.stat().st_size)
+          hdri='studio_small_09'
+          hdrdata=json.loads(get('https://api.polyhaven.com/files/'+hdri));url=hdrdata['hdri']['1k']['hdr']['url'];raw=get(url)
+          assert raw[:10].startswith(b'#?RADIANCE') or raw[:6]==b'#?RGBE'
+          dst=root/'studio.hdr';dst.write_bytes(raw)
+          manifest.append({'asset':hdri,'kind':'HDRI','source':url,'page':'https://polyhaven.com/a/'+hdri,'license':'CC0-1.0','path':str(dst),'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw)})
+          (root/'sources.json').write_text(json.dumps(manifest,indent=2))
+          (root/'LICENSE.txt').write_text('Material and HDRI source assets by Poly Haven, CC0 1.0.\nhttps://polyhaven.com/license\nSee sources.json for exact asset sources and processed checksums.\n')
+          PY
+      - name: Save only validated material files on study branch
+        run: |
+          test "${GITHUB_REF_NAME}" = 'build/showroom-material-study'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add public/media/showroom/materials
+          git commit -m 'Add validated CC0 surface maps for isolated showroom material study'
+          git push origin HEAD:build/showroom-material-study
+      - name: Package installed-version renderer support
+        run: |
+          mkdir -p verification/three
+          cd verification/three
+          npm pack three@0.180.0 --silent
+          tar -xzf three-0.180.0.tgz
+          rm three-0.180.0.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: showroom-pbr-material-study
+          retention-days: 2
+          path: |
+            public/media/showroom/materials
+            src/components/showroom
+            verification/three/package/examples/jsm
+            verification/three/package/build/three.module.js
+            verification/three/package/build/three.core.js
+            verification/three/package/LICENSE
