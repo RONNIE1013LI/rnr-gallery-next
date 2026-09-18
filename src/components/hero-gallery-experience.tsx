@@ -148,6 +148,7 @@ export function HeroGalleryExperience({
           returnToRoom();
         }
       }}
+      role="group"
       aria-label="Interactive R&R Gallery showroom"
     >
       <div
