@@ -1,0 +1,3 @@
+Material and HDRI source assets by Poly Haven, CC0 1.0.
+https://polyhaven.com/license
+See sources.json for exact asset sources and processed checksums.

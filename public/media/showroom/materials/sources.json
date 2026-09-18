@@ -1,0 +1,132 @@
+[
+  {
+    "asset": "plastered_wall",
+    "kind": "color",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/plastered_wall/plastered_wall_diff_1k.jpg",
+    "page": "https://polyhaven.com/a/plastered_wall",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/plaster-color.webp",
+    "sha256": "af5708998d0fe610eeee11a3acf01187fe226c7d8a6cbf0f2c6741a21f2ef2f4",
+    "bytes": 144690
+  },
+  {
+    "asset": "plastered_wall",
+    "kind": "normal",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/plastered_wall/plastered_wall_nor_gl_1k.jpg",
+    "page": "https://polyhaven.com/a/plastered_wall",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/plaster-normal.webp",
+    "sha256": "f354a04bd0541555a8a1be562156ce52d73ebce5a61975cf13d1cb019fdcf7f5",
+    "bytes": 496654
+  },
+  {
+    "asset": "plastered_wall",
+    "kind": "roughness",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/plastered_wall/plastered_wall_rough_1k.jpg",
+    "page": "https://polyhaven.com/a/plastered_wall",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/plaster-roughness.webp",
+    "sha256": "da6a8d42a38f33d89540a029b32259df99d31cecdef62cf63c85bf2c458bf3c8",
+    "bytes": 60838
+  },
+  {
+    "asset": "marble_01",
+    "kind": "color",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/marble_01/marble_01_diff_1k.jpg",
+    "page": "https://polyhaven.com/a/marble_01",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/stone-color.webp",
+    "sha256": "3546b304a5dd0d9ed5f85f79407a63e82c8e08d93c0cee1dfa601e8349f98b99",
+    "bytes": 90070
+  },
+  {
+    "asset": "marble_01",
+    "kind": "normal",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/marble_01/marble_01_nor_gl_1k.jpg",
+    "page": "https://polyhaven.com/a/marble_01",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/stone-normal.webp",
+    "sha256": "536d07d04fa971800e6ae3bbc13be8d6be065243f468696dd761e1253068a2b9",
+    "bytes": 17010
+  },
+  {
+    "asset": "marble_01",
+    "kind": "roughness",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/marble_01/marble_01_rough_1k.jpg",
+    "page": "https://polyhaven.com/a/marble_01",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/stone-roughness.webp",
+    "sha256": "3726127806134133654a4d4fe4edb110b2a9582284765b69a4d2f610d2938e27",
+    "bytes": 31404
+  },
+  {
+    "asset": "wood_table_001",
+    "kind": "color",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_table_001/wood_table_001_diff_1k.jpg",
+    "page": "https://polyhaven.com/a/wood_table_001",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/wood-color.webp",
+    "sha256": "96348c45d8ba7ba0566105526a33692c0894ebe131044ea7a71c4caa399bed64",
+    "bytes": 176592
+  },
+  {
+    "asset": "wood_table_001",
+    "kind": "normal",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_table_001/wood_table_001_nor_gl_1k.jpg",
+    "page": "https://polyhaven.com/a/wood_table_001",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/wood-normal.webp",
+    "sha256": "3ac769ec990627b67c94170d30ebf139bcea0b54532e62ed0856034d12992177",
+    "bytes": 38308
+  },
+  {
+    "asset": "wood_table_001",
+    "kind": "roughness",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/wood_table_001/wood_table_001_rough_1k.jpg",
+    "page": "https://polyhaven.com/a/wood_table_001",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/wood-roughness.webp",
+    "sha256": "4d833d022e7b956da5ce0d7e48ead91b668678c22df7f4ea398e86bea50d046b",
+    "bytes": 261672
+  },
+  {
+    "asset": "denim_fabric",
+    "kind": "color",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/denim_fabric/denim_fabric_diff_1k.jpg",
+    "page": "https://polyhaven.com/a/denim_fabric",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/fabric-color.webp",
+    "sha256": "045501d9b9299496f6d7ea4a4da15c009e18989435934abecf7d6a62e3687d65",
+    "bytes": 511294
+  },
+  {
+    "asset": "denim_fabric",
+    "kind": "normal",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/denim_fabric/denim_fabric_nor_gl_1k.jpg",
+    "page": "https://polyhaven.com/a/denim_fabric",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/fabric-normal.webp",
+    "sha256": "6e2682da87302cc7ee1030c3e1496e84caf90056beae7aa514d289a1c712e8f2",
+    "bytes": 227934
+  },
+  {
+    "asset": "denim_fabric",
+    "kind": "roughness",
+    "source": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/denim_fabric/denim_fabric_rough_1k.jpg",
+    "page": "https://polyhaven.com/a/denim_fabric",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/fabric-roughness.webp",
+    "sha256": "937eac866b223772a9bec5797d4f4ab145e19c638ce9f0bde03c4e37167ba979",
+    "bytes": 384440
+  },
+  {
+    "asset": "studio_small_09",
+    "kind": "HDRI",
+    "source": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr",
+    "page": "https://polyhaven.com/a/studio_small_09",
+    "license": "CC0-1.0",
+    "path": "public/media/showroom/materials/studio.hdr",
+    "sha256": "e7cfda5f4e98e623db12b8bfd0184e048488e4855d9c83e2751fb44a32e80c45",
+    "bytes": 1615248
+  }
+]
