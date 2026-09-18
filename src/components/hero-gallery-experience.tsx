@@ -167,6 +167,18 @@ export function HeroGalleryExperience({
           loading="eager"
           fetchPriority="high"
         />
+        {focus !== "room" ? (
+          <Image
+            className={`${styles.heroExperienceImage} ${styles.heroExperienceDetailImage}`}
+            src={src}
+            alt=""
+            aria-hidden="true"
+            width={4608}
+            height={2592}
+            sizes="(max-width: 760px) 180vw, 2200px"
+            quality={82}
+          />
+        ) : null}
       </div>
 
       {focus === "room" ? (
