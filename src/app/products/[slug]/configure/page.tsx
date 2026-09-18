@@ -72,7 +72,7 @@ export async function generateMetadata({ params }: ConfigurePageProps): Promise<
       title: `Create ${product.title}`,
       description: product.summary,
       path: `/products/${product.slug}/configure`,
-      image: `/social-images/${product.slug}`,
+      image: `/social-images/${product.slug}.jpg`,
       imageAlt: product.image.alt,
       imageWidth: 1200,
       imageHeight: 630,
