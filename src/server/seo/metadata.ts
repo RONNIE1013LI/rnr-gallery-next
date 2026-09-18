@@ -7,6 +7,9 @@ type PublicMetadataInput = Readonly<{
   path: string;
   image: string;
   imageAlt: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageType?: string;
   socialTitle?: string;
   includeMarketAlternates?: boolean;
 }>;
@@ -51,6 +54,9 @@ export function buildPublicMetadata({
   path,
   image,
   imageAlt,
+  imageWidth,
+  imageHeight,
+  imageType,
   socialTitle,
   includeMarketAlternates = false,
 }: PublicMetadataInput): Metadata {
@@ -70,7 +76,13 @@ export function buildPublicMetadata({
       title: shareTitle,
       description,
       url: canonical,
-      images: [{ url: socialImage, alt: imageAlt }],
+      images: [{
+        url: socialImage,
+        alt: imageAlt,
+        ...(imageWidth ? { width: imageWidth } : {}),
+        ...(imageHeight ? { height: imageHeight } : {}),
+        ...(imageType ? { type: imageType } : {}),
+      }],
     },
     twitter: {
       card: "summary_large_image",
