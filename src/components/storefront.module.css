@@ -1819,7 +1819,11 @@
 
 .designDetailCopy h1 {
   margin-top: 0.8rem;
+  font-family: var(--font-display);
   font-size: var(--type-purchase);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
 }
 
 .designDetailFacts {
