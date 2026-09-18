@@ -192,6 +192,204 @@
   object-fit: contain;
 }
 
+.heroExperience {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #e7dfd4;
+  perspective: 75rem;
+  touch-action: pan-y;
+}
+
+.heroExperienceStage {
+  --look-x: 0px;
+  --look-y: 0px;
+  --look-rotate-x: 0deg;
+  --look-rotate-y: 0deg;
+  position: absolute;
+  inset: -1px;
+  transform-origin: var(--camera-origin-x) var(--camera-origin-y);
+  transform:
+    translate3d(
+      calc(var(--camera-shift-x) + var(--look-x)),
+      calc(var(--camera-shift-y) + var(--look-y)),
+      0
+    )
+    scale(var(--camera-scale))
+    rotateX(var(--look-rotate-x))
+    rotateY(var(--look-rotate-y));
+  transition: transform 760ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  backface-visibility: hidden;
+  will-change: transform;
+  pointer-events: none;
+}
+
+.heroExperienceImage {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  user-select: none;
+}
+
+.heroExperience::after {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(180deg, rgb(13 43 37 / 0%) 72%, rgb(13 43 37 / 14%) 100%),
+    radial-gradient(circle at 50% 48%, transparent 58%, rgb(13 43 37 / 6%) 100%);
+  content: "";
+  pointer-events: none;
+}
+
+.heroHotspot {
+  position: absolute;
+  z-index: 3;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  color: white;
+  background: transparent;
+  cursor: zoom-in;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.heroHotspotWall {
+  top: 13.5%;
+  left: 1.5%;
+  width: 52%;
+  height: 51%;
+}
+
+.heroHotspotCanvas {
+  top: 25.5%;
+  left: 55.2%;
+  width: 25%;
+  height: 36%;
+}
+
+.heroHotspotRollup {
+  top: 20.5%;
+  left: 81.7%;
+  width: 15.8%;
+  height: 68%;
+}
+
+.heroHotspot span {
+  position: absolute;
+  left: 50%;
+  bottom: 0.625rem;
+  max-width: calc(100% - 1rem);
+  padding: 0.375rem 0.625rem;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 42%);
+  border-radius: 999px;
+  color: white;
+  background: rgb(13 43 37 / 76%);
+  box-shadow: 0 0.25rem 0.875rem rgb(13 43 37 / 18%);
+  font-size: 0.6875rem;
+  line-height: 1;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 0.25rem);
+  transition: opacity 160ms ease, transform 160ms ease;
+  backdrop-filter: blur(0.4rem);
+  pointer-events: none;
+}
+
+.heroHotspot:focus-visible {
+  outline: 3px solid var(--v3-pale-gold);
+  outline-offset: 0.2rem;
+  border-color: rgb(255 255 255 / 72%);
+  background: rgb(255 255 255 / 5%);
+}
+
+.heroHotspot:focus-visible span {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.heroExperienceHint,
+.heroExperienceToolbar {
+  position: absolute;
+  z-index: 4;
+  right: 1rem;
+  bottom: 1rem;
+  min-height: 2rem;
+  border: 1px solid rgb(255 255 255 / 36%);
+  border-radius: 999px;
+  color: white;
+  background: rgb(13 43 37 / 70%);
+  box-shadow: 0 0.35rem 1.1rem rgb(13 43 37 / 15%);
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  font-weight: 650;
+  backdrop-filter: blur(0.5rem);
+}
+
+.heroExperienceHint {
+  padding: 0.5rem 0.75rem;
+  display: inline-flex;
+  align-items: center;
+}
+
+.heroExperienceHintMobile {
+  display: none;
+}
+
+.heroExperienceToolbar {
+  padding: 0.25rem 0.3rem 0.25rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.heroExperienceToolbar > span {
+  white-space: nowrap;
+}
+
+.heroExperienceToolbar button {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.75rem;
+  border: 0;
+  border-radius: 999px;
+  color: var(--v3-forest-deep);
+  background: rgb(255 253 249 / 94%);
+  font: inherit;
+  font-weight: 750;
+  cursor: zoom-out;
+}
+
+.heroExperienceToolbar button:focus-visible {
+  outline: 3px solid var(--v3-pale-gold);
+  outline-offset: 0.125rem;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .heroHotspot:hover {
+    border-color: rgb(255 255 255 / 58%);
+    background: rgb(255 255 255 / 4%);
+    box-shadow:
+      inset 0 0 0 1px rgb(13 43 37 / 12%),
+      0 0 1.5rem rgb(255 255 255 / 13%);
+  }
+
+  .heroHotspot:hover span {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 .artwork {
   position: relative;
   isolation: isolate;
@@ -586,6 +784,18 @@
     margin-inline: calc(50% - 50vw);
   }
   .heroImage { border-radius: 0; }
+  .heroExperienceHint {
+    right: 0.625rem;
+    bottom: 0.625rem;
+    max-width: calc(100% - 1.25rem);
+  }
+  .heroExperienceHintDesktop { display: none; }
+  .heroExperienceHintMobile { display: inline; }
+  .heroExperienceToolbar {
+    right: 0.625rem;
+    bottom: 0.625rem;
+  }
+  .heroHotspot span { display: none; }
   .lede { font-size: 1rem; }
   .heroActions { display: grid; gap: 0.875rem; }
   .heroActions .button { width: 100%; }
@@ -680,6 +890,13 @@
   .page *, .page *::before, .page *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .heroExperienceStage {
+    --look-x: 0px !important;
+    --look-y: 0px !important;
+    --look-rotate-x: 0deg !important;
+    --look-rotate-y: 0deg !important;
   }
 }
 
