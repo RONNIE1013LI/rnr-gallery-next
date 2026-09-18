@@ -6,6 +6,8 @@ import { generateMetadata as generateHomeMetadata } from "./page";
 import { generateMetadata as generateShopMetadata } from "./shop/page";
 import { generateMetadata as generateCanvasMetadata } from "./canvas/page";
 import { generateMetadata as generateBannersMetadata } from "./banners/page";
+import { generateMetadata as generateConfigureMetadata } from "./products/[slug]/configure/page";
+import { generateMetadata as generateAuConfigureMetadata } from "./au/products/[slug]/configure/page";
 import { metadata as galleryMetadata } from "./design-gallery/page";
 import { metadata as howItWorksMetadata } from "./how-it-works/page";
 import { metadata as aboutMetadata } from "./about/page";
@@ -176,17 +178,81 @@ describe("public SEO routes", () => {
     ]));
   });
 
-  it("keeps useful search, sharing and user-triggered crawlers on the public policy", () => {
+  it("keeps search engines and user-triggered fetchers on the default public policy", () => {
     const robots = buildRobots(new URL("https://shop.example.test"));
     const rules = Array.isArray(robots.rules) ? robots.rules : [robots.rules];
 
     for (const userAgent of [
-      "facebookexternalhit",
       "meta-externalfetcher",
       "Googlebot",
       "Bingbot",
     ]) {
-      expect(rules.some((rule) => rule.userAgent === userAgent)).toBe(false);
+      expect(rules.some((rule) => {
+        const agents = Array.isArray(rule.userAgent) ? rule.userAgent : [rule.userAgent];
+        return agents.includes(userAgent);
+      })).toBe(false);
+    }
+  });
+
+  it.each(["facebookexternalhit", "Facebot"])("allows %s product previews without exposing private crawl paths", (userAgent) => {
+    const robots = buildRobots(getSiteUrl());
+    const rules = Array.isArray(robots.rules) ? robots.rules : [robots.rules];
+    const rule = rules.find((entry) => {
+      const agents = Array.isArray(entry.userAgent) ? entry.userAgent : [entry.userAgent];
+      return agents.includes(userAgent);
+    });
+
+    expect(rule).toMatchObject({
+      allow: "/",
+      disallow: expect.arrayContaining([
+        "/admin/", "/account/", "/api/", "/cart", "/checkout",
+        "/forms/", "/order-system", "/orders/", "/pay/",
+      ]),
+    });
+    expect(rule?.disallow).not.toContain("/products/*/configure");
+    expect(rule?.disallow).not.toContain("/au/products/*/configure");
+  });
+
+  it.each(defaultProductRegistry.products.filter((product) => product.active))(
+    "gives $slug NZ and AU configurators product-specific previews while keeping noindex",
+    async (product) => {
+      for (const [prefix, generateMetadata] of [
+        ["", generateConfigureMetadata],
+        ["/au", generateAuConfigureMetadata],
+      ] as const) {
+        const metadata = await generateMetadata({
+          params: Promise.resolve({ slug: product.slug }),
+          searchParams: Promise.resolve({ design: "not-for-social-metadata", size: "test-size" }),
+        });
+        const canonical = `https://rnrgallery.com${prefix}/products/${product.slug}/configure`;
+        const image = new URL(product.image.src, getSiteUrl()).toString();
+        const title = `Create ${product.title}${prefix ? " for Australia" : ""}`;
+
+        expect(metadata.title).toBe(title);
+        expect(metadata.description).toBe(product.summary);
+        expect(metadata.alternates).toEqual({ canonical });
+        expect(metadata.openGraph).toMatchObject({
+          type: "website", title, description: product.summary, url: canonical,
+          images: [{ url: image, alt: product.image.alt }],
+        });
+        expect(metadata.twitter).toMatchObject({
+          card: "summary_large_image", title, description: product.summary, images: [image],
+        });
+        expect(metadata.robots).toEqual({ index: false, follow: false });
+        expect(JSON.stringify(metadata)).not.toContain("not-for-social-metadata");
+      }
+    },
+  );
+
+  it("keeps missing product configurators unindexable in both markets", async () => {
+    for (const generateMetadata of [generateConfigureMetadata, generateAuConfigureMetadata]) {
+      const metadata = await generateMetadata({
+        params: Promise.resolve({ slug: "product-that-does-not-exist" }),
+        searchParams: Promise.resolve({}),
+      });
+      expect(metadata).toEqual({
+        title: "Product not found", robots: { index: false, follow: false },
+      });
     }
   });
 

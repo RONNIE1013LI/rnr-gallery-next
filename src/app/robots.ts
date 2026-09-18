@@ -11,6 +11,9 @@ const privateCrawlPaths = [
   "/order-system",
   "/orders/",
   "/pay/",
+];
+
+const configureCrawlPaths = [
   "/products/*/configure",
   "/au/products/*/configure",
 ];
@@ -21,6 +24,13 @@ export function buildRobots(siteUrl: URL): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
+        disallow: [...privateCrawlPaths, ...configureCrawlPaths],
+      },
+      {
+        // User-shared configurator links need previews, not search indexing.
+        // Keep every private/transactional path excluded for these agents too.
+        userAgent: ["facebookexternalhit", "Facebot"],
+        allow: "/",
         disallow: privateCrawlPaths,
       },
       {
@@ -30,7 +40,7 @@ export function buildRobots(siteUrl: URL): MetadataRoute.Robots {
       {
         userAgent: "meta-webindexer",
         allow: "/",
-        disallow: ["/_next/image", ...privateCrawlPaths],
+        disallow: ["/_next/image", ...privateCrawlPaths, ...configureCrawlPaths],
       },
     ],
     sitemap: new URL("/sitemap.xml", siteUrl).toString(),
