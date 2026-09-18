@@ -224,7 +224,7 @@ describe("public SEO routes", () => {
           searchParams: Promise.resolve({ design: "not-for-social-metadata", size: "test-size" }),
         });
         const canonical = `https://rnrgallery.com${prefix}/products/${product.slug}/configure`;
-        const image = new URL(`/social-images/${product.slug}`, getSiteUrl()).toString();
+        const image = new URL(`/social-images/${product.slug}.jpg`, getSiteUrl()).toString();
         const title = `Create ${product.title}${prefix ? " for Australia" : ""}`;
 
         expect(metadata.title).toBe(title);
