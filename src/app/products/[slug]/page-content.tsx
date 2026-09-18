@@ -58,10 +58,34 @@ export function getProductPagePresentation(product: Product): ProductPagePresent
   }
   if (product.key === "digital-oil-painting-banner") {
     return {
-      title: "Custom Memorial & Tribute Banner",
-      summary: "A personalised memorial or funeral banner created from your photos and remembrance wording, with custom artwork or a painterly portrait style for a celebration of life.",
+      title: "Custom Memorial & Funeral Photo Banner",
+      summary: "A personalised memorial or funeral photo banner created from your portraits, names, dates and remembrance wording, with a proof before printing.",
       eyebrow: "Memorial banners",
       prioritizeMobileAction: true,
+    };
+  }
+  if (product.key === "digital-oil-painting-canvas") {
+    return {
+      title: "Digital Oil Painting Portrait Canvas",
+      summary: "Turn your photos into a personalised digital oil painting portrait on canvas for family, memorial and keepsake artwork in New Zealand.",
+      eyebrow: "Photo to painting canvas",
+      prioritizeMobileAction: false,
+    };
+  }
+  if (product.key === "grave-cover") {
+    return {
+      title: "Custom Grave Covers NZ",
+      summary: "Create a personalised 100 × 200 cm grave cover with photos, names, dates and memorial artwork, finished with reinforced eyelets.",
+      eyebrow: "Personalised grave covers",
+      prioritizeMobileAction: false,
+    };
+  }
+  if (product.key === "roll-up-banner") {
+    return {
+      title: "Personalised Roll-Up Banner NZ",
+      summary: "Create a personalised 85 × 200 cm roll-up banner with your photos and wording, supplied with stand, carry bag, pegs and box.",
+      eyebrow: "Custom roll-up banners",
+      prioritizeMobileAction: false,
     };
   }
   return {
