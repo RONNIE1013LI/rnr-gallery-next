@@ -14,8 +14,12 @@ export async function GET(
   _request: Request,
   { params }: SocialImageRouteProps,
 ) {
+  const requestedSlug = (await params).slug;
+  const productSlug = requestedSlug.endsWith(".jpg")
+    ? requestedSlug.slice(0, -4)
+    : requestedSlug;
   const { registry } = await getSafePublicProductRegistry();
-  const product = getRegistryProductBySlug(registry, (await params).slug);
+  const product = getRegistryProductBySlug(registry, productSlug);
   if (!product) {
     return new Response("Product not found", {
       status: 404,
@@ -39,7 +43,7 @@ export async function GET(
       fit: "contain",
       background: "#f5f5f5",
     })
-    .jpeg({ quality: 88, progressive: true })
+    .jpeg({ quality: 88, progressive: false })
     .toBuffer();
 
   return new Response(new Uint8Array(jpeg), {
@@ -47,6 +51,7 @@ export async function GET(
     headers: {
       "Content-Type": "image/jpeg",
       "Content-Disposition": `inline; filename="${product.slug}-social.jpg"`,
+      "Content-Length": String(jpeg.byteLength),
       "Cache-Control": "public, max-age=86400, s-maxage=604800, stale-while-revalidate=2592000",
       "X-Content-Type-Options": "nosniff",
     },
