@@ -72,11 +72,14 @@ export async function generateMetadata({ params }: ConfigurePageProps): Promise<
       title: `Create ${product.title}`,
       description: product.summary,
       path: `/products/${product.slug}/configure`,
-      image: product.image.src,
+      image: `/social-images/${product.slug}`,
       imageAlt: product.image.alt,
+      imageWidth: 1200,
+      imageHeight: 630,
+      imageType: "image/jpeg",
     }),
-    // Share previews need product metadata; configurators must remain out of search.
-    robots: { index: false, follow: false },
+    // Keep configurators out of search while allowing preview crawlers to fetch the social image.
+    robots: { index: false, follow: true },
   };
 }
 

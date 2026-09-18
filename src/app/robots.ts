@@ -29,7 +29,7 @@ export function buildRobots(siteUrl: URL): MetadataRoute.Robots {
       {
         // User-shared configurator links need previews, not search indexing.
         // Keep every private/transactional path excluded for these agents too.
-        userAgent: ["facebookexternalhit", "Facebot"],
+        userAgent: ["facebookexternalhit", "Facebot", "meta-externalfetcher"],
         allow: "/",
         disallow: privateCrawlPaths,
       },

@@ -178,12 +178,11 @@ describe("public SEO routes", () => {
     ]));
   });
 
-  it("keeps search engines and user-triggered fetchers on the default public policy", () => {
+  it("keeps search engines on the default public policy", () => {
     const robots = buildRobots(new URL("https://shop.example.test"));
     const rules = Array.isArray(robots.rules) ? robots.rules : [robots.rules];
 
     for (const userAgent of [
-      "meta-externalfetcher",
       "Googlebot",
       "Bingbot",
     ]) {
@@ -194,7 +193,7 @@ describe("public SEO routes", () => {
     }
   });
 
-  it.each(["facebookexternalhit", "Facebot"])("allows %s product previews without exposing private crawl paths", (userAgent) => {
+  it.each(["facebookexternalhit", "Facebot", "meta-externalfetcher"])("allows %s product previews without exposing private crawl paths", (userAgent) => {
     const robots = buildRobots(getSiteUrl());
     const rules = Array.isArray(robots.rules) ? robots.rules : [robots.rules];
     const rule = rules.find((entry) => {
@@ -225,7 +224,7 @@ describe("public SEO routes", () => {
           searchParams: Promise.resolve({ design: "not-for-social-metadata", size: "test-size" }),
         });
         const canonical = `https://rnrgallery.com${prefix}/products/${product.slug}/configure`;
-        const image = new URL(product.image.src, getSiteUrl()).toString();
+        const image = new URL(`/social-images/${product.slug}`, getSiteUrl()).toString();
         const title = `Create ${product.title}${prefix ? " for Australia" : ""}`;
 
         expect(metadata.title).toBe(title);
@@ -233,12 +232,18 @@ describe("public SEO routes", () => {
         expect(metadata.alternates).toEqual({ canonical });
         expect(metadata.openGraph).toMatchObject({
           type: "website", title, description: product.summary, url: canonical,
-          images: [{ url: image, alt: product.image.alt }],
+          images: [{
+            url: image,
+            alt: product.image.alt,
+            width: 1200,
+            height: 630,
+            type: "image/jpeg",
+          }],
         });
         expect(metadata.twitter).toMatchObject({
           card: "summary_large_image", title, description: product.summary, images: [image],
         });
-        expect(metadata.robots).toEqual({ index: false, follow: false });
+        expect(metadata.robots).toEqual({ index: false, follow: true });
         expect(JSON.stringify(metadata)).not.toContain("not-for-social-metadata");
       }
     },
