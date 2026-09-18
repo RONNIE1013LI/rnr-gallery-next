@@ -1,0 +1,43 @@
+name: Integrate approved showroom preview
+on:
+  push:
+    branches: [feature/true-3d-showroom]
+    paths: [.github/workflows/showroom-integrate.yml]
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: github.ref == 'refs/heads/feature/true-3d-showroom'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/true-3d-showroom
+      - name: Preserve original homepage as accessible fallback and wrap only its hero
+        shell: python
+        run: |
+          import pathlib
+          path = pathlib.Path('src/components/homepage-v3.tsx')
+          text = path.read_text()
+          marker = '<section className={`${styles.hero} ${styles.sectionPaper}`}>'
+          assert text.count(marker) == 1, 'Unexpected homepage hero structure'
+          assert 'ShowroomHero' not in text, 'Already integrated'
+          start = text.index(marker)
+          end = text.index('</section>', start) + len('</section>')
+          original = text[start:end]
+          replacement = '<ShowroomHero shopHref={shopHref}>\n        ' + original + '\n      </ShowroomHero>'
+          text = 'import { ShowroomHero } from "./showroom/showroom-hero";\n' + text[:start] + replacement + text[end:]
+          path.write_text(text)
+          for file in ['.github/workflows/showroom-assets-import.yml', '.github/workflows/showroom-integrate.yml']:
+              pathlib.Path(file).unlink()
+      - name: Verify camera geometry and safe paths
+        run: node --test src/components/showroom/navigation.test.mjs
+      - name: Commit scoped preview integration and remove one-shot import workflows
+        run: |
+          test "$GITHUB_REF" = refs/heads/feature/true-3d-showroom
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/homepage-v3.tsx .github/workflows/showroom-assets-import.yml .github/workflows/showroom-integrate.yml
+          git commit -m 'Integrate true 3D homepage hero with original accessible fallback'
+          git push origin HEAD:feature/true-3d-showroom
