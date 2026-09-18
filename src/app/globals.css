@@ -993,8 +993,10 @@ a:active {
 }
 
 .site-footer__cookie-trigger {
-  min-height: 44px;
+  min-height: 30px;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
   color: var(--text-on-dark);
   background: transparent;
   border: 0;
