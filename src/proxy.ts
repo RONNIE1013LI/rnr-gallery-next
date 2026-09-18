@@ -47,6 +47,15 @@ function normalizedPathname(pathname: string) {
   return pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
 }
 
+function isSecurityProbePath(pathname: string) {
+  const normalized = normalizedPathname(pathname).toLowerCase();
+  return normalized === "/.env"
+    || normalized.startsWith("/.env.")
+    || normalized === "/.git"
+    || normalized.startsWith("/.git/")
+    || /(?:^|\/)[^/]+\.php(?:\/|$)/.test(normalized);
+}
+
 function isRetiredLegacyPath(pathname: string) {
   const normalized = normalizedPathname(pathname);
   return retiredLegacyPaths.has(normalized.toLowerCase())
@@ -133,6 +142,8 @@ export function proxy(request: NextRequest) {
     return new NextResponse(null, { status: 404, headers: { "X-Robots-Tag": "noindex, nofollow, noarchive" } });
   }
   const pathname = request.nextUrl.pathname;
+  if (isSecurityProbePath(pathname)) return gone();
+
   const isIdentityOrStaffApi = ["/api/auth", "/api/admin", "/api/forms"].some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
