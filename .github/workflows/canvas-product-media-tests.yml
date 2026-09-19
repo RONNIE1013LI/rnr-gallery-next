@@ -1,0 +1,57 @@
+name: Canvas product media release tests
+on:
+  push:
+    branches: [fix/canvas-product-media-20260919]
+permissions:
+  contents: read
+jobs:
+  isolated-tests:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      PRODUCTION_DATABASE_TARGET_FINGERPRINTS: ${{ secrets.PRODUCTION_DATABASE_TARGET_FINGERPRINT }}
+      EXPECTED_PRODUCTION_DATABASE: ${{ secrets.EXPECTED_PRODUCTION_DATABASE }}
+      EXPECTED_PRODUCTION_HOST_FINGERPRINT: ${{ secrets.EXPECTED_PRODUCTION_HOST_FINGERPRINT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Refresh authoritative production reference
+        run: git fetch origin --prune
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Preserve exact source images for visual comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: canvas-product-media-source-images
+          path: |
+            public/media/products/digital-oil-painting-canvas-shop.webp
+            public/canvas-3d/digital-oil-artwork.avif
+          retention-days: 3
+      - name: Canvas product media regressions
+        run: >-
+          npx vitest run 'src/app/products/[slug]/canvas-media.test.tsx'
+          'src/app/products/[slug]/page.test.tsx'
+          src/components/canvas-product-preview.test.tsx
+      - run: npm run typecheck
+      - name: Lint changed application files
+        run: npx eslint 'src/app/products/[slug]/page-content.tsx' 'src/app/products/[slug]/canvas-media.test.tsx'
+      - name: Install isolated test runtime prerequisites
+        run: |
+          brew install postgresql@16 ripgrep
+          echo "$(brew --prefix postgresql@16)/bin" >> "$GITHUB_PATH"
+      - name: Start isolated PostgreSQL
+        run: |
+          initdb -D "$RUNNER_TEMP/canvas-media-postgres" -U postgres -A trust
+          pg_ctl -D "$RUNNER_TEMP/canvas-media-postgres" -l "$RUNNER_TEMP/canvas-media-postgres.log" -o "-h 127.0.0.1 -p 5432 -k $RUNNER_TEMP" -w start
+          echo "RELEASE_TEST_DATABASE_ADMIN_URL=postgresql://postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
+      - run: npm run release:test:isolated
+      - name: Stop isolated PostgreSQL
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/canvas-media-postgres/postmaster.pid" ]; then
+            pg_ctl -D "$RUNNER_TEMP/canvas-media-postgres" -m immediate -w stop
+          fi
