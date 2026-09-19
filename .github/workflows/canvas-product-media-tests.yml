@@ -58,6 +58,23 @@ jobs:
   local-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: canvas_browser_test_only
+          POSTGRES_DB: rnr_gallery_test_canvas_media
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      EXPECTED_PRODUCTION_DATABASE: ${{ secrets.EXPECTED_PRODUCTION_DATABASE }}
+      EXPECTED_PRODUCTION_HOST_FINGERPRINT: ${{ secrets.EXPECTED_PRODUCTION_HOST_FINGERPRINT }}
+      LOCAL_BROWSER_DATABASE_URL: postgresql://postgres:canvas_browser_test_only@127.0.0.1:5432/rnr_gallery_test_canvas_media
+      BETTER_AUTH_URL: http://127.0.0.1:3000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -65,6 +82,12 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Prepare disposable localhost-only application runtime
+        shell: bash
+        run: |
+          TEST_DATABASE_URL="$LOCAL_BROWSER_DATABASE_URL" NODE_ENV=test npm run db:migrate -- --environment test
+          echo "DATABASE_URL=$LOCAL_BROWSER_DATABASE_URL" >> "$GITHUB_ENV"
+          echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - name: Install isolated browser runtime
         run: |
           npm install --prefix "$RUNNER_TEMP/canvas-browser" --no-save --package-lock=false playwright
@@ -77,8 +100,10 @@ jobs:
           node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3000 > artifacts/canvas-product-media/server.log 2>&1 &
           NEXT_PID=$!
           trap 'kill "$NEXT_PID" 2>/dev/null || true' EXIT
-          for attempt in {1..90}; do
-            if curl -fsS --max-time 3 http://127.0.0.1:3000/products/digital-oil-painting-canvas > /dev/null; then break; fi
+          for attempt in {1..30}; do
+            status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:3000/products/digital-oil-painting-canvas) || status=000
+            if [ "$status" = 200 ]; then break; fi
+            if [ "$status" = 500 ]; then cat artifacts/canvas-product-media/server.log; exit 1; fi
             sleep 2
           done
           node --input-type=module <<'NODE'
