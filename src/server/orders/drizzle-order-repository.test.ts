@@ -54,6 +54,80 @@ describe("order item customisation snapshot", () => {
       { position: 3, role: "additional", removeBackground: true, backgroundRemovalIncluded: false },
     ]);
   });
+
+  it("persists each Banner Bundle component main photo and paid background removal", () => {
+    const ids = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const [item] = repriceCart({
+      version: 1,
+      items: [{
+        clientItemId: randomUUID(),
+        productKey: "banner-bundle",
+        sizeKey: "rollup-wall-200x100",
+        peoplePets: 0,
+        photoSubmissionMethod: "upload",
+        designText: "",
+        notes: "",
+        neededDate: "2027-08-10",
+        urgentServiceConfirmed: false,
+        quantity: 1,
+        uploadReferences: ids,
+        bundleComponents: [
+          {
+            componentKey: "roll-up",
+            photoSubmissionMethod: "upload",
+            designText: "Roll-up wording",
+            notes: "",
+            uploadReferences: ids.slice(0, 2),
+            mainPhotoUploadId: ids[1],
+            extraBackgroundRemovalUploadIds: [ids[0]],
+          },
+          {
+            componentKey: "wall-banner",
+            photoSubmissionMethod: "upload",
+            designText: "Wall Banner wording",
+            notes: "",
+            uploadReferences: ids.slice(2),
+            mainPhotoUploadId: ids[2],
+            extraBackgroundRemovalUploadIds: [ids[3]],
+          },
+        ],
+      }],
+      shipping: { country: "NZ", method: "standard" },
+    }).items;
+    const lineAmounts = new Map(item.unitPrice.lines.map((line) => [
+      line.key,
+      line.amountInclGstCents ?? 0,
+    ]));
+
+    expect(buildOrderItemPhotoMetadata(
+      item,
+      ids.map((id, index) => ({ id, originalName: `bundle-${index + 1}.jpg` })),
+    )).toEqual([
+      expect.objectContaining({
+        fileId: ids[0], role: "additional", isMain: false,
+        removeBackground: true, backgroundRemovalIncluded: false,
+        backgroundRemovalChargeInclGstCents:
+          lineAmounts.get("roll-up-background-removals"),
+      }),
+      expect.objectContaining({
+        fileId: ids[1], role: "main", isMain: true,
+        removeBackground: true, backgroundRemovalIncluded: true,
+        backgroundRemovalChargeInclGstCents: 0,
+      }),
+      expect.objectContaining({
+        fileId: ids[2], role: "main", isMain: true,
+        removeBackground: true, backgroundRemovalIncluded: true,
+        backgroundRemovalChargeInclGstCents: 0,
+      }),
+      expect.objectContaining({
+        fileId: ids[3], role: "additional", isMain: false,
+        removeBackground: true, backgroundRemovalIncluded: false,
+        backgroundRemovalChargeInclGstCents:
+          lineAmounts.get("wall-banner-background-removals"),
+      }),
+    ]);
+  });
+
   it("stores null for an ordinary product", () => {
     const [item] = repriceCart({
       version: 1,

@@ -71,6 +71,69 @@ export function buildOrderItemPhotoMetadata(
   item: RepricedCheckoutItem,
   uploads: readonly { id: string; originalName: string | null }[],
 ): readonly OrderItemPhotoMetadata[] {
+  if (item.productKey === "banner-bundle") {
+    if (!item.bundleComponents) {
+      throw new AtomicOrderStateError("Banner Bundle photo selections are missing");
+    }
+    const selections = new Map<string, Readonly<{
+      isMain: boolean;
+      removeBackground: boolean;
+      backgroundRemovalIncluded: boolean;
+      backgroundRemovalChargeInclGstCents: number;
+    }>>();
+    for (const component of item.bundleComponents) {
+      const mainId = component.mainPhotoUploadId;
+      if (component.uploadReferences.length > 0 && !mainId) {
+        throw new AtomicOrderStateError(
+          "Banner Bundle component is missing an explicit main photo",
+        );
+      }
+      const extraIds = new Set(component.extraBackgroundRemovalUploadIds ?? []);
+      const chargeLine = item.unitPrice.lines.find(
+        (line) => line.key === `${component.componentKey}-background-removals`,
+      );
+      if (extraIds.size > 0 && chargeLine?.amountInclGstCents === undefined) {
+        throw new AtomicOrderStateError(
+          "Banner Bundle background removal pricing is missing",
+        );
+      }
+      const charge = extraIds.size > 0
+        ? (chargeLine?.amountInclGstCents ?? 0) / extraIds.size
+        : 0;
+      if (!Number.isSafeInteger(charge) || charge < 0) {
+        throw new AtomicOrderStateError(
+          "Banner Bundle background removal pricing is invalid",
+        );
+      }
+      for (const fileId of component.uploadReferences) {
+        const isMain = mainId === fileId;
+        selections.set(fileId, Object.freeze({
+          isMain,
+          removeBackground: isMain || extraIds.has(fileId),
+          backgroundRemovalIncluded: isMain,
+          backgroundRemovalChargeInclGstCents: extraIds.has(fileId) ? charge : 0,
+        }));
+      }
+    }
+    return Object.freeze(item.uploadReferences.map((fileId, index) => {
+      const selection = selections.get(fileId);
+      if (!selection) {
+        throw new AtomicOrderStateError(
+          "Banner Bundle upload references changed before ordering",
+        );
+      }
+      const upload = uploads.find((candidate) => candidate.id === fileId);
+      return Object.freeze({
+        fileId,
+        url: `/api/admin/uploads/${fileId}`,
+        originalName: upload?.originalName ?? "Uploaded photo",
+        position: index + 1,
+        role: selection.isMain ? "main" as const : "additional" as const,
+        ...selection,
+      });
+    }));
+  }
+
   const mainId = item.mainPhotoUploadId;
   const extraIds = new Set(item.extraBackgroundRemovalUploadIds ?? []);
   const charge = item.unitPrice.lines.find((line) => /background-removals$/.test(line.key))?.amountInclGstCents ?? 0;

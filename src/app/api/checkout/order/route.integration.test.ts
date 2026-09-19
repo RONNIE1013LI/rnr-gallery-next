@@ -13,6 +13,8 @@ import {
 } from "@/server/checkout/session-cookie";
 import {
   checkoutSessions,
+  checkoutUploads,
+  orderItems,
   orders,
   productionJobs,
   websiteAnalyticsConversions,
@@ -50,6 +52,8 @@ function request(token: string, body: unknown) {
 describe("POST /api/checkout/order recovery", () => {
   afterAll(async () => {
     for (const sessionId of sessionIds) {
+      await database.delete(checkoutUploads)
+        .where(eq(checkoutUploads.checkoutSessionId, sessionId));
       const createdOrders = await database
         .select({ id: orders.id })
         .from(orders)
@@ -63,6 +67,129 @@ describe("POST /api/checkout/order recovery", () => {
       await database.delete(checkoutSessions).where(eq(checkoutSessions.id, sessionId));
     }
     await pool.end();
+  });
+
+  it("creates a reviewed Banner Bundle with component photo selections", async () => {
+    const token = createCheckoutSessionToken();
+    const session = await checkoutRepository.createSession({
+      tokenDigest: hashCheckoutSessionToken(token),
+      customerId: null,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+    sessionIds.push(session.id);
+    const uploadIds = Array.from({ length: 4 }, () => randomUUID());
+    for (const [index, id] of uploadIds.entries()) {
+      await checkoutRepository.createUpload({
+        id,
+        checkoutSessionId: session.id,
+        storageKey: `${id}.jpg`,
+        originalName: `bundle-${index + 1}.jpg`,
+        mediaType: "image/jpeg",
+        sizeBytes: 100,
+        sha256: String(index + 1).repeat(64),
+      });
+    }
+    const address = normalizeAddress({
+      country: "NZ",
+      fullName: "Aroha Ngata",
+      building: "",
+      street: "12 Queen Street",
+      suburb: "Auckland Central",
+      region: "Auckland",
+      postcode: "1010",
+      phone: "+64211234567",
+      email: "aroha@example.test",
+    });
+    const cart = repriceCart({
+      version: 1,
+      items: [{
+        clientItemId: randomUUID(),
+        productKey: "banner-bundle",
+        sizeKey: "rollup-wall-200x100",
+        peoplePets: 0,
+        photoSubmissionMethod: "upload",
+        designText: "",
+        notes: "",
+        neededDate: "2026-08-10",
+        urgentServiceConfirmed: false,
+        quantity: 1,
+        uploadReferences: uploadIds,
+        bundleComponents: [
+          {
+            componentKey: "roll-up",
+            photoSubmissionMethod: "upload",
+            designText: "Roll-up wording",
+            notes: "",
+            uploadReferences: uploadIds.slice(0, 2),
+            mainPhotoUploadId: uploadIds[0],
+            extraBackgroundRemovalUploadIds: [uploadIds[1]],
+          },
+          {
+            componentKey: "wall-banner",
+            photoSubmissionMethod: "upload",
+            designText: "Wall Banner wording",
+            notes: "",
+            uploadReferences: uploadIds.slice(2),
+            mainPhotoUploadId: uploadIds[2],
+            extraBackgroundRemovalUploadIds: [uploadIds[3]],
+          },
+        ],
+      }],
+    }, { now });
+    const state = await checkoutRepository.saveCheckoutState(session.id, {
+      cartDigest: cart.cartDigest,
+      cartSnapshot: cart,
+      billingAddress: address,
+      deliveryAddress: address,
+      deliveryMethod: "pickup",
+    });
+    const handler = createCheckoutOrderRoute({
+      repository: orderRepository,
+      orderService: createOrderService({
+        repository: orderRepository,
+        shippingService: createShippingService({ provider: null }),
+        now: () => now,
+        createOrderNumber: () => `RNR-2026-BUNDLE${sessionIds.length}`,
+      }),
+      getOptionalSession: async () => null,
+      trustedOrigin: origin,
+      now: () => now,
+    });
+    const response = await handler(request(token, {
+      idempotencyKey: randomUUID(),
+      checkoutVersion: state!.version,
+      cartDigest: cart.cartDigest,
+      shipping: {
+        method: "pickup",
+        serviceCode: "pickup",
+        amountExGstCents: 0,
+        gstCents: 0,
+        amountInclGstCents: 0,
+        isTest: false,
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    const [createdOrder] = await database.select({ id: orders.id }).from(orders)
+      .where(eq(orders.checkoutSessionId, session.id));
+    const [createdItem] = await database.select({
+      photoMetadata: orderItems.photoMetadata,
+    }).from(orderItems).where(eq(orderItems.orderId, createdOrder.id));
+    expect(createdItem.photoMetadata.map((photo) => ({
+      fileId: photo.fileId,
+      role: photo.role,
+      removeBackground: photo.removeBackground,
+      backgroundRemovalIncluded: photo.backgroundRemovalIncluded,
+    }))).toEqual([
+      { fileId: uploadIds[0], role: "main", removeBackground: true,
+        backgroundRemovalIncluded: true },
+      { fileId: uploadIds[1], role: "additional", removeBackground: true,
+        backgroundRemovalIncluded: false },
+      { fileId: uploadIds[2], role: "main", removeBackground: true,
+        backgroundRemovalIncluded: true },
+      { fileId: uploadIds[3], role: "additional", removeBackground: true,
+        backgroundRemovalIncluded: false },
+    ]);
   });
 
   it("returns the one existing order when the first successful response was lost", async () => {
