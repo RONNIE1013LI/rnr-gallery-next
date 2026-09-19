@@ -4,6 +4,17 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+## Test execution policy
+
+* Default to change-scoped verification. During implementation, run only the unit/integration tests that directly cover the files, modules, and immediate boundaries changed by the current task.
+* Do not automatically start the full repository test suite, `npm run release:test:isolated`, a full PostgreSQL migration/test sweep, or all database integration tests for ordinary application fixes.
+* Full database/release testing is required only when the change modifies database schema or migrations, changes database-runtime semantics that cannot be covered safely by targeted tests, targeted verification reveals a broader regression risk, or the user explicitly requests a full release gate.
+* For ordinary fixes with no schema/migration changes, the normal final verification is: relevant targeted tests -> typecheck -> lint only for affected code when practical -> one Production build before release. Do not rerun the full build or full test suite after every edit.
+* If a full/long-running test suite is already running and the user asks to stop it, stop it immediately. Do not wait for it to finish naturally. Switch to the smallest sufficient targeted test set.
+* Do not describe silence from a long-running full suite as a reason to continue waiting when the user has asked to stop or narrow testing.
+* When choosing between broader and narrower verification, prefer the smallest test set that gives strong evidence for the changed behavior. Expand only when a concrete failure or dependency warrants it.
+* Test commands must be proportional to the change. Documentation/rule-only changes do not require application tests or a Production build solely for validation.
+
 ## Production release policy
 
 * `origin/main` is the only normal Production source, and Vercel Production Branch must remain `main`.
@@ -16,11 +27,11 @@ This version has breaking changes — APIs, conventions, and file structure may 
 * After deployment, verify `origin/main` SHA equals the READY Vercel Production SHA, `githubCommitRef` is `main`, and both Production domains are assigned. Any mismatch is `PRODUCTION DRIFT DETECTED` and requires an immediate stop and report.
 * Do not deploy from a dirty or cross-workstream worktree. Do not include unrelated changes in a release.
 * Production, Preview, Development, and Test must use distinct database targets. A Production database credential must never be shared into Preview, Development, or Test scopes.
-* Production release verification must use session-specific disposable databases created by `npm run release:test:isolated`; a long-lived mutable Test database is not release evidence. Each worktree/session owns its disposable database and must clean it up even after test failure.
+* When a release genuinely requires full database verification under the Test execution policy, use session-specific disposable databases created by `npm run release:test:isolated`; a long-lived mutable Test database is not release evidence. Each worktree/session owns its disposable database and must clean it up even after test failure.
 * Production database writes/migrations, environment changes, DNS/domain changes, and payment/authentication configuration changes require separate explicit approval.
 * Before every Production migration, run the exact-prefix lineage and database-identity checks. Any hash, order, timestamp, catalog, or identity mismatch blocks migration; never bypass or rewrite applied history.
 * Never edit the Production migration journal manually. Read-only audits must not mutate Production. Every Production-affecting change requires a known rollback point before release.
-* The normal release path is: isolated feature worktree -> implementation -> isolated tests -> merge or fast-forward to `origin/main` -> Vercel automatic Production -> `npm run production:guard` -> smoke tests. A feature branch must never become the normal Production trunk.
+* The normal release path is: isolated feature worktree -> implementation -> change-scoped targeted verification -> merge or fast-forward to `origin/main` -> Vercel automatic Production -> `npm run production:guard` -> smoke tests. A feature branch must never become the normal Production trunk.
 
 ## Production browser automation
 
