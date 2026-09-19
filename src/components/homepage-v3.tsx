@@ -326,7 +326,7 @@ export function HomepageV3({
               <Artwork slot={homepageV3ImageSlots.signatureFinishedArtwork} tone="sage" ratio="five-four" people={4} label="FINAL ARTWORK" darkLabel className={styles.resultArt} sizes="(max-width: 420px) calc(100vw - 2rem), (max-width: 760px) calc(100vw - 2.5rem), (max-width: 1080px) 560px, (max-width: 1352px) calc(42.97vw - 5.05rem), 500px" />
               <h3>Finished as a custom family canvas</h3>
               <p>3 source photos · Custom background · Proof approved before print</p>
-              <Link className={styles.textLink} href="/products/digital-oil-painting-canvas">
+              <Link className={styles.textLink} style={{ color: "#ffffff" }} href="/products/digital-oil-painting-canvas">
                 Explore Digital Oil Painting Canvas <Arrow />
               </Link>
             </div>
