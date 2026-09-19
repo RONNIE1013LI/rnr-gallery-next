@@ -13,18 +13,15 @@ const privateCrawlPaths = [
   "/pay/",
 ];
 
-const configureCrawlPaths = [
-  "/products/*/configure",
-  "/au/products/*/configure",
-];
-
 export function buildRobots(siteUrl: URL): MetadataRoute.Robots {
   return {
     rules: [
       {
         userAgent: "*",
         allow: "/",
-        disallow: [...privateCrawlPaths, ...configureCrawlPaths],
+        // Configurators remain crawlable so social preview fetchers never inherit a
+        // generic robots block. Their page metadata is still noindex.
+        disallow: privateCrawlPaths,
       },
       {
         // User-shared configurator links need previews, not search indexing.
@@ -40,7 +37,7 @@ export function buildRobots(siteUrl: URL): MetadataRoute.Robots {
       {
         userAgent: "meta-webindexer",
         allow: "/",
-        disallow: ["/_next/image", ...privateCrawlPaths, ...configureCrawlPaths],
+        disallow: ["/_next/image", ...privateCrawlPaths],
       },
     ],
     sitemap: new URL("/sitemap.xml", siteUrl).toString(),
