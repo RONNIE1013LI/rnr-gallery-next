@@ -1,3 +1,4 @@
+import { ShowroomHero } from "./showroom/showroom-hero";
 import Image from "next/image";
 import Link from "next/link";
 import { FaFacebookMessenger } from "react-icons/fa";
@@ -224,7 +225,8 @@ export function HomepageV3({
         url: getSiteUrl().toString(),
       }} />
 
-      <section className={`${styles.hero} ${styles.sectionPaper}`}>
+      <ShowroomHero shopHref={shopHref}>
+        <section className={`${styles.hero} ${styles.sectionPaper}`}>
         <div className={`${styles.shell} ${styles.heroGrid}`}>
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>CUSTOM STORY &amp; ARTWORK STUDIO</p>
@@ -260,7 +262,8 @@ export function HomepageV3({
             </figure>
           </div>
         </div>
-      </section>
+        </section>
+      </ShowroomHero>
 
       <section className={styles.trustStrip} aria-label="Service reassurance">
         <div className={`${styles.shell} ${styles.trustGrid}`}>
