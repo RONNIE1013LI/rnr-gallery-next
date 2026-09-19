@@ -9,10 +9,11 @@ vi.mock("@/server/gallery/gallery-runtime", () => ({ getGalleryRuntime: vi.fn() 
 const routes = [
   () => import("./birthday-banners/page"), () => import("./1st-birthday-banners/page"),
   () => import("./21st-birthday-banners/page"), () => import("./memorial-banners/page"),
-  () => import("./graduation-banners/page"), () => import("./polynesian-banners/page"),
+  () => import("./graduation-banners/page"), () => import("./anniversary-designs/page"),
+  () => import("./welcome-home-banners/page"), () => import("./polynesian-banners/page"),
 ];
 
-describe("six indexable occasion routes", () => {
+describe("eight indexable occasion routes", () => {
   it("exports distinct metadata using the central canonical origin", async () => {
     const modules = await Promise.all(routes.map((load) => load()));
     const content = Object.values(occasionLandingPages);
@@ -26,7 +27,7 @@ describe("six indexable occasion routes", () => {
       expect(metadata.openGraph).toMatchObject({ url: metadata.alternates?.canonical, title: content[index].title, description: content[index].description });
       titles.add(metadata.title); descriptions.add(metadata.description); headings.add(content[index].heading);
     });
-    expect([titles.size, descriptions.size, headings.size]).toEqual([6, 6, 6]);
+    expect([titles.size, descriptions.size, headings.size]).toEqual([8, 8, 8]);
   });
   it("adds each canonical exactly once to the existing sitemap", () => {
     const sitemap = buildPublicSitemap(defaultProductRegistry, new URL("https://rnrgallery.com"));

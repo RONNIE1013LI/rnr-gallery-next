@@ -167,7 +167,7 @@ describe("ProductPageContent", () => {
     const parsedProduct = JSON.parse(structuredData?.textContent ?? "{}");
     expect(parsedProduct).toMatchObject({
       "@type": "Product",
-      name: "Digital Oil Painting Canvas",
+      name: "Digital Oil Painting Portrait Canvas",
       offers: {
         price: "120.75",
         priceCurrency: "NZD",
@@ -183,7 +183,7 @@ describe("ProductPageContent", () => {
         { position: 2, name: "Shop", item: "https://rnrgallery.com/shop" },
         {
           position: 3,
-          name: "Digital Oil Painting Canvas",
+          name: "Digital Oil Painting Portrait Canvas",
           item: "https://rnrgallery.com/products/digital-oil-painting-canvas",
         },
       ],
@@ -283,8 +283,8 @@ describe("ProductPageContent", () => {
     },
     {
       slug: "digital-oil-painting-banner",
-      heading: "Custom Memorial & Tribute Banner",
-      summary: /memorial or funeral banner.*remembrance wording/i,
+      heading: "Custom Memorial & Funeral Photo Banner",
+      summary: /memorial or funeral photo banner.*remembrance wording/i,
     },
   ])("presents $slug for its commercial search intent without changing the product route", ({
     slug,
@@ -353,9 +353,9 @@ describe("ProductPageContent", () => {
     },
     {
       slug: "digital-oil-painting-banner",
-      nzTitle: "Custom Memorial & Tribute Banner",
-      auTitle: "Custom Memorial & Tribute Banner Australia",
-      description: /memorial or funeral banner/i,
+      nzTitle: "Custom Memorial & Funeral Photo Banner",
+      auTitle: "Custom Memorial & Funeral Photo Banner Australia",
+      description: /memorial or funeral photo banner/i,
     },
   ])("publishes intent-specific NZ and AU metadata for $slug", async ({
     slug,

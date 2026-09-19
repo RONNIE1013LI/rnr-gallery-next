@@ -114,7 +114,7 @@ describe("root layout metadata", () => {
     expect(globals).toMatch(/body:has\(\.consent-preferences\) \.customer-chat-root\s*\{[^}]*--customer-chat-bottom-offset:\s*17rem;/);
     expect(globals).toMatch(/body:has\(\.consent-preferences__options\) \.customer-chat-root\s*\{[^}]*--customer-chat-bottom-offset:\s*28rem;/);
     const trigger = cssRule(globals, ".site-footer__cookie-trigger {");
-    expect(trigger).toContain("min-height: 44px;");
+    expect(trigger).toContain("min-height: 30px;");
     expect(trigger).not.toContain("position: fixed;");
   });
 

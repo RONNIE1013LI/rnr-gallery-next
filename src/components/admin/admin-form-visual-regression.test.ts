@@ -24,7 +24,7 @@ describe("Admin form visual refinements", () => {
   });
 
   it("keeps the mobile Forms header compact and visually separates actions from navigation", () => {
-    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)", formsCss.indexOf("--forms-filter-control-height-mobile")));
     const brandRow = cssRule(mobile, ".brandRow");
     const navLink = cssRule(mobile, ".primaryNav a");
     const operatorActions = cssRule(mobile, ".operatorActions");
@@ -58,7 +58,7 @@ describe("Admin form visual refinements", () => {
   });
 
   it("keeps compact mobile search controls at a touch-safe height", () => {
-    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)", formsCss.indexOf("--forms-filter-control-height-mobile")));
     const searchControls = cssRule(mobile, ".quickSearch input,\n  .quickSearch button,\n  .filterButton");
 
     expect(searchControls).toContain("height: 44px;");
@@ -66,7 +66,7 @@ describe("Admin form visual refinements", () => {
   });
 
   it("keeps small filter and saved-view marks inside 44px mobile hit areas", () => {
-    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)", formsCss.indexOf("--forms-filter-control-height-mobile")));
     const filterPanel = cssRule(mobile, ".filterPanel");
     const filterControls = cssRule(mobile, ".filterHeading button,\n  .filterRow > button");
     const savedViewDelete = cssRule(mobile, ".savedSearchWorkspace .personalViewList span .savedViewDeleteButton");
@@ -121,7 +121,7 @@ describe("Admin form visual refinements", () => {
   });
 
   it("keeps manual entry controls touch friendly on narrow screens", () => {
-    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)", formsCss.indexOf("--forms-filter-control-height-mobile")));
     expect(cssRule(mobile, ".formEntryPage input,\n  .formEntryPage select,\n  .formEntryPage textarea"))
       .toContain("min-height: var(--forms-control-height-mobile);");
   });
@@ -188,7 +188,7 @@ describe("Admin form visual refinements", () => {
   });
 
   it("uses a compact mobile search row and a downward filter popover", () => {
-    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)", formsCss.indexOf("--forms-filter-control-height-mobile")));
     const filterPanel = cssRule(mobile, ".filterPanel");
     const filterBackdrop = cssRule(mobile, ".filterBackdrop");
     expect(mobile).toMatch(/\.listToolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*48px;/);
@@ -205,7 +205,7 @@ describe("Admin form visual refinements", () => {
 
   it("centres a round mobile back-to-top action without exposing it on desktop", () => {
     const base = cssRule(formsCss, ".mobileBackToTop");
-    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)", formsCss.indexOf("--forms-filter-control-height-mobile")));
     const mobileAction = cssRule(mobile, ".mobileBackToTop");
 
     expect(base).toContain("display: none;");
@@ -217,7 +217,7 @@ describe("Admin form visual refinements", () => {
   });
 
   it("keeps each mobile filter condition compact with a row-local remove control", () => {
-    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)", formsCss.indexOf("--forms-filter-control-height-mobile")));
     expect(mobile).toMatch(/\.filterRow\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)\s*var\(--forms-filter-control-height-mobile\);/);
     expect(mobile).toMatch(/\.filterRow > :nth-child\(3\)\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*3;/);
     expect(mobile).toMatch(/\.filterRow > button\s*\{[\s\S]*?width:\s*var\(--forms-filter-control-height-mobile\);[\s\S]*?grid-column:\s*3;/);

@@ -491,32 +491,43 @@ describe("Drizzle payment repository", () => {
   });
 
   it("emails only a newly admitted website order, after commit, with persisted recipient and paid balance", async () => {
-    const scheduled: string[] = [];
-    const repo = createDrizzlePaymentRepository(database, { onNewInvoiceOrder: (id) => { scheduled.push(id); } });
-    const order = await createOrder();
-    const claim = await repo.createOrClaimNonterminalAttempt(claimInput(order.orderId));
-    expect(scheduled).toHaveLength(0);
-    expect(await database.select().from(productionJobs).where(eq(productionJobs.orderId, order.orderId))).toHaveLength(0);
-    const providerReference = `auto-${randomUUID()}`;
-    await repo.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference, returnStateDigest: null, status: "processing" });
-    const input = { attemptId: claim.attempt.id, result: { providerReference, providerStatus: "CAPTURED", amountCents: 7475, currency: "NZD" as const, orderNumber: order.orderNumber, status: "paid" as const }, source: "server_capture" as const };
-    await repo.applyVerifiedResult(input);
-    expect(scheduled).toHaveLength(1);
-    const doc = await createDrizzleInvoiceRepository(database).findByJobId(scheduled[0]);
-    expect(doc).toMatchObject({ amountPaidCents: 7475, totalInclGstCents: 7475 });
-    const provider = { configured: true, send: vi.fn().mockResolvedValue({ providerMessageId: "website-mail" }) };
-    await Promise.all(scheduled.map(id => deliverNewOrderInvoiceEmail(id, database, provider)));
-    await repo.applyVerifiedResult(input);
-    await deliverNewOrderInvoiceEmail(scheduled[0], database, provider);
-    expect(scheduled).toHaveLength(1);
-    expect(provider.send).toHaveBeenCalledTimes(1);
-    const message = provider.send.mock.calls[0][0];
-    expect(message.to).toBe("payer@example.test");
-    expect(message.text).toContain("Balance due: NZ$0.00");
-    expect(message.text).toContain(`/orders/${order.orderNumber}?access=`);
-    expect(message.html.match(/Kind regards/g)).toHaveLength(1);
-    const audits = await database.select().from(adminAuditLogs).where(eq(adminAuditLogs.resourceId, doc!.id));
-    expect(audits).toEqual(expect.arrayContaining([expect.objectContaining({ result: "success", action: "invoice.email.sent", afterSummary: expect.objectContaining({ source: "automatic", trigger: "website_order_created" }) })]));
+    const previousAuthUrl = process.env.BETTER_AUTH_URL;
+    const previousAuthSecret = process.env.BETTER_AUTH_SECRET;
+    process.env.BETTER_AUTH_URL = "https://release-test.invalid";
+    process.env.BETTER_AUTH_SECRET = "release-test-only-secret-not-for-production";
+    try {
+      const scheduled: string[] = [];
+      const repo = createDrizzlePaymentRepository(database, { onNewInvoiceOrder: (id) => { scheduled.push(id); } });
+      const order = await createOrder();
+      const claim = await repo.createOrClaimNonterminalAttempt(claimInput(order.orderId));
+      expect(scheduled).toHaveLength(0);
+      expect(await database.select().from(productionJobs).where(eq(productionJobs.orderId, order.orderId))).toHaveLength(0);
+      const providerReference = `auto-${randomUUID()}`;
+      await repo.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference, returnStateDigest: null, status: "processing" });
+      const input = { attemptId: claim.attempt.id, result: { providerReference, providerStatus: "CAPTURED", amountCents: 7475, currency: "NZD" as const, orderNumber: order.orderNumber, status: "paid" as const }, source: "server_capture" as const };
+      await repo.applyVerifiedResult(input);
+      expect(scheduled).toHaveLength(1);
+      const doc = await createDrizzleInvoiceRepository(database).findByJobId(scheduled[0]);
+      expect(doc).toMatchObject({ amountPaidCents: 7475, totalInclGstCents: 7475 });
+      const provider = { configured: true, send: vi.fn().mockResolvedValue({ providerMessageId: "website-mail" }) };
+      await Promise.all(scheduled.map(id => deliverNewOrderInvoiceEmail(id, database, provider)));
+      await repo.applyVerifiedResult(input);
+      await deliverNewOrderInvoiceEmail(scheduled[0], database, provider);
+      expect(scheduled).toHaveLength(1);
+      expect(provider.send).toHaveBeenCalledTimes(1);
+      const message = provider.send.mock.calls[0][0];
+      expect(message.to).toBe("payer@example.test");
+      expect(message.text).toContain("Balance due: NZ$0.00");
+      expect(message.text).toContain(`/orders/${order.orderNumber}?access=`);
+      expect(message.html.match(/Kind regards/g)).toHaveLength(1);
+      const audits = await database.select().from(adminAuditLogs).where(eq(adminAuditLogs.resourceId, doc!.id));
+      expect(audits).toEqual(expect.arrayContaining([expect.objectContaining({ result: "success", action: "invoice.email.sent", afterSummary: expect.objectContaining({ source: "automatic", trigger: "website_order_created" }) })]));
+    } finally {
+      if (previousAuthUrl === undefined) delete process.env.BETTER_AUTH_URL;
+      else process.env.BETTER_AUTH_URL = previousAuthUrl;
+      if (previousAuthSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
+      else process.env.BETTER_AUTH_SECRET = previousAuthSecret;
+    }
   });
 
   afterAll(async () => {

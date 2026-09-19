@@ -65,7 +65,7 @@ describe("BannerBundleConfigurator", () => {
         "(max-width: 340px) calc(100vw - 1.7rem), (max-width: 500px) 92vw, (max-width: 650px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px",
       );
     expect(declaredImageWidth(previewImage, 350)).toBeCloseTo(322, 1);
-    expect(productionCandidateFor(previewImage, 350)).toBe(750);
+    expect(productionCandidateFor(previewImage, 350)).toBe(672);
     expect(screen.getAllByRole("complementary", { name: "Order summary" })).toHaveLength(1);
     expect(screen.getByRole("region", { name: "Roll-Up Banner customisation" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Wall Banner customisation" })).toBeVisible();

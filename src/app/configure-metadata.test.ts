@@ -16,7 +16,7 @@ describe("configure route metadata", () => {
       params: Promise.resolve({ slug: "photo-print-canvas" }),
       searchParams: Promise.resolve({}),
     })).resolves.toMatchObject({
-      robots: { index: false, follow: false },
+      robots: { index: false, follow: true },
     });
   });
 });
