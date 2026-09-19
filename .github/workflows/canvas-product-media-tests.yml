@@ -38,7 +38,7 @@ jobs:
           src/components/canvas-product-preview.test.tsx
       - run: npm run typecheck
       - name: Lint changed application files
-        run: npx eslint 'src/app/products/[slug]/page-content.tsx' 'src/app/products/[slug]/canvas-media.test.tsx'
+        run: npx eslint 'src/app/products/[slug]/page-content.tsx' 'src/app/products/[slug]/canvas-media.test.tsx' 'src/app/products/[slug]/page.test.tsx'
       - name: Install isolated test runtime prerequisites
         run: |
           brew install postgresql@16 ripgrep
@@ -55,3 +55,95 @@ jobs:
           if [ -f "$RUNNER_TEMP/canvas-media-postgres/postmaster.pid" ]; then
             pg_ctl -D "$RUNNER_TEMP/canvas-media-postgres" -m immediate -w stop
           fi
+  local-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install isolated browser runtime
+        run: |
+          npm install --prefix "$RUNNER_TEMP/canvas-browser" --no-save --package-lock=false playwright
+          "$RUNNER_TEMP/canvas-browser/node_modules/.bin/playwright" install --with-deps chromium
+          echo "CANVAS_BROWSER_RUNTIME=$RUNNER_TEMP/canvas-browser" >> "$GITHUB_ENV"
+      - name: Verify local desktop and mobile image and WebGL preview
+        shell: bash
+        run: |
+          mkdir -p artifacts/canvas-product-media
+          node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3000 > artifacts/canvas-product-media/server.log 2>&1 &
+          NEXT_PID=$!
+          trap 'kill "$NEXT_PID" 2>/dev/null || true' EXIT
+          for attempt in {1..90}; do
+            if curl -fsS --max-time 3 http://127.0.0.1:3000/products/digital-oil-painting-canvas > /dev/null; then break; fi
+            sleep 2
+          done
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { createRequire } from 'node:module';
+          import { resolve } from 'node:path';
+          import { writeFile } from 'node:fs/promises';
+          const { chromium } = createRequire(resolve(process.env.CANVAS_BROWSER_RUNTIME, 'package.json'))('playwright');
+          const out = 'artifacts/canvas-product-media';
+          const browser = await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader','--no-sandbox']});
+          const results = [];
+          try {
+            for (const device of [{name:'desktop',width:1440,height:1100},{name:'mobile',width:390,height:844}]) {
+              const context = await browser.newContext({viewport:{width:device.width,height:device.height},isMobile:device.name==='mobile',hasTouch:device.name==='mobile',deviceScaleFactor:1});
+              const page = await context.newPage();
+              page.setDefaultTimeout(60000);
+              const errors=[];
+              page.on('pageerror',error=>errors.push(error.message));
+              try {
+                const response=await page.goto('http://127.0.0.1:3000/products/digital-oil-painting-canvas',{waitUntil:'domcontentloaded',timeout:120000});
+                assert.equal(response.status(),200);
+                const image=page.locator('[data-product-media] img');
+                await image.waitFor({state:'visible'});
+                await image.evaluate(img=>img.decode());
+                const geometry=await image.evaluate(img=>({fit:getComputedStyle(img).objectFit,ratio:img.parentElement.getBoundingClientRect().width/img.parentElement.getBoundingClientRect().height,src:img.currentSrc,loaded:img.naturalWidth>0}));
+                assert.equal(geometry.fit,'contain');
+                assert(Math.abs(geometry.ratio-4/3)<0.01);
+                assert(geometry.loaded);
+                assert(decodeURIComponent(geometry.src).includes('/media/products/digital-oil-painting-canvas-shop.webp'));
+                await page.screenshot({path:`${out}/${device.name}-2d.png`,fullPage:true});
+                await page.getByRole('button',{name:'3D View',exact:true}).click();
+                const stage=page.getByRole('application',{name:'Interactive canvas. Drag to rotate; scroll or pinch to zoom.'});
+                await stage.waitFor({state:'visible'});
+                await page.waitForFunction(()=>document.querySelector('[data-ready="true"][data-artwork] canvas'),null,{timeout:90000});
+                assert.equal(await stage.getAttribute('data-artwork'),'/canvas-3d/digital-oil-artwork.avif');
+                await page.getByRole('button',{name:'Front',exact:true}).click();
+                await page.waitForTimeout(200);
+                const front=await stage.screenshot({path:`${out}/${device.name}-3d-front.png`});
+                await page.getByRole('button',{name:'Back',exact:true}).click();
+                await page.waitForTimeout(200);
+                const back=await stage.screenshot({path:`${out}/${device.name}-3d-back.png`});
+                assert(!front.equals(back),'Front and back must render different model views');
+                await page.getByRole('button',{name:'Reset',exact:true}).click();
+                const camera=await stage.getAttribute('data-camera');
+                await page.getByRole('button',{name:'Zoom in',exact:true}).click();
+                await page.waitForTimeout(200);
+                assert.notEqual(await stage.getAttribute('data-camera'),camera);
+                await page.getByRole('button',{name:'Close 3D view',exact:true}).click();
+                await image.waitFor({state:'visible'});
+                assert.equal(await page.locator('[data-artwork] canvas').count(),0);
+                assert.deepEqual(errors,[]);
+                results.push({device:device.name,...geometry,webgl:true,frontBack:true,zoom:true,close:true});
+              } catch(error) {
+                await page.screenshot({path:`${out}/${device.name}-failure.png`,fullPage:true});
+                throw error;
+              } finally {await context.close();}
+            }
+            await writeFile(`${out}/results.json`,JSON.stringify(results,null,2));
+            console.log(JSON.stringify(results,null,2));
+          } finally {await browser.close();}
+          NODE
+      - name: Upload browser verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canvas-product-media-browser
+          path: artifacts/canvas-product-media
+          retention-days: 3

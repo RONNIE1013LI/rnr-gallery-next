@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { AnalyticsEventTracker } from "@/components/analytics-event-tracker";
 import { StructuredData } from "@/components/structured-data";
+import { CanvasProductPreview } from "@/components/canvas-product-preview";
 import { notFound } from "next/navigation";
 import styles from "@/components/storefront.module.css";
 import { products } from "@/domain/catalogue/products";
@@ -161,8 +162,21 @@ export function ProductPageContent({
         deliveryCopy.australiaStandard,
         deliveryCopy.australiaRemote,
       ];
-  const media = (
-    <div className={styles.productDetailMedia} data-product-media>
+  const hasCanvasPreview = product.key === "digital-oil-painting-canvas";
+  const selectedArtwork = selection && selection.width > 0 && selection.height > 0
+    ? selection
+    : null;
+  // Keep the same complete room photograph as the configurator in 2D.
+  const image = (
+    <div
+      className={styles.productDetailMedia}
+      data-product-media
+      style={hasCanvasPreview ? {
+        aspectRatio: selectedArtwork
+          ? `${selectedArtwork.width} / ${selectedArtwork.height}`
+          : "4 / 3",
+      } : undefined}
+    >
       <Image
         src={selection?.imageUrl ?? product.image.src}
         alt={selection?.altText ?? product.image.alt}
@@ -170,9 +184,21 @@ export function ProductPageContent({
         loading="eager"
         priority
         sizes="(max-width: 820px) 100vw, 58vw"
+        style={hasCanvasPreview ? { objectFit: "contain" } : undefined}
       />
     </div>
   );
+  const media = hasCanvasPreview ? (
+    <CanvasProductPreview
+      imageSrc={selection?.imageUrl ?? "/canvas-3d/digital-oil-artwork.avif"}
+      sizeKey={selectedSizeKey ?? analyticsSizeKey ?? "a4"}
+      orientation={selectedArtwork
+        ? selectedArtwork.width >= selectedArtwork.height ? "landscape" : "portrait"
+        : selection ? undefined : "landscape"}
+    >
+      {image}
+    </CanvasProductPreview>
+  ) : image;
   const callToAction = (
     <Link className={styles.primaryButton} href={configureHref}>
       Start Your Design
