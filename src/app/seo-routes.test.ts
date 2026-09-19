@@ -143,8 +143,6 @@ describe("public SEO routes", () => {
           "/order-system",
           "/orders/",
           "/pay/",
-          "/products/*/configure",
-          "/au/products/*/configure",
         ]),
       }),
       {
@@ -165,8 +163,6 @@ describe("public SEO routes", () => {
           "/order-system",
           "/orders/",
           "/pay/",
-          "/products/*/configure",
-          "/au/products/*/configure",
         ]),
       }),
     ]));
@@ -176,6 +172,19 @@ describe("public SEO routes", () => {
         disallow: expect.not.arrayContaining(["/product/"]),
       }),
     ]));
+
+    const rules = Array.isArray(robots.rules) ? robots.rules : [robots.rules];
+    for (const userAgent of ["*", "meta-webindexer"]) {
+      const rule = rules.find((entry) => {
+        const agents = Array.isArray(entry.userAgent) ? entry.userAgent : [entry.userAgent];
+        return agents.includes(userAgent);
+      });
+      const disallow = Array.isArray(rule?.disallow)
+        ? rule.disallow
+        : rule?.disallow ? [rule.disallow] : [];
+      expect(disallow).not.toContain("/products/*/configure");
+      expect(disallow).not.toContain("/au/products/*/configure");
+    }
   });
 
   it("keeps search engines on the default public policy", () => {
