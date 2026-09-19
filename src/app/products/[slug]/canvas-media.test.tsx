@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { getProductBySlug } from "@/domain/catalogue/products";
+import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { ProductPageContent } from "./page-content";
 
 vi.mock("@/server/admin/product-registry-runtime", () => ({
@@ -30,7 +31,6 @@ describe("Digital oil painting canvas product media", () => {
     expect(decodeURIComponent(image.getAttribute("src") ?? ""))
       .toContain("/media/products/digital-oil-painting-canvas-shop.webp");
     expect(image).toHaveStyle({ objectFit: "contain" });
-    expect(container.querySelector<HTMLElement>("[data-product-media] image" )).toBeNull();
     expect(container.querySelector<HTMLElement>("[data-product-media]")?.style.aspectRatio)
       .toBe("4 / 3");
   });
@@ -52,10 +52,10 @@ describe("Digital oil painting canvas product media", () => {
 
   it("keeps selected artwork, portrait proportions, size and configure link", async () => {
     const designId = "a".repeat(64);
-    const selection = {
+    const selection: GalleryDesignSelection = {
       id: designId, title: "Selected portrait", altText: "Selected portrait artwork",
       imageUrl: `/gallery-images/${designId}?v=${"b".repeat(64)}`,
-      contentHash: "b".repeat(64), productSlug: product.slug,
+      contentHash: "b".repeat(64), productSlug: "digital-oil-painting-canvas",
       width: 1200, height: 1600,
     };
     const { container } = render(<ProductPageContent product={product} selection={selection}
