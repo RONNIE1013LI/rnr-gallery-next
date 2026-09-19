@@ -112,10 +112,10 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(66);
+    expect(journal.entries).toHaveLength(69);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(66);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(66);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(69);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(69);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -209,6 +209,66 @@ describe("migration lineage artifacts", () => {
     expect(sha256("drizzle/0065_order_item_photo_metadata.sql")).toBe(
       "ba129717daf4eb373f88a4785867e17274a2f6e470915887ca5d8b3b263506a8",
     );
+    expect(journal.entries[66]).toMatchObject({
+      idx: 66,
+      when: 1789336171884,
+      tag: "0066_manual_production_tracking",
+    });
+    expect(sha256("drizzle/0066_manual_production_tracking.sql")).toBe(
+      "97aa13d00615a69d22c760cbca7c3e47388243ab4bb0fa364b01ad9d11ddb4b6",
+    );
+    expect(journal.entries[67]).toMatchObject({
+      idx: 67,
+      when: 1789341450482,
+      tag: "0067_unique_switch",
+    });
+    expect(sha256("drizzle/0067_unique_switch.sql")).toBe(
+      "a5d646e93241b29d5ab6767aa922e45461ddf4c81be6633829a565379b0ff7cc",
+    );
+    expect(journal.entries[68]).toMatchObject({
+      idx: 68,
+      when: 1789822838489,
+      tag: "0068_photo_print_canvas_gallery_constraints",
+    });
+    expect(sha256("drizzle/0068_photo_print_canvas_gallery_constraints.sql")).toBe(
+      "45c2103519958ca759ee665970080850c40ce9bf527134c41eaa5534454e7a38",
+    );
+  });
+
+  it("records the manual tracking and notification migrations in one snapshot", () => {
+    const previous = loadJson<Snapshot>("drizzle/meta/0065_snapshot.json");
+    const current = loadJson<Snapshot>("drizzle/meta/0067_snapshot.json");
+    const expected = structuredClone(previous);
+    expected.id = current.id;
+    expected.prevId = previous.id;
+    for (const column of ["tracking_carrier", "tracking_number", "tracking_url"]) {
+      expected.tables["public.production_jobs"].columns[column] =
+        current.tables["public.production_jobs"].columns[column];
+    }
+    expected.tables["public.manual_order_notification_outbox"] =
+      current.tables["public.manual_order_notification_outbox"];
+    expect(current).toEqual(expected);
+  });
+
+  it("adds only the photo print canvas gallery constraints after 0067", () => {
+    const previous = loadJson<Snapshot>("drizzle/meta/0067_snapshot.json");
+    const current = loadJson<Snapshot>("drizzle/meta/0068_snapshot.json");
+    const expected = structuredClone(previous);
+    expected.id = current.id;
+    expected.prevId = previous.id;
+    for (const key of ["gallery_designs_product_slug_valid", "gallery_designs_product_mapping_valid"]) {
+      expect(current.tables["public.gallery_designs"].checkConstraints[key].value)
+        .toContain("photo-print-canvas");
+      expected.tables["public.gallery_designs"].checkConstraints[key] =
+        current.tables["public.gallery_designs"].checkConstraints[key];
+    }
+    expect(current).toEqual(expected);
+    const sql = readFileSync(
+      "drizzle/0068_photo_print_canvas_gallery_constraints.sql",
+      "utf8",
+    );
+    expect(sql.match(/ALTER TABLE/g)).toHaveLength(4);
+    expect(sql).not.toMatch(/CREATE TABLE|INSERT INTO|UPDATE |DELETE FROM/);
   });
 
   it("adds only staff security tables and the MFA flag after 0062", () => {

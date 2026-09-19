@@ -477,6 +477,13 @@
       "when": 1789341450482,
       "tag": "0067_unique_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1789822838489,
+      "tag": "0068_photo_print_canvas_gallery_constraints",
+      "breakpoints": true
     }
   ]
 }
