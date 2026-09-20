@@ -10,6 +10,11 @@ export const APPROVED_CRONS = Object.freeze([
   { path: "/api/internal/customer-chat/review-alerts", schedule: "*/30 * * * *" },
 ] as const);
 
+export const REDIS_ONLY_RECOVERY_ROUTES = Object.freeze([
+  { path: "src/app/api/internal/reply-assistant/turn-recovery/route.ts", storage: "Redis", neon: false, recovery: "recoverDueTurns" },
+  { path: "src/app/api/internal/customer-chat/review-alerts/route.ts", storage: "Redis", neon: false, recovery: "recoverReviewAlerts" },
+] as const);
+
 export const TWO_DAY_MAINTENANCE_HANDLERS = Object.freeze([
   "src/app/api/internal/analytics/conversion-retention/route-handler.ts",
   "src/app/api/internal/analytics/website-retention/route-handler.ts",

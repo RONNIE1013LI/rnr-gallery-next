@@ -1,91 +1,49 @@
 import { describe, expect, it, vi } from "vitest";
 import { createTurnRecoveryHandler } from "./route-handler";
 
-describe("turn recovery route", () => {
-  it.each([null, "Bearer wrong", "Basic recovery-secret-at-least-32-bytes"])(
-    "rejects invalid authorization without claiming turns: %s",
-    async (authorization) => {
-      const runOnce = vi.fn(async () => ({ claimed: 0, completed: 0, retried: 0, cancelled: 0 }));
-      const runMaintenance = vi.fn(async () => undefined);
-      const handler = createTurnRecoveryHandler({
-        secret: "recovery-secret-at-least-32-bytes",
-        runOnce,
-        runMaintenance,
-      });
-      const response = await handler(new Request("https://example.test/internal", {
-        headers: authorization ? { authorization } : undefined,
-      }));
-
-      expect(response.status).toBe(401);
-      expect(runOnce).not.toHaveBeenCalled();
-      expect(runMaintenance).not.toHaveBeenCalled();
-    },
-  );
-
-  it("runs a bounded batch and returns aggregate counts only", async () => {
-    const runOnce = vi.fn()
-      .mockResolvedValueOnce({ claimed: 1, completed: 1, retried: 0, cancelled: 0, privateValue: "secret" })
-      .mockResolvedValueOnce({ claimed: 1, completed: 0, retried: 1, cancelled: 0, privateValue: "secret" })
-      .mockResolvedValueOnce({ claimed: 0, completed: 0, retried: 0, cancelled: 0, privateValue: "secret" });
-    const runMaintenance = vi.fn(async () => undefined);
-    const handler = createTurnRecoveryHandler({
-      secret: "recovery-secret-at-least-32-bytes",
-      runOnce,
-      runMaintenance,
-      maxTurns: 10,
-    });
-
-    const response = await handler(new Request("https://example.test/internal", {
-      headers: { authorization: "Bearer recovery-secret-at-least-32-bytes" },
-    }));
-    const body = await response.text();
-
-    expect(response.status).toBe(200);
-    expect(JSON.parse(body)).toEqual({ claimed: 2, completed: 1, retried: 1, cancelled: 0 });
-    expect(body).not.toContain("secret");
-    expect(runOnce).toHaveBeenCalledTimes(3);
-    expect(runMaintenance).toHaveBeenCalledTimes(1);
+const secret = "recovery-secret-at-least-32-bytes";
+const request = (authorization: string | null = `Bearer ${secret}`) =>
+  new Request("https://example.test/internal", {
+    headers: authorization ? { authorization } : undefined,
   });
 
-  it("runs maintenance once after an authorized zero-turn recovery", async () => {
-    const runOnce = vi.fn(async () => ({ claimed: 0, completed: 0, retried: 0, cancelled: 0 }));
-    const runMaintenance = vi.fn(async () => undefined);
-    const handler = createTurnRecoveryHandler({
-      secret: "recovery-secret-at-least-32-bytes",
-      runOnce,
-      runMaintenance,
-    });
-
-    const response = await handler(new Request("https://example.test/internal", {
-      headers: { authorization: "Bearer recovery-secret-at-least-32-bytes" },
-    }));
-
-    expect(response.status).toBe(200);
-    expect(runOnce).toHaveBeenCalledTimes(1);
-    expect(runMaintenance).toHaveBeenCalledTimes(1);
+describe("shared Redis recovery handler", () => {
+  it.each([null, "Bearer wrong", `Basic ${secret}`])("rejects unauthorized work: %s", async (authorization) => {
+    const runShared = vi.fn(async () => []);
+    const response = await createTurnRecoveryHandler({ secret, runShared })(request(authorization));
+    expect(response.status).toBe(401);
+    expect(runShared).not.toHaveBeenCalled();
   });
-});
 
-it("runs shared recovery only after authorization and stops starting work at its deadline", async () => {
-  let now = 0;
-  const runShared = vi.fn(async () => { now = 51_000; });
-  const runOnce = vi.fn(async () => ({ claimed: 0, completed: 0, retried: 0, cancelled: 0 }));
-  const runMaintenance = vi.fn(async () => undefined);
-  const handler = createTurnRecoveryHandler({ secret: "recovery-secret-at-least-32-bytes", runShared, runOnce, runMaintenance, now: () => now });
-  expect((await handler(new Request("https://example.test"))).status).toBe(401);
-  expect(runShared).not.toHaveBeenCalled();
-  expect((await handler(new Request("https://example.test", { headers: { authorization: "Bearer recovery-secret-at-least-32-bytes" } }))).status).toBe(200);
-  expect(runShared).toHaveBeenCalledTimes(1);
-  expect(runOnce).not.toHaveBeenCalled();
-  expect(runMaintenance).not.toHaveBeenCalled();
-});
+  it("runs shared recovery once with a bounded deadline and returns only a safe count", async () => {
+    const runShared = vi.fn(async () => [{ privateValue: "private" }, { status: "review" }]);
+    const response = await createTurnRecoveryHandler({ secret, runShared, now: () => 1000 })(request());
+    expect(runShared).toHaveBeenCalledExactlyOnceWith(51_000);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ processed: 2 });
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
 
-it("preserves historical maintenance when Redis recovery fails and reports failure", async () => {
-  const runOnce = vi.fn(async () => ({ claimed: 0, completed: 0, retried: 0, cancelled: 0 }));
-  const runMaintenance = vi.fn(async () => undefined);
-  const handler = createTurnRecoveryHandler({ secret: "recovery-secret-at-least-32-bytes", runShared: async () => { throw Error("synthetic Redis outage"); }, runOnce, runMaintenance });
-  const response = await handler(new Request("https://example.test", { headers: { authorization: "Bearer recovery-secret-at-least-32-bytes" } }));
-  expect(response.status).toBe(503);
-  expect(runOnce).toHaveBeenCalledOnce();
-  expect(runMaintenance).toHaveBeenCalledOnce();
+  it("handles empty Redis queues successfully", async () => {
+    const response = await createTurnRecoveryHandler({ secret, runShared: async () => [] })(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ processed: 0 });
+  });
+
+  it("reports Redis failure without exposing private errors or using a fallback", async () => {
+    const runShared = vi.fn(async () => { throw Error("private connection details"); });
+    const response = await createTurnRecoveryHandler({ secret, runShared })(request());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: { code: "SHARED_RECOVERY_UNAVAILABLE" } });
+    expect(runShared).toHaveBeenCalledOnce();
+  });
+
+  it("reports a missed deadline truthfully", async () => {
+    let now = 0;
+    const response = await createTurnRecoveryHandler({
+      secret, now: () => now,
+      runShared: async () => { now = 50_000; return []; },
+    })(request());
+    expect(response.status).toBe(503);
+  });
 });

@@ -12,16 +12,11 @@ function unavailable() {
 
 async function handle(request: Request) {
   const config = parseCustomerServiceConfig();
-  if (!config.websiteEnabled) return unavailable();
+  if (!config.websiteEnabled || !parseRnrAiMetaConfig().websiteSharedBrainEnabled) return unavailable();
   return createWebsiteReviewAlertCronHandler({
     secret: config.turnRecoverySecret,
-    runShared: async () => {
-      if (parseRnrAiMetaConfig().websiteSharedBrainEnabled) await createProductionWebsiteReplyRuntime().recoverReviewAlerts(5);
-    },
-    deliverNext: async () => {
-      const { createCustomerServiceRuntime } = await import("@/server/customer-service/runtime");
-      return createCustomerServiceRuntime().reviewAlertService?.deliverNext() ?? { result: "not_configured" };
-    },
+    runShared: async (deadlineAt) =>
+      createProductionWebsiteReplyRuntime().recoverReviewAlerts(5, deadlineAt),
   })(request);
 }
 

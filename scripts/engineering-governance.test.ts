@@ -1,10 +1,12 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import ts from "typescript";
 
 import { describe, expect, it } from "vitest";
 
 import {
   APPROVED_CRONS,
+  REDIS_ONLY_RECOVERY_ROUTES,
   CACHE_INVALIDATION_WIRING,
   GOVERNED_POLLING_FILES,
   PRIVATE_SHARED_CACHE_BOUNDARIES,
@@ -25,6 +27,38 @@ function sourceFiles(path: string): string[] {
 }
 
 describe("engineering governance baseline", () => {
+  it("keeps recovery routes and their executable local import graph free of Neon dependencies", () => {
+    const visited = new Set<string>();
+    function inspect(path: string) {
+      if (visited.has(path)) return;
+      visited.add(path);
+      const code = ts.transpileModule(readFileSync(path, "utf8"), {
+        compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+        fileName: path,
+      }).outputText;
+      for (const match of code.matchAll(/(?:from\s*|import\s*\(\s*|import\s+|require\s*\(\s*)["']([^"']+)["']/g)) {
+        const dependency = match[1];
+        expect(dependency, path).not.toMatch(/^(?:pg(?:\/|$)|postgres(?:\/|$)|drizzle-orm(?:\/|$)|@neondatabase\/)|server\/db(?:\/|$)|customer-service\/runtime$/);
+        if (!dependency.startsWith(".") && !dependency.startsWith("@/")) continue;
+        const base = dependency.startsWith("@/")
+          ? resolve(root, "src", dependency.slice(2))
+          : resolve(dirname(path), dependency);
+        if (base.endsWith(".json")) continue;
+        const next = [base, base + ".ts", base + ".tsx", resolve(base, "index.ts")]
+          .find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
+        expect(next, dependency).toBeDefined();
+        if (next) inspect(next);
+      }
+    }
+    for (const route of REDIS_ONLY_RECOVERY_ROUTES) {
+      expect(route.neon).toBe(false);
+      const code = source(route.path);
+      expect(code).toContain(route.recovery);
+      expect(code).not.toMatch(/createCustomerServiceRuntime|turnRecoveryRunner|recoverDueHumanReplies|refreshLearningCandidates|refreshOpenWebsiteReviewSelectors|reviewAlertService|compiledKnowledge/);
+      inspect(resolve(root, route.path));
+    }
+  });
+
   it("keeps Vercel cron configuration equal to the approved registry", () => {
     const vercel = JSON.parse(source("vercel.json")) as {
       crons?: Array<{ path: string; schedule: string }>;
