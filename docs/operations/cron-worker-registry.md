@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Turn recovery | `/api/internal/reply-assistant/turn-recovery` | Recover stuck assistant turns | Every 30 min | Conditional queue claim | Critical fallback | No | Cron authentication and recoverable work |
 | Review alerts | `/api/internal/customer-chat/review-alerts` | Surface customer chats needing review | Every 30 min | Conditional queue scan | Critical fallback | No | Cron authentication and actionable work |
-| Customer notifications | `/api/internal/customer-notifications` | Deliver queued internal notifications | Every 30 min | Conditional outbox claim | Critical fallback | No | Cron authentication and queued work |
+| Customer notifications | `/api/internal/customer-notifications` | Recover queued customer/internal notification delivery after the immediate event-driven send path fails | Every 12 hours | Conditional outbox claim | Recovery fallback | Yes; normal notifications send immediately | Cron authentication and queued work |
 | Conversion retention | `/api/internal/analytics/conversion-retention` | Retain conversion-delivery records | Daily at 04:00 UTC; shared gate executes every 2 days | Retention delete | Maintenance | Not without review | Shared two-day cadence allows run |
 | Website Analytics retention | `/api/internal/analytics/website-retention` | Retain website analytics | Daily at 04:01 UTC; shared gate executes every 2 days | Retention delete | Maintenance | Not without review | Shared two-day cadence allows run |
 | Customer Chat retention | `/api/internal/customer-chat/retention` | Retain chat records | Daily at 04:02 UTC; shared gate executes every 2 days | Retention delete | Maintenance | Not without review | Shared two-day cadence allows run |
