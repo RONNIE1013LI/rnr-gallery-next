@@ -27,7 +27,7 @@ export function calculateDigitalOilCanvas(
     }),
     Object.freeze({
       key: "people-pets",
-      label: "People / pets fee",
+      label: "Face or Pets fee",
       amountExGstCents: getPeoplePetsFeeExGstCents(
         input.peoplePets,
         peoplePetsPricing,

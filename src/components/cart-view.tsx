@@ -247,7 +247,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
               <dl>
                 <div><dt>Size</dt><dd>{item.sizeLabel}</dd></div>
                 {item.orientation && <div><dt>Orientation</dt><dd>{labelFor(item.orientation)}</dd></div>}
-                {item.peoplePets > 0 && <div><dt>People / pets</dt><dd>{item.peoplePets}</dd></div>}
+                {item.peoplePets > 0 && <div><dt>Face or Pets</dt><dd>{item.peoplePets}</dd></div>}
                 <div><dt>Photo submission</dt><dd>{labelFor(item.photoSubmissionMethod)}</dd></div>
                 <div><dt>Production completion date</dt><dd>{item.neededDate}</dd></div>
                 {Boolean(item.urgentFeeInclGstCents) && (

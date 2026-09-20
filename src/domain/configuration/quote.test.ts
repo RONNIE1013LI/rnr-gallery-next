@@ -32,7 +32,7 @@ describe("configuration quotes", () => {
     [1, 10_500],
     [2, 12_500],
     [6, 21_500],
-  ])("quotes Digital Oil A4 for %i people or pets", (peoplePets, subtotal) => {
+  ])("quotes Digital Oil A4 for %i Face or Pets", (peoplePets, subtotal) => {
     const schema = getConfigurationSchema("digital-oil-painting-canvas")!;
     expect(
       quoteConfiguration(schema, { sizeKey: "a4", peoplePets })

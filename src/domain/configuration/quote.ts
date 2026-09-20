@@ -37,7 +37,7 @@ export function quoteConfiguration(
     }, options.peoplePetsPricing);
   } else if (selection.peoplePets !== 0) {
     throw new InvalidPricingInputError(
-      `People / pets pricing is unavailable for ${schema.productKey}.`,
+      `Face or Pets pricing is unavailable for ${schema.productKey}.`,
     );
   } else {
     breakdown = calculateFixedPackage({ priceExGstCents: size.priceExGstCents });

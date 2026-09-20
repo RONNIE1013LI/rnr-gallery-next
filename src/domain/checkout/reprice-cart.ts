@@ -114,7 +114,7 @@ function validatePeoplePets(
   }
   if (schema.peoplePetsMode === "none" && item.peoplePets !== 0) {
     throw new InvalidCheckoutCartError(
-      "People or pets pricing is unavailable for this product.",
+      "Face or Pets pricing is unavailable for this product.",
     );
   }
 }

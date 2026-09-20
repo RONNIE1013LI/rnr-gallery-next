@@ -139,7 +139,7 @@ export function AdminOrderDetail({
               </div>
               <dl className={styles.definitionGrid}>
                 <div><dt>Quantity</dt><dd>{item.quantity}</dd></div>
-                <div><dt>People / pets</dt><dd>{item.peoplePets}</dd></div>
+                <div><dt>Face or Pets</dt><dd>{item.peoplePets}</dd></div>
                 <div><dt>Photo submission</dt><dd>{label(item.photoSubmissionMethod)}</dd></div>
                 <div><dt>Needed date</dt><dd>{item.neededDate}</dd></div>
                 <div><dt>Urgent</dt><dd>{item.urgentServiceConfirmed ? `Yes · ${item.urgentWorkingDays} working days` : "No"}</dd></div>
@@ -148,7 +148,7 @@ export function AdminOrderDetail({
               {item.notes ? <div className={styles.customerText}><strong>Customer notes</strong><p>{item.notes}</p></div> : null}
               <div className={styles.priceLines}>
                 {item.priceLines.map((line) => (
-                  <div key={line.key}><span>{line.label}</span><strong>{amount(line.amountExGstCents)}</strong></div>
+                  <div key={line.key}><span>{line.key === "people-pets" ? "Face or Pets fee" : line.label}</span><strong>{amount(line.amountExGstCents)}</strong></div>
                 ))}
                 <div><span>Line GST</span><strong>{amount(item.lineGstCents)}</strong></div>
               </div>

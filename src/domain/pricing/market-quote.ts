@@ -46,17 +46,17 @@ function peoplePetsGross(
   count: number,
 ): number {
   if (!Number.isInteger(count) || count < 1 || count > 20) {
-    throw new InvalidPricingInputError("People / pets must be between 1 and 20.");
+    throw new InvalidPricingInputError("Face or Pets must be between 1 and 20.");
   }
   if (count <= 5) {
     return requiredPrice(
       book.peoplePets.fees.find((fee) => fee.count === count)?.amountInclTaxCents,
-      "People / pets price",
+      "Face or Pets price",
     );
   }
   return count * requiredPrice(
     book.peoplePets.additionalEachInclTaxCents,
-    "Six-plus people / pets per-person price",
+    "Six-plus Face or Pets per-person price",
   );
 }
 
@@ -100,13 +100,13 @@ export function quoteMarketConfiguration(
   if (schema.peoplePetsMode === "required") {
     grossLines.push({
       key: "people-pets",
-      label: "People / pets fee",
+      label: "Face or Pets fee",
       amountInclTaxCents: peoplePetsGross(book, selection.peoplePets),
       preserveGross: market === "AU",
     });
   } else if (selection.peoplePets !== 0) {
     throw new InvalidPricingInputError(
-      `People / pets pricing is unavailable for ${productKey}.`,
+      `Face or Pets pricing is unavailable for ${productKey}.`,
     );
   }
 

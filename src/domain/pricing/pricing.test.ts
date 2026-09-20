@@ -36,7 +36,7 @@ describe("R&R pricing", () => {
 
     expect(price.lines).toContainEqual({
       key: "people-pets",
-      label: "People / pets fee",
+      label: "Face or Pets fee",
       amountExGstCents: 15_000,
     });
   });
@@ -66,7 +66,7 @@ describe("R&R pricing", () => {
     })).toBe(8_000);
   });
 
-  it("rejects a canvas with no people or pets", () => {
+  it("rejects a canvas with no Face or Pets", () => {
     expect(() =>
       calculateDigitalOilCanvas({ baseExGstCents: 6_500, peoplePets: 0 }),
     ).toThrow(InvalidPricingInputError);

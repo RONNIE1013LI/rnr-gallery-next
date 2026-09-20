@@ -167,7 +167,7 @@ describe("authoritative checkout repricing", () => {
 
     expect(result.items[0].unitPrice.lines).toEqual([
       { key: "product-size", label: "Product / size price", amountExGstCents: 7_100 },
-      { key: "people-pets", label: "People / pets fee", amountExGstCents: 4_500 },
+      { key: "people-pets", label: "Face or Pets fee", amountExGstCents: 4_500 },
       {
         key: "urgent-service",
         label: "Urgent service",
@@ -428,7 +428,7 @@ describe("authoritative checkout repricing", () => {
   });
 
   it.each([21, Number.MAX_SAFE_INTEGER])(
-    "rejects unsafe people or pets count %s",
+    "rejects unsafe Face or Pets count %s",
     (peoplePets) => {
       expect(() =>
         repriceCart(

@@ -23,7 +23,7 @@ export function getPeoplePetsFeeExGstCents(
   if (peoplePets <= 5) {
     const fee = pricing.peoplePetsFeesExGstCents[peoplePets - 1];
     if (!Number.isSafeInteger(fee) || fee! < 0) {
-      throw new InvalidPricingInputError("People / pets price is invalid.");
+      throw new InvalidPricingInputError("Face or Pets price is invalid.");
     }
     return fee!;
   }
@@ -32,11 +32,11 @@ export function getPeoplePetsFeeExGstCents(
     !Number.isSafeInteger(pricing.additionalPeoplePetsEachExGstCents) ||
     pricing.additionalPeoplePetsEachExGstCents < 0
   ) {
-    throw new InvalidPricingInputError("People / pets price is invalid.");
+    throw new InvalidPricingInputError("Face or Pets price is invalid.");
   }
   const fee = peoplePets * pricing.additionalPeoplePetsEachExGstCents;
   if (!Number.isSafeInteger(fee)) {
-    throw new InvalidPricingInputError("People / pets price is invalid.");
+    throw new InvalidPricingInputError("Face or Pets price is invalid.");
   }
   return fee;
 }

@@ -293,12 +293,12 @@ export function ProductRegistryForm({
           <div className={styles.formGrid}>
             {pricing.peoplePetsFeesExGstCents.map((amount, index) => (
               <label key={index + 1}>
-                <span>{index + 1} people / pets fee ex GST (NZD)</span>
+                <span>{index + 1} Face or Pets fee ex GST (NZD)</span>
                 <input name={`peoplePets-${index + 1}`} inputMode="decimal" defaultValue={moneyInput(amount)} required disabled={pending !== null} />
               </label>
             ))}
             <label>
-              <span>6+ people / pets per-person rate ex GST (NZD)</span>
+              <span>6+ Face or Pets per-person rate ex GST (NZD)</span>
               <input name="additionalPeoplePetsEach" inputMode="decimal" defaultValue={moneyInput(pricing.additionalPeoplePetsEachExGstCents)} required disabled={pending !== null} />
             </label>
             {pricing.urgentServiceFeesInclGstCents.map((amount, index) => (
@@ -375,12 +375,12 @@ export function ProductRegistryForm({
             <div className={styles.formGrid}>
               {markets.AU.peoplePets.fees.map((fee) => (
                 <label key={fee.count}>
-                  <span>{fee.count} people / pets final price (AUD)</span>
+                  <span>{fee.count} Face or Pets final price (AUD)</span>
                   <input name={`au-people-pets-${fee.count}`} inputMode="decimal" defaultValue={moneyInput(fee.amountInclTaxCents)} disabled={pending !== null} />
                 </label>
               ))}
               <label>
-                <span>6+ people / pets per-person rate (AUD)</span>
+                <span>6+ Face or Pets per-person rate (AUD)</span>
                 <input name="au-people-pets-additional" inputMode="decimal" defaultValue={moneyInput(markets.AU.peoplePets.additionalEachInclTaxCents)} disabled={pending !== null} />
               </label>
               {markets.AU.urgentServiceFees.map((fee) => (

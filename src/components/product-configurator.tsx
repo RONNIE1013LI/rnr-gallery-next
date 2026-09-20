@@ -383,7 +383,7 @@ export function ProductConfigurator({
           <dl className={styles.previewDetails}>
             <div><dt>Format</dt><dd>{sizeLabel}</dd></div>
             {orientation && <div><dt>Orientation</dt><dd>{orientation === "landscape" ? "Landscape" : "Portrait"}</dd></div>}
-            {schema.peoplePetsMode === "required" && <div><dt>People / pets</dt><dd>{peoplePets}</dd></div>}
+            {schema.peoplePetsMode === "required" && <div><dt>Face or Pets</dt><dd>{peoplePets}</dd></div>}
           </dl>
         </div>
         </section>
@@ -463,7 +463,7 @@ export function ProductConfigurator({
           <dl className={styles.summaryDetails}>
             <div><dt>Size</dt><dd>{sizeLabel}</dd></div>
             {orientation && <div><dt>Orientation</dt><dd>{orientation === "landscape" ? "Landscape" : "Portrait"}</dd></div>}
-            {schema.peoplePetsMode === "required" && <div><dt>People / pets</dt><dd>{peoplePets}</dd></div>}
+            {schema.peoplePetsMode === "required" && <div><dt>Face or Pets</dt><dd>{peoplePets}</dd></div>}
           </dl>
           <dl className={styles.priceLines}>
             {quote.lines.map((line) => (
@@ -594,22 +594,22 @@ export function ProductConfigurator({
             <div className={styles.stepHeading}>
               <span>{String(peopleStepNumber).padStart(2, "0")}</span>
               <div>
-                <h2>People or pets</h2>
+                <h2>Face or Pets</h2>
                 <p>Price is based on the number included in the final artwork.</p>
               </div>
             </div>
             <div className={styles.counterRow}>
-              <label htmlFor="people-pets">People or pets in artwork</label>
+              <label htmlFor="people-pets">Face or Pets in artwork</label>
               <div className={styles.counter}>
                 <button
                   type="button"
-                  aria-label="Decrease people or pets"
+                  aria-label="Decrease Face or Pets"
                   onClick={() => setPeoplePets((value) => Math.max(1, value - 1))}
                 >−</button>
                 <input id="people-pets" value={peoplePets} readOnly inputMode="numeric" max={MAX_PEOPLE_PETS_PER_ITEM} />
                 <button
                   type="button"
-                  aria-label="Increase people or pets"
+                  aria-label="Increase Face or Pets"
                   disabled={peoplePets >= MAX_PEOPLE_PETS_PER_ITEM}
                   onClick={() => setPeoplePets((value) => Math.min(MAX_PEOPLE_PETS_PER_ITEM, value + 1))}
                 >+</button>

@@ -80,7 +80,7 @@ describe("ProductConfigurator", () => {
       name: /From NZ\$120\.75 incl GST/,
     })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Landscape")).toBeChecked();
-    expect(screen.getByLabelText("People or pets in artwork")).toHaveValue("1");
+    expect(screen.getByLabelText("Face or Pets in artwork")).toHaveValue("1");
     const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
     expect(within(orderSummary).getByText("NZ$74.75 incl GST")).toBeInTheDocument();
     expect(within(orderSummary).getByText("NZ$46.00 incl GST")).toBeInTheDocument();
@@ -552,7 +552,7 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Increase people or pets" }));
+    fireEvent.click(screen.getByRole("button", { name: "Increase Face or Pets" }));
     expect(screen.getByText("NZ$69.00 incl GST")).toBeInTheDocument();
     expect(screen.getByText("NZ$18.75")).toBeInTheDocument();
     expect(screen.getByText("NZ$143.75")).toBeInTheDocument();
@@ -660,7 +660,7 @@ describe("ProductConfigurator", () => {
     expect(screen.getByLabelText("Design notes")).toHaveAttribute("maxlength", "5000");
   });
 
-  it("caps the people or pets control at the server maximum", () => {
+  it("caps the Face or Pets control at the server maximum", () => {
     render(
       <ProductConfigurator
         product={product}
@@ -669,10 +669,10 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    const increase = screen.getByRole("button", { name: "Increase people or pets" });
+    const increase = screen.getByRole("button", { name: "Increase Face or Pets" });
     for (let click = 0; click < 25; click += 1) fireEvent.click(increase);
 
-    expect(screen.getByLabelText("People or pets in artwork")).toHaveValue("20");
+    expect(screen.getByLabelText("Face or Pets in artwork")).toHaveValue("20");
     expect(increase).toBeDisabled();
   });
 

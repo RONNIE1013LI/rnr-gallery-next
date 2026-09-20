@@ -134,7 +134,7 @@ describe("owner-scoped order pages", () => {
     );
     expect(screen.getByText("Confirmed · 3 working days")).toBeInTheDocument();
     expect(screen.getByText("Product / size price")).toBeInTheDocument();
-    expect(screen.getByText("People / pets fee")).toBeInTheDocument();
+    expect(screen.getByText("Face or Pets fee")).toBeInTheDocument();
     expect(screen.getAllByText("Urgent service")).toHaveLength(2);
     expect(screen.getByText("NZ$74.75 incl GST")).toBeInTheDocument();
     expect(screen.getByText("NZ$46.00 incl GST")).toBeInTheDocument();
@@ -238,7 +238,7 @@ describe("owner-scoped order pages", () => {
 
     render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
 
-    expect(screen.queryByText("People / pets", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("Face or Pets", { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText("Design text")).not.toBeInTheDocument();
     expect(screen.queryByText("Design notes")).not.toBeInTheDocument();
     expect(screen.getByText("Not requested")).toBeInTheDocument();
