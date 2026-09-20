@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/internal/customer-notifications",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 */12 * * *"
     },
     {
       "path": "/api/internal/analytics/conversion-retention",
