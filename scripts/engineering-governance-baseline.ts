@@ -1,5 +1,5 @@
 export const APPROVED_CRONS = Object.freeze([
-  { path: "/api/internal/customer-notifications", schedule: "*/30 * * * *" },
+  { path: "/api/internal/customer-notifications", schedule: "0 */12 * * *" },
   { path: "/api/internal/analytics/conversion-retention", schedule: "0 4 * * *" },
   { path: "/api/internal/analytics/website-retention", schedule: "1 4 * * *" },
   { path: "/api/internal/customer-chat/retention", schedule: "2 4 * * *" },
