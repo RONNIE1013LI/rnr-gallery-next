@@ -43,6 +43,7 @@ export default async function AustraliaBannersPage() {
       description="Choose a roll-up banner, wall banner or grave cover, then personalise the details."
       path="/au/banners"
       breadcrumbLabel="Banners Australia"
+      showProductDetailLinks
       products={products}
       market="AU"
       pricesInclTaxCents={pricesInclTaxCents}

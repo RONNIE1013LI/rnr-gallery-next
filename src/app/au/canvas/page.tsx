@@ -43,6 +43,7 @@ export default async function AustraliaCanvasPage() {
       description="Choose photo print, digital oil painting or a custom themed canvas."
       path="/au/canvas"
       breadcrumbLabel="Canvas Australia"
+      showProductDetailLinks
       products={products}
       market="AU"
       pricesInclTaxCents={pricesInclTaxCents}

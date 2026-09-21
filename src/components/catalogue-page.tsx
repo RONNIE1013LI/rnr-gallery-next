@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { Product } from "@/domain/catalogue/types";
 import { buildItemListEvent } from "@/domain/analytics/events";
 import type { Market } from "@/domain/markets/types";
@@ -9,6 +10,7 @@ import { ProductCard } from "./product-card";
 import { AnalyticsEventTracker } from "./analytics-event-tracker";
 import { StructuredData } from "./structured-data";
 import styles from "./storefront.module.css";
+import guideStyles from "./catalogue-seo.module.css";
 
 type CataloguePageProps = Readonly<{
   eyebrow: string;
@@ -19,6 +21,8 @@ type CataloguePageProps = Readonly<{
   products: readonly Product[];
   market?: Market;
   pricesInclTaxCents?: Readonly<Record<string, number>>;
+  showProductDetailLinks?: boolean;
+  children?: ReactNode;
 }>;
 
 export function CataloguePage({
@@ -30,6 +34,8 @@ export function CataloguePage({
   products,
   market = "NZ",
   pricesInclTaxCents,
+  showProductDetailLinks = false,
+  children,
 }: CataloguePageProps) {
   const listId = `${market.toLowerCase()}:${path ?? (market === "AU" ? "/au/shop" : "/shop")}`;
   const analyticsItems = products.map((product, index) => ({
@@ -89,6 +95,27 @@ export function CataloguePage({
           />
         ))}
       </section>
+      {showProductDetailLinks && products.length ? (
+        <section className={guideStyles.section} aria-labelledby="catalogue-product-information">
+          <h2 id="catalogue-product-information">Explore product details</h2>
+          <p>Compare the artwork options before starting your design.</p>
+          <nav aria-label="Product information">
+            <ul className={guideStyles.productLinks}>
+              {products.map((product) => (
+                <li key={product.key}>
+                  <Link
+                    href={`${market === "AU" ? "/au" : ""}/products/${product.slug}`}
+                    prefetch={false}
+                  >
+                    {product.title} details
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </section>
+      ) : null}
+      {children}
     </main>
   );
 }
