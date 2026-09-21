@@ -45,7 +45,8 @@ function enablePrivatePurchaseDestinations() {
 }
 
 function googleAdsCommands() {
-  return (window as unknown as { dataLayer: unknown[] }).dataLayer;
+  return (window as unknown as { dataLayer: unknown[] }).dataLayer
+    .map((command) => Array.from(command as ArrayLike<unknown>));
 }
 
 describe("PurchaseTracker", () => {

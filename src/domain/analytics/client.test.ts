@@ -45,6 +45,11 @@ const purchase: PurchaseEvent = {
   items: event.items,
 };
 
+function googleAdsCommands() {
+  return (window as unknown as { dataLayer: unknown[] }).dataLayer
+    .map((command) => Array.from(command as ArrayLike<unknown>));
+}
+
 describe("emitAnalyticsEvent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -163,6 +168,31 @@ describe("emitAnalyticsEvent", () => {
       .toBe("sent");
   });
 
+  it("queues the Ads conversion in the command shape consumed by gtag.js", () => {
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    document.documentElement.dataset.googleAdsEnabled = "true";
+    document.documentElement.removeAttribute("data-ga4-analytics-enabled");
+    window.history.replaceState({}, "", "/orders/private?access=private-token");
+
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+
+    const conversionCommand = (window as unknown as { dataLayer: unknown[] }).dataLayer
+      .find((command) => Array.from(command as ArrayLike<unknown>)[1] === "conversion");
+    expect(conversionCommand).toBeDefined();
+    expect(Array.isArray(conversionCommand)).toBe(false);
+    expect(Array.from(conversionCommand as ArrayLike<unknown>)).toEqual([
+      "event",
+      "conversion",
+      expect.objectContaining({
+        send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+        transaction_id: "RNR-2026-PRIVATE",
+        value: 97.75,
+        currency: "NZD",
+      }),
+    ]);
+  });
+
   it("pins pageview, view_item, and purchase to the configured destination", () => {
     document.documentElement.dataset.ga4Enabled = "true";
     sendControlledGaEvent("page_view", {
@@ -183,7 +213,7 @@ describe("emitAnalyticsEvent", () => {
     for (const command of vi.mocked(sendGAEvent).mock.calls.slice(0, 3)) {
       expect(command[2]).toMatchObject({ send_to: GA4_MEASUREMENT_ID });
     }
-    expect((window as unknown as { dataLayer: unknown[] }).dataLayer).toContainEqual([
+    expect(googleAdsCommands()).toContainEqual([
       "event",
       "conversion",
       expect.objectContaining({
@@ -394,7 +424,7 @@ describe("emitAnalyticsEvent", () => {
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
     });
-    expect((window as unknown as { dataLayer: unknown[] }).dataLayer).toContainEqual([
+    expect(googleAdsCommands()).toContainEqual([
       "config",
       GOOGLE_ADS_TAG_ID,
       {
@@ -403,7 +433,7 @@ describe("emitAnalyticsEvent", () => {
         page_referrer: "",
       },
     ]);
-    expect((window as unknown as { dataLayer: unknown[] }).dataLayer).toContainEqual([
+    expect(googleAdsCommands()).toContainEqual([
       "event",
       "conversion",
       expect.objectContaining({
@@ -512,7 +542,7 @@ describe("emitAnalyticsEvent", () => {
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
     });
-    expect((window as unknown as { dataLayer: unknown[] }).dataLayer).toContainEqual([
+    expect(googleAdsCommands()).toContainEqual([
       "event",
       "conversion",
       expect.objectContaining({
@@ -630,7 +660,8 @@ describe("emitAnalyticsEvent", () => {
     const originalPush = dataLayer.push;
     let rejectConversion = true;
     dataLayer.push = (...commands) => {
-      if (rejectConversion && Array.isArray(commands[0]) && commands[0][0] === "event") {
+      if (rejectConversion
+        && Array.from(commands[0] as ArrayLike<unknown>)[0] === "event") {
         throw new Error("ads transport unavailable");
       }
       return originalPush.apply(dataLayer, commands);

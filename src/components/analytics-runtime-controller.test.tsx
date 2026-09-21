@@ -169,6 +169,12 @@ describe("AnalyticsRuntimeController", () => {
       const values = Array.from(command as ArrayLike<unknown>);
       return values[0] === "config" && values[1] === GA4_MEASUREMENT_ID;
     })).toBe(false);
+    const adsConfig = (window as unknown as { dataLayer?: unknown[] }).dataLayer?.find((command) => {
+      const values = Array.from(command as ArrayLike<unknown>);
+      return values[0] === "config" && values[1] === GOOGLE_ADS_TAG_ID;
+    });
+    expect(adsConfig).toBeDefined();
+    expect(Array.isArray(adsConfig)).toBe(false);
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect(document.documentElement.dataset.googleAdsEnabled).toBe("true");
     expect(sendGAEvent).not.toHaveBeenCalled();

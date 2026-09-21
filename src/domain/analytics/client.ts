@@ -12,6 +12,7 @@ import {
   GA4_SAFE_PURCHASE_PATH,
   GOOGLE_ADS_PURCHASE_SEND_TO,
   GOOGLE_ADS_TAG_ID,
+  googleTagCommand,
 } from "./runtime";
 
 const GA4_EVENT_PROCESSING_WINDOW_MS = 250;
@@ -302,7 +303,7 @@ function sendPurchaseDestination(
     if (!Array.isArray(dataLayer) || typeof dataLayer.push !== "function") {
       throw new Error("Google Ads transport is unavailable");
     }
-    dataLayer.push([
+    dataLayer.push(googleTagCommand(
       "config",
       GOOGLE_ADS_TAG_ID,
       {
@@ -310,8 +311,8 @@ function sendPurchaseDestination(
         page_location: new URL(GA4_SAFE_PURCHASE_PATH, window.location.origin).href,
         page_referrer: "",
       },
-    ]);
-    dataLayer.push(["event", eventName, safePageContext(payload, sendTo)]);
+    ));
+    dataLayer.push(googleTagCommand("event", eventName, safePageContext(payload, sendTo)));
     window.sessionStorage.setItem(deliveryKey, "sent");
     return;
   }

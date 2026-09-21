@@ -17,6 +17,7 @@ import {
   GA4_DISABLE_WINDOW_KEY,
   GA4_MEASUREMENT_ID,
   GOOGLE_ADS_TAG_ID,
+  googleTagCommand,
   type Ga4LocationPolicy,
 } from "@/domain/analytics/runtime";
 import { useAdvertisingConsent } from "./consent-preferences";
@@ -54,13 +55,21 @@ function initializeGoogleDataLayer(analytics: boolean, advertising: boolean): ()
         && !Array.isArray(values[2])
         ? values[2] as Record<string, unknown>
         : {};
-      return ["config", values[1], { ...options, send_page_view: false }];
+      return googleTagCommand("config", values[1], { ...options, send_page_view: false });
     }),
   );
   dataLayer.push = guardedPush;
-  dataLayer.push(["consent", "default", googleConsentSignals(analytics, advertising)]);
-  if (analytics) dataLayer.push(["config", GA4_MEASUREMENT_ID, { send_page_view: false }]);
-  if (advertising) dataLayer.push(["config", GOOGLE_ADS_TAG_ID, { send_page_view: false }]);
+  dataLayer.push(googleTagCommand(
+    "consent",
+    "default",
+    googleConsentSignals(analytics, advertising),
+  ));
+  if (analytics) {
+    dataLayer.push(googleTagCommand("config", GA4_MEASUREMENT_ID, { send_page_view: false }));
+  }
+  if (advertising) {
+    dataLayer.push(googleTagCommand("config", GOOGLE_ADS_TAG_ID, { send_page_view: false }));
+  }
 
   return () => {
     if (dataLayer.push === guardedPush) dataLayer.push = originalPush;
@@ -356,7 +365,11 @@ export function AnalyticsRuntimeController({
       restoreDataLayer();
       const dataLayer = (window as Ga4Window & { dataLayer?: unknown[] }).dataLayer;
       if (Array.isArray(dataLayer)) {
-        dataLayer.push(["consent", "update", googleConsentSignals(false, false)]);
+        dataLayer.push(googleTagCommand(
+          "consent",
+          "update",
+          googleConsentSignals(false, false),
+        ));
       }
       removeHistoryGuard();
       document.removeEventListener("load", handleScriptLoad, true);

@@ -7,6 +7,13 @@ export const GA4_DISABLE_WINDOW_KEY = `ga-disable-${GA4_MEASUREMENT_ID}`;
 export const GA4_SAFE_PURCHASE_PATH = "/";
 export const GA4_SAFE_CHECKOUT_PATH = "/checkout";
 
+export function googleTagCommand(...values: unknown[]): IArguments {
+  void values;
+  // Google Tag consumes the native arguments object produced by window.gtag.
+  // eslint-disable-next-line prefer-rest-params
+  return arguments;
+}
+
 export type Ga4LocationPolicy = "public" | "private" | "private-checkout" | "private-order";
 
 const PRIVATE_PATH_PREFIXES = [
