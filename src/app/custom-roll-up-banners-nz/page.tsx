@@ -24,5 +24,6 @@ export default async function CustomRollUpBannersPage() {
     content={content}
     product={product}
     priceInclGstCents={getMarketStartingPriceInclTaxCents(registry, "NZ", product.key)}
+    standardHeadings
   />;
 }

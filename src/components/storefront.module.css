@@ -5817,6 +5817,23 @@
   line-height: 1.05;
 }
 
+.adLandingStandardHeadings .adLandingCopy h1 {
+  font-size: var(--type-page);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+}
+
+.adLandingStandardHeadings .adLandingSection h2,
+.adLandingStandardHeadings .adLandingExamples h2,
+.adLandingStandardHeadings .adLandingFaq h2,
+.adLandingStandardHeadings .adLandingFinalCta h2 {
+  font-size: var(--type-section);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
 .adLandingSection ul,
 .adLandingSection ol {
   margin-top: 1rem;

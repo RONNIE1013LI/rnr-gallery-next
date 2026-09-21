@@ -10,15 +10,21 @@ import { StructuredData } from "./structured-data";
 import { AnalyticsLink } from "./analytics-link";
 import styles from "./storefront.module.css";
 
-export function AdLandingPage({ content, product, priceInclGstCents }: Readonly<{
+export function AdLandingPage({ content, product, priceInclGstCents, standardHeadings = false }: Readonly<{
   content: AdLandingPageContent;
   product: Product;
   priceInclGstCents: number;
+  standardHeadings?: boolean;
 }>) {
   const siteUrl = getSiteUrl();
   const configureHref = `/products/${product.slug}/configure`;
   return (
-    <main id="main-content" className={styles.adLandingPage}>
+    <main
+      id="main-content"
+      className={standardHeadings
+        ? `${styles.adLandingPage} ${styles.adLandingStandardHeadings}`
+        : styles.adLandingPage}
+    >
       <StructuredData id="rnr-landing-product" data={{
         "@context": "https://schema.org",
         "@type": "Product",

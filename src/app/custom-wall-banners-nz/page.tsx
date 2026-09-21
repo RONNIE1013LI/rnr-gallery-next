@@ -24,5 +24,6 @@ export default async function CustomWallBannersPage() {
     content={content}
     product={product}
     priceInclGstCents={getMarketStartingPriceInclTaxCents(registry, "NZ", product.key)}
+    standardHeadings
   />;
 }

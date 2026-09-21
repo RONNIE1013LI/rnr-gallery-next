@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import * as analytics from "@/domain/analytics/client";
 import { defaultProductRegistry, getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
@@ -73,5 +74,37 @@ describe("AdLandingPage", () => {
       event: "generate_lead",
       method: "messenger",
     });
+  });
+
+  it("applies the shared page and section heading scale only when explicitly enabled", () => {
+    const content = adLandingPages.rollUp;
+    const product = getRegistryProductBySlug(defaultProductRegistry, content.productSlug)!;
+    const { container, rerender } = render(
+      <AdLandingPage
+        content={content}
+        product={product}
+        priceInclGstCents={54_321}
+        standardHeadings
+      />,
+    );
+
+    expect(container.querySelector("main")?.className).toContain("adLandingStandardHeadings");
+
+    rerender(
+      <AdLandingPage
+        content={content}
+        product={product}
+        priceInclGstCents={54_321}
+      />,
+    );
+    expect(container.querySelector("main")?.className).not.toContain("adLandingStandardHeadings");
+
+    const stylesheet = readFileSync("src/components/storefront.module.css", "utf8");
+    expect(stylesheet).toMatch(
+      /\.adLandingStandardHeadings \.adLandingCopy h1\s*\{[^}]*font-size:\s*var\(--type-page\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.045em[^}]*line-height:\s*1\.02/,
+    );
+    expect(stylesheet).toMatch(
+      /\.adLandingStandardHeadings \.adLandingSection h2,[\s\S]*?\.adLandingStandardHeadings \.adLandingFinalCta h2\s*\{[^}]*font-size:\s*var\(--type-section\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.035em[^}]*line-height:\s*1/,
+    );
   });
 });
