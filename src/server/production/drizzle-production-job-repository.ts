@@ -1,3 +1,5 @@
+import { allocateOrderNumber } from "@/server/orders/order-number";
+import { buildInvoiceNumber } from "@/server/invoices/invoice-domain";
 import { createInvoiceService } from "@/server/invoices/invoice-service";
 import { createDrizzleInvoiceRepository } from "@/server/invoices/drizzle-invoice-repository";
 import { getInvoiceBusinessSettings } from "@/server/invoices/invoice-business";
@@ -607,6 +609,17 @@ export function createDrizzleProductionJobRepository(
     async createManual(input) {
       let inserted = false;
       const created = await database.transaction(async (transaction) => {
+        // Serialize retries of this request before allocating any business number.
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${"manual-order:" + input.idempotencyKey}))`);
+        const [existing] = await transaction.select({
+          id: productionJobs.id, jobNumber: productionJobs.jobNumber,
+          requestDigest: productionJobs.requestDigest,
+          createdAt: productionJobs.createdAt, updatedAt: productionJobs.updatedAt,
+        }).from(productionJobs).where(eq(productionJobs.idempotencyKey, input.idempotencyKey)).limit(1);
+        if (existing) {
+          if (existing.requestDigest !== input.requestDigest) throw new ProductionJobConflictError();
+          return { ...existing, requestDigest: input.requestDigest };
+        }
         const availableFields = await transaction.select().from(productionFieldDefinitions)
           .where(and(
             eq(productionFieldDefinitions.enabled, true),
@@ -637,8 +650,9 @@ export function createDrizzleProductionJobRepository(
           !(submittedById.get(field.id) ?? "").trim())) {
           throw new ProductionJobValidationError("Required custom field is missing");
         }
+        const jobNumber = input.jobNumber ?? await allocateOrderNumber(transaction);
         const [job] = await transaction.insert(productionJobs).values({
-          jobNumber: input.jobNumber,
+          jobNumber,
           source: "manual",
           idempotencyKey: input.idempotencyKey,
           requestDigest: input.requestDigest,
@@ -707,11 +721,11 @@ export function createDrizzleProductionJobRepository(
         if (input.invoice) {
           const [invoice] = await transaction.insert(invoices).values({
             jobId: job.id,
-            invoiceNumber: input.invoice.invoiceNumber,
+            invoiceNumber: buildInvoiceNumber(job.jobNumber),
             status: "draft",
             invoiceDate: input.invoice.invoiceDate,
             dueDate: input.invoice.dueDate,
-            reference: input.invoice.reference,
+            reference: input.invoice.reference === "DRAFT" ? job.jobNumber : input.invoice.reference,
             webOrderNumber: input.webOrderNumber,
             businessName: input.invoice.businessName,
             businessAddress: input.invoice.businessAddress,
@@ -754,7 +768,7 @@ export function createDrizzleProductionJobRepository(
             action: "invoice.created",
             resourceType: "invoice",
             resourceId: invoice.id,
-            afterSummary: { jobId: job.id, invoiceNumber: input.invoice.invoiceNumber, totalInclGstCents: input.invoice.totalInclGstCents },
+            afterSummary: { jobId: job.id, invoiceNumber: buildInvoiceNumber(job.jobNumber), totalInclGstCents: input.invoice.totalInclGstCents },
             requestSource: "admin.jobs.manual",
             result: "success",
             idempotencyKey: `invoice-created:${job.id}`,

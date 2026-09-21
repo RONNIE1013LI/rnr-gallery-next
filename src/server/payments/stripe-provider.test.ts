@@ -81,6 +81,16 @@ function client(
 }
 
 describe("Stripe payment provider", () => {
+  it("preserves opaque metadata for a paid numbered order and provider retrieval", async () => {
+    const paymentReference = "RNR-PENDING-OPAQUE";
+    const numbered = { ...order, orderNumber: "07327", paymentReference };
+    const intent = { ...baseIntent, metadata: { order_number: paymentReference }, status: "succeeded" };
+    const stripe = client(intent);
+    const provider = createStripeProvider({ config, client: stripe });
+    await provider.createOrReuse({ ...sessionInput, order: numbered });
+    expect(stripe.paymentIntents.create).toHaveBeenCalledWith(expect.objectContaining({ metadata: { order_number: paymentReference } }), expect.anything());
+    await expect(provider.retrieve({ order: numbered, providerReference: intent.id })).resolves.toMatchObject({ kind: "verified", result: { orderNumber: paymentReference, status: "paid" } });
+  });
   it("bounds the production default SDK network budget below the reconciliation lease", async () => {
     const StripeConstructor = vi.fn(function StripeConstructor() {
       return client();

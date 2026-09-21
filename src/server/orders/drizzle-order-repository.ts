@@ -527,6 +527,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
             .insert(orders)
             .values({
               orderNumber: input.orderNumber,
+              paymentReference: input.orderNumber,
               checkoutSessionId: input.sessionId,
               checkoutSessionVersion: input.expectedVersion,
               idempotencyKey: input.idempotencyKey,

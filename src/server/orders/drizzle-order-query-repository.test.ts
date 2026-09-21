@@ -17,6 +17,7 @@ type PaymentReadRow = Pick<
 const createdAt = new Date("2026-08-02T00:00:00.000Z");
 const orderRow: OrderRow = {
   id: "10000000-0000-4000-8000-000000000001",
+  paymentReference: null,
   orderNumber: "RNR-2026-ABC",
   checkoutSessionId: "20000000-0000-4000-8000-000000000001",
   checkoutSessionVersion: 2,

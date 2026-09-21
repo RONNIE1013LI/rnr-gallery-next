@@ -47,7 +47,7 @@ export type PaymentRecoveryIntent =
   | DirectStartingPaymentIntent;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ORDER_PATTERN = /^RNR-[A-Z0-9]+(?:-[A-Z0-9]+)+$/;
+const ORDER_PATTERN = /^(?:\d{5,}|RNR-[A-Z0-9]+(?:-[A-Z0-9]+)+)$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const SERVICE_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/ -]{0,99}$/;
 const CHECKOUT_KEYS = ["schemaVersion", "phase", "orderIdempotencyKey", "paymentIdempotencyKey", "method", "checkoutVersion", "cartDigest", "shipping"];

@@ -1,3 +1,5 @@
+import { createDrizzlePaymentRequestRepository } from "@/server/payment-requests/drizzle-payment-request-repository";
+import { createDrizzleOrderQueryRepository } from "@/server/orders/drizzle-order-query-repository";
 import { deliverNewOrderInvoiceEmail } from "@/server/admin/admin-invoice-runtime";
 import { createDrizzleInvoiceRepository } from "@/server/invoices/drizzle-invoice-repository";
 import { createHash, randomUUID } from "node:crypto";
@@ -13,6 +15,8 @@ import {
   orderNotificationOutbox,
   orders,
   paymentLedgerEntries,
+  paymentRequests,
+  paymentRequestNotificationOutbox,
   paymentAttempts,
   productionJobItems,
   productionJobs,
@@ -2183,4 +2187,170 @@ describe("Drizzle payment repository", () => {
       .some(({ attempt: candidateAttempt }) => candidateAttempt.id === claim.attempt.id))
       .toBe(false);
   });
+  async function counterValue() {
+    return BigInt((await pool.query("select current_value from business_number_counter where key = 'order_job'")).rows[0].current_value);
+  }
+
+  async function pendingNumberOrder(provider: "stripe" | "afterpay" = "stripe", owner: "guest" | "customer" = "guest") {
+    const order = await createOrder({ owner });
+    const reference = `RNR-PENDING-${randomUUID().toUpperCase()}`;
+    await pool.query("update order_items set price_lines=$1::jsonb where order_id=$2", [JSON.stringify([{ key: "base", label: "Canvas", amountExGstCents: 6500 }]), order.orderId]);
+    await database.update(orders).set({ orderNumber: reference, paymentReference: reference }).where(eq(orders.id, order.orderId));
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId, {
+      provider, method: provider === "stripe" ? "card" : "afterpay",
+    }));
+    const providerReference = `number-${randomUUID()}`;
+    const digest = createHash("sha256").update(randomUUID()).digest("hex");
+    await repository.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference,
+      returnStateDigest: digest, status: "processing" });
+    return { ...order, orderNumber: reference, claim, digest,
+      result: { providerReference, providerStatus: "CAPTURED", amountCents: 7475,
+        currency: "NZD" as const, orderNumber: reference, status: "paid" as const } };
+  }
+
+  it("does not allocate for abandoned, failed, cancelled or untrusted browser-return payments", async () => {
+    const before = await counterValue();
+    const abandoned = await pendingNumberOrder();
+    for (const status of ["failed", "cancelled", "processing"] as const) {
+      const order = await pendingNumberOrder();
+      await repository.applyVerifiedResult({ attemptId: order.claim.attempt.id,
+        result: { ...order.result, status }, source: "reconciliation" });
+      expect((await paymentRows(order.orderId, order.claim.attempt.id)).order.orderNumber).toBe(order.orderNumber);
+    }
+    await repository.applyVerifiedResult({ attemptId: abandoned.claim.attempt.id,
+      result: abandoned.result, source: "browser_return" });
+    expect(await counterValue()).toBe(before);
+    expect((await paymentRows(abandoned.orderId, abandoned.claim.attempt.id)).order.orderNumber).toBe(abandoned.orderNumber);
+  });
+
+  it("assigns exactly one number across concurrent Stripe webhooks and preserves guest/customer recovery", async () => {
+    for (const owner of ["guest", "customer"] as const) {
+      const before = await counterValue();
+      const order = await pendingNumberOrder("stripe", owner);
+      const event = { provider: "stripe" as const, providerEventId: `evt-${randomUUID()}`,
+        payloadSha256: "a".repeat(64), result: order.result };
+      const outcomes = await Promise.all(Array.from({ length: 6 }, () => repository.applyVerifiedWebhookEventAtomically(event)));
+      expect(outcomes.filter((result) => result === "applied")).toHaveLength(1);
+      await Promise.all(Array.from({ length: 3 }, () => repository.applyVerifiedWebhookEventAtomically({ ...event, providerEventId: `evt-other-${randomUUID()}` })));
+      expect(await counterValue()).toBe(before + BigInt(1));
+      const formal = (before + BigInt(1)).toString().padStart(5, "0");
+      expect((await paymentRows(order.orderId, order.claim.attempt.id)).order).toMatchObject({ orderNumber: formal, paymentReference: order.orderNumber, paymentStatus: "paid" });
+      const access = owner === "guest" ? { kind: "guest" as const, tokenDigest: order.tokenDigest, orderNumber: order.orderNumber }
+        : { kind: "customer" as const, customerId: order.customerId!, orderNumber: order.orderNumber };
+      const queries = createDrizzleOrderQueryRepository(database);
+      const publicOrder = owner === "guest" ? await queries.findByCheckoutToken(order.orderNumber, order.tokenDigest)
+        : await queries.findByCustomer(order.orderNumber, order.customerId!);
+      expect(publicOrder).toMatchObject({ orderNumber: formal, paymentReference: order.orderNumber });
+      await expect(repository.findCurrentPayment(access)).resolves.toMatchObject({ order: { orderNumber: formal, paymentReference: order.orderNumber } });
+      await expect(repository.consumeReturnState({ provider: "stripe", method: "card", digest: order.digest,
+        orderNumber: order.orderNumber, providerReference: order.result.providerReference })).resolves.toMatchObject({ outcome: "consumed", order: { orderNumber: formal } });
+      await expect(repository.consumeReturnState({ provider: "stripe", method: "card", digest: order.digest,
+        orderNumber: order.orderNumber, providerReference: order.result.providerReference })).resolves.toMatchObject({ outcome: "already_consumed", orderNumber: formal });
+      expect(await database.select().from(productionJobs).where(eq(productionJobs.orderId, order.orderId))).toMatchObject([{ jobNumber: formal }]);
+      expect(await counterValue()).toBe(before + BigInt(1));
+    }
+  });
+
+  it("reuses the Afterpay number for capture and reconciliation retries, including a failed first payment", async () => {
+    const before = await counterValue();
+    const order = await pendingNumberOrder("afterpay");
+    await repository.applyVerifiedResult({ attemptId: order.claim.attempt.id, result: { ...order.result, status: "failed" }, source: "server_capture" });
+    expect(await counterValue()).toBe(before);
+    const results = await Promise.all(["server_capture", "reconciliation", "reconciliation"].map((source) =>
+      repository.applyVerifiedResult({ attemptId: order.claim.attempt.id, result: order.result, source: source as "server_capture" | "reconciliation" })));
+    expect(new Set(results.map((value) => value.order.orderNumber)).size).toBe(1);
+    expect(await counterValue()).toBe(before + BigInt(1));
+  });
+
+  it("rolls back number, paid state, webhook record, job and outbox together", async () => {
+    const before = await counterValue();
+    const order = await pendingNumberOrder();
+    const event = { provider: "stripe" as const, providerEventId: `evt-rollback-${randomUUID()}`,
+      payloadSha256: "b".repeat(64), result: order.result };
+    await expect(database.transaction(async (transaction) => {
+      const isolated = createDrizzlePaymentRepository(transaction as unknown as typeof database, { onNewInvoiceOrder: () => {} });
+      await isolated.applyVerifiedWebhookEventAtomically(event);
+      throw new Error("forced final business write failure");
+    })).rejects.toThrow("forced final business write failure");
+    expect(await counterValue()).toBe(before);
+    expect((await paymentRows(order.orderId, order.claim.attempt.id)).order).toMatchObject({ orderNumber: order.orderNumber, paymentStatus: "awaiting_payment" });
+    expect(await database.select().from(productionJobs).where(eq(productionJobs.orderId, order.orderId))).toHaveLength(0);
+    expect(await database.select().from(webhookEvents).where(eq(webhookEvents.providerEventId, event.providerEventId))).toHaveLength(0);
+    expect(await database.select().from(orderNotificationOutbox).where(eq(orderNotificationOutbox.orderId, order.orderId))).toHaveLength(0);
+    await repository.applyVerifiedWebhookEventAtomically(event);
+    expect(await counterValue()).toBe(before + BigInt(1));
+  });
+
+  it("gives concurrent paid orders a unique contiguous range and leaves historical numbers unchanged", async () => {
+    const before = await counterValue();
+    const pending = await Promise.all(Array.from({ length: 8 }, () => pendingNumberOrder()));
+    const paid = await Promise.all(pending.map((order) => repository.applyVerifiedResult({
+      attemptId: order.claim.attempt.id, result: order.result, source: "reconciliation" })));
+    expect(paid.map((value) => BigInt(value.order.orderNumber)).sort((a, b) => a < b ? -1 : 1))
+      .toEqual(Array.from({ length: 8 }, (_, i) => before + BigInt(i + 1)));
+    const historical = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(historical.orderId));
+    const reference = `legacy-${randomUUID()}`;
+    await repository.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference: reference, returnStateDigest: null, status: "processing" });
+    const result = await repository.applyVerifiedResult({ attemptId: claim.attempt.id, source: "reconciliation",
+      result: { providerReference: reference, providerStatus: "CAPTURED", amountCents: 7475, currency: "NZD", orderNumber: historical.orderNumber, status: "paid" } });
+    expect(result.order.orderNumber).toBe(historical.orderNumber);
+    expect(await counterValue()).toBe(before + BigInt(8));
+  });
+
+  it("finalizes a new web order once when an authoritative bank receipt settles its balance", async () => {
+    const before = await counterValue();
+    const order = await createOrder({ owner: "customer" });
+    const reference = `RNR-PENDING-${randomUUID().toUpperCase()}`;
+    await database.update(orders).set({ orderNumber: reference, paymentReference: reference }).where(eq(orders.id, order.orderId));
+    const scheduled: string[] = [];
+    const requests = createDrizzlePaymentRequestRepository(database, { onNewInvoiceOrder: (id) => { scheduled.push(id); } });
+    const receipt = { orderId: order.orderId, amountCents: 7475, receivedAt: new Date(), reference: "BANK-TEST", payerName: null, note: null, createdBy: order.customerId!, idempotencyKey: randomUUID() };
+    await withWebOrderPaidRecipient(async (recipient) => {
+      await requests.recordBankTransfer(receipt);
+      await requests.recordBankTransfer(receipt);
+      expect(await database.select().from(internalNotificationOutbox).where(and(eq(internalNotificationOutbox.sourceEventId, order.orderId), eq(internalNotificationOutbox.recipientId, recipient.id)))).toMatchObject([{ topic: "web_order_paid", resourceReference: (before + BigInt(1)).toString().padStart(5, "0") }]);
+    });
+    expect(await database.select().from(orderNotificationOutbox).where(eq(orderNotificationOutbox.orderId, order.orderId))).toMatchObject([{ kind: "payment_confirmed" }]);
+    const [paid] = await database.select().from(orders).where(eq(orders.id, order.orderId));
+    expect(paid).toMatchObject({ orderNumber: (before + BigInt(1)).toString().padStart(5, "0"), paymentStatus: "paid", paymentReference: reference });
+    expect(await counterValue()).toBe(before + BigInt(1));
+    expect(await database.select().from(productionJobs).where(eq(productionJobs.orderId, order.orderId))).toHaveLength(1);
+    expect(scheduled).toHaveLength(1);
+  });
+
+  it("finalizes an order-linked Payment Request with one number and both paid-order outboxes", async () => {
+    const before = await counterValue();
+    const order = await createOrder({ owner: "customer" });
+    const reference = `RNR-PENDING-${randomUUID().toUpperCase()}`;
+    await database.update(orders).set({ orderNumber: reference, paymentReference: reference }).where(eq(orders.id, order.orderId));
+    const requests = createDrizzlePaymentRequestRepository(database, { onNewInvoiceOrder: () => {} });
+    const { request } = await requests.createRequest({
+      kind: "order_balance", orderId: order.orderId, requestNumber: `PAY-${randomUUID().toUpperCase()}`,
+      publicTokenDigest: createHash("sha256").update(randomUUID()).digest("hex"), description: "Balance", currency: "NZD", amountCents: 7475,
+      enabledPaymentMethods: ["card"], expiresAt: null, internalNote: null, customerName: null, customerEmail: null, createdBy: order.customerId!, idempotencyKey: randomUUID(),
+    });
+    const eventId = `evt-request-number-${randomUUID()}`;
+    try {
+      const claim = await requests.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "stripe", method: "card", payerSnapshot: null });
+      const providerReference = `pi-request-number-${randomUUID()}`;
+      await requests.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference, returnStateDigest: null, status: "processing" });
+      const event = { provider: "stripe" as const, providerEventId: eventId, payloadSha256: "e".repeat(64), result: { providerReference, providerStatus: "succeeded", amountCents: 7475, currency: "NZD" as const, merchantReference: request.requestNumber, status: "paid" as const } };
+      await withWebOrderPaidRecipient(async (recipient) => {
+        await requests.applyVerifiedWebhookEventAtomically(event);
+        await requests.applyVerifiedWebhookEventAtomically(event);
+        expect(await database.select().from(internalNotificationOutbox).where(and(eq(internalNotificationOutbox.sourceEventId, order.orderId), eq(internalNotificationOutbox.recipientId, recipient.id)))).toHaveLength(1);
+      });
+      expect(await counterValue()).toBe(before + BigInt(1));
+      expect(await database.select().from(orderNotificationOutbox).where(eq(orderNotificationOutbox.orderId, order.orderId))).toMatchObject([{ kind: "payment_confirmed" }]);
+      expect(await database.select().from(productionJobs).where(eq(productionJobs.orderId, order.orderId))).toMatchObject([{ jobNumber: (before + BigInt(1)).toString().padStart(5, "0") }]);
+    } finally {
+      await database.delete(webhookEvents).where(eq(webhookEvents.providerEventId, eventId));
+      await database.delete(paymentRequestNotificationOutbox).where(eq(paymentRequestNotificationOutbox.paymentRequestId, request.id));
+      await database.delete(paymentLedgerEntries).where(eq(paymentLedgerEntries.paymentRequestId, request.id));
+      await database.delete(paymentAttempts).where(eq(paymentAttempts.paymentRequestId, request.id));
+      await database.delete(paymentRequests).where(eq(paymentRequests.id, request.id));
+    }
+  });
+
 });

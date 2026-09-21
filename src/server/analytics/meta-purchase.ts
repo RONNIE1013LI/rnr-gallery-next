@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 import type { StoredOrderAttribution } from "@/domain/analytics/attribution";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
@@ -109,7 +109,7 @@ async function loadPaidOrder(orderNumber: string): Promise<MetaPaidOrderSnapshot
     totalInclGstCents: orders.totalInclGstCents,
     customerEmail: orders.customerEmail,
     attribution: orders.attribution,
-  }).from(orders).where(eq(orders.orderNumber, orderNumber)).limit(1);
+  }).from(orders).where(or(eq(orders.orderNumber, orderNumber), eq(orders.paymentReference, orderNumber))).limit(1);
   if (!order) return null;
   const [items, [billing]] = await Promise.all([
     database.select({

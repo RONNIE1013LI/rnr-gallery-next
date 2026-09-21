@@ -29,6 +29,7 @@ export type PaymentOrder = Omit<
 > & Readonly<{
   id: string;
   orderNumber: string;
+  paymentReference?: string;
   billingAddress: NormalizedAddress;
   deliveryAddress: NormalizedAddress;
 }>;
@@ -45,7 +46,7 @@ export type ProviderPaymentTarget = PaymentOrder | PaymentTargetSnapshot;
 export function paymentTargetReference(target: ProviderPaymentTarget): string {
   return "merchantReference" in target
     ? target.merchantReference
-    : target.orderNumber;
+    : target.paymentReference ?? target.orderNumber;
 }
 
 export type ProviderAvailability =

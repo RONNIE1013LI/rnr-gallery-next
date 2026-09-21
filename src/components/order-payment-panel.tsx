@@ -245,7 +245,8 @@ function parsePaymentMethodChangeResponse(
   if (
     !result ||
     !hasExactKeys(result, ["payment", "orderNumber"]) ||
-    result.orderNumber !== orderNumber ||
+    (result.orderNumber !== orderNumber &&
+      !(payment?.status === "paid" && typeof result.orderNumber === "string" && /^\d{5,}$/.test(result.orderNumber))) ||
     !payment ||
     !hasExactKeys(payment, ["method", "status", "isTest", "canRetry"]) ||
     payment.method !== "afterpay" ||

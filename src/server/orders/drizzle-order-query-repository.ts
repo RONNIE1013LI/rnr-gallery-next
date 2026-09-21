@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { checkoutSessions, orderAddresses, orderItems, orders, paymentAttempts } from "@/server/db/schema";
 import { normalizeAddress } from "@/domain/address/schema";
@@ -237,6 +237,7 @@ export function buildPublicOrders(
       assertSnapshot(mappedItems.reduce((sum, item) => sum + item.lineTotalInclGstCents, 0) === row.productTotalInclGstCents);
       const addressRows = addresses.filter(({ orderId }) => orderId === row.id);
       return Object.freeze({
+        ...(row.paymentReference ? { paymentReference: row.paymentReference } : {}),
         orderNumber: row.orderNumber, createdAt: row.createdAt.toISOString(),
         paymentStatus: row.paymentStatus, fulfilmentStatus: row.fulfilmentStatus,
         currency: row.currency, deliveryMethod: row.deliveryMethod,
@@ -297,20 +298,20 @@ export function createDrizzleOrderQueryRepository(database: Database): OrderQuer
   return {
     async findByCheckoutToken(orderNumber, tokenDigest) {
       return snapshot(async (transaction) => {
-        const rows = await transaction.select({ order: orders }).from(orders).innerJoin(checkoutSessions, and(eq(checkoutSessions.id, orders.checkoutSessionId), eq(checkoutSessions.tokenDigest, tokenDigest), isNotNull(checkoutSessions.completedAt), sql`${checkoutSessions.expiresAt} > clock_timestamp()`)).where(and(eq(orders.orderNumber, orderNumber), isNull(orders.customerId))).limit(1);
+        const rows = await transaction.select({ order: orders }).from(orders).innerJoin(checkoutSessions, and(eq(checkoutSessions.id, orders.checkoutSessionId), eq(checkoutSessions.tokenDigest, tokenDigest), isNotNull(checkoutSessions.completedAt), sql`${checkoutSessions.expiresAt} > clock_timestamp()`)).where(and(or(eq(orders.orderNumber, orderNumber), eq(orders.paymentReference, orderNumber)), isNull(orders.customerId))).limit(1);
         return one(transaction, rows.map(({ order }) => order));
       });
     },
     async findByCustomer(orderNumber, customerId) {
       return snapshot(async (transaction) => {
-        const rows = await transaction.select().from(orders).where(and(eq(orders.orderNumber, orderNumber), eq(orders.customerId, customerId))).limit(1);
+        const rows = await transaction.select().from(orders).where(and(or(eq(orders.orderNumber, orderNumber), eq(orders.paymentReference, orderNumber)), eq(orders.customerId, customerId))).limit(1);
         return one(transaction, rows);
       });
     },
     async findByEmailAccess(orderNumber) {
       return snapshot(async (transaction) => {
         const rows = await transaction.select().from(orders)
-          .where(eq(orders.orderNumber, orderNumber))
+          .where(or(eq(orders.orderNumber, orderNumber), eq(orders.paymentReference, orderNumber)))
           .limit(1);
         return one(transaction, rows);
       });

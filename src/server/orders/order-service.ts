@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   defaultProductRegistry,
   type ProductRegistryDocument,
@@ -49,12 +49,8 @@ export class OrderStateChangedError extends Error {
   }
 }
 
-export function createOrderNumber(now = new Date()): string {
-  const year = new Intl.DateTimeFormat("en-NZ", {
-    timeZone: "Pacific/Auckland",
-    year: "numeric",
-  }).format(now);
-  return `RNR-${year}-${randomBytes(5).toString("hex").toUpperCase()}`;
+export function createOrderNumber(): string {
+  return `RNR-PENDING-${randomUUID().toUpperCase()}`;
 }
 
 function toPaymentStartDTO(order: OrderRecord): PaymentOrderCreationResult {
@@ -130,7 +126,7 @@ export function createOrderService({
   shippingService,
   productRegistryService,
   now = () => new Date(),
-  createOrderNumber: makeOrderNumber = () => createOrderNumber(now()),
+  createOrderNumber: makeOrderNumber = () => createOrderNumber(),
 }: {
   repository: OrderRepository;
   shippingService: ShippingService;

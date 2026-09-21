@@ -69,17 +69,24 @@ export type OrderNotificationKind =
   | "order_shipped";
 export type OrderNotificationStatus = "pending" | "sending" | "sent" | "failed";
 
-export const orderNumberSequence = pgSequence("rnr_order_number_seq", {
+export const orderNumberSequence = pgSequence("rnr_order_number_seq_retired", {
   startWith: 1,
   minValue: 1,
   increment: 1,
 });
+
+export const businessNumberCounter = pgTable("business_number_counter", {
+  key: text("key").primaryKey(),
+  currentValue: bigint("current_value", { mode: "bigint" }).notNull(),
+}, (table) => [check("business_number_counter_nonnegative", sql`${table.currentValue} >= 0`)]);
 
 export const orders = pgTable(
   "orders",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     orderNumber: text("order_number").notNull().unique(),
+    // Stable opaque checkout/provider reference; null only for historical orders.
+    paymentReference: text("payment_reference").unique(),
     checkoutSessionId: uuid("checkout_session_id")
       .notNull()
       .unique()

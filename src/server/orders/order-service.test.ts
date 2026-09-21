@@ -6,6 +6,7 @@ import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { CheckoutStateRecord } from "@/server/checkout/checkout-repository";
 import {
   createOrderService,
+  createOrderNumber,
   OrderConflictError,
   OrderStateChangedError,
 } from "./order-service";
@@ -407,4 +408,10 @@ describe("atomic order service", () => {
       OrderStateChangedError,
     );
   });
+});
+
+it("uses a UUID-backed opaque checkout reference without allocating a numeric business number", () => {
+  const references = Array.from({ length: 10 }, () => createOrderNumber());
+  expect(new Set(references).size).toBe(10);
+  for (const reference of references) expect(reference).toMatch(/^RNR-PENDING-[0-9A-F-]{36}$/);
 });

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 
 type Database = ReturnType<typeof getDatabase>;
+type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export function formatOrderNumber(value: number | bigint) {
   const numeric = typeof value === "bigint" ? value : BigInt(value);
@@ -9,13 +10,16 @@ export function formatOrderNumber(value: number | bigint) {
   return numeric.toString().padStart(5, "0");
 }
 
-export async function allocateOrderNumber(database: Pick<Database, "execute">) {
-  const result = await database.execute<{ value: string }>(sql`
-    select lpad(nextval('rnr_order_number_seq')::text, 5, '0') as value
+export async function allocateOrderNumber(transaction: Transaction) {
+  const result = await transaction.execute<{ value: string }>(sql`
+    update business_number_counter
+    set current_value = current_value + 1
+    where key = 'order_job'
+    returning current_value::text as value
   `);
   const value = result.rows[0]?.value;
-  if (!value || !/^\d{5,}$/.test(value)) {
+  if (!value || !/^\d+$/.test(value)) {
     throw new Error("Order number allocation failed");
   }
-  return value;
+  return formatOrderNumber(BigInt(value));
 }

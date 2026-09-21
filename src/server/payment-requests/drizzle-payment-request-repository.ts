@@ -1,3 +1,6 @@
+import { scheduleNewOrderInvoiceEmail } from "@/server/admin/admin-invoice-runtime";
+import { allocateOrderNumber } from "@/server/orders/order-number";
+import { ensurePaidWebOrderProductionJob, enqueuePaidWebOrderNotifications } from "@/server/payments/drizzle-payment-repository";
 import { randomUUID } from "node:crypto";
 import {
   and,
@@ -252,6 +255,7 @@ async function updateOrderPaymentStatus(
   transaction: Transaction,
   order: OrderRow,
   now: Date,
+  newInvoiceJobs: string[],
 ) {
   const { outstandingCents } = await orderBalance(transaction, order);
   const requestInFlight = await activeRequestAttemptIds(transaction, order.id);
@@ -261,8 +265,14 @@ async function updateOrderPaymentStatus(
     : requestInFlight.size > 0 || directReserved > 0
       ? "processing"
       : "awaiting_payment";
-  await transaction.update(orders).set({ paymentStatus, updatedAt: now })
+  const isNewFormalOrder = paymentStatus === "paid" && order.paymentReference === order.orderNumber;
+  if (isNewFormalOrder) order.orderNumber = await allocateOrderNumber(transaction);
+  await transaction.update(orders).set({ paymentStatus, orderNumber: order.orderNumber, updatedAt: now })
     .where(eq(orders.id, order.id));
+  if (isNewFormalOrder) {
+    await ensurePaidWebOrderProductionJob(transaction, { ...order, paymentStatus }, now, newInvoiceJobs);
+    await enqueuePaidWebOrderNotifications(transaction, { ...order, paymentStatus }, now);
+  }
 }
 
 function attemptClaimRecord(
@@ -313,6 +323,7 @@ async function applyRequestVerifiedResult(
     result: VerifiedPaymentResult;
     source: PaymentVerificationSource;
   }>,
+  newInvoiceJobs: string[],
 ) {
   const [candidate] = await transaction.select({
     requestId: paymentAttempts.paymentRequestId,
@@ -406,7 +417,7 @@ async function applyRequestVerifiedResult(
       });
     }
     if (order) {
-      await updateOrderPaymentStatus(transaction, order, now);
+      await updateOrderPaymentStatus(transaction, order, now, newInvoiceJobs);
       await reconcileOrderRequests(transaction, order, now);
     }
   }
@@ -419,6 +430,7 @@ async function applyRequestVerifiedResult(
 export function createDrizzlePaymentRequestRepository(
   database: Database,
   options: Readonly<{
+    onNewInvoiceOrder?: (jobId: string) => void;
     leaseDurationMs?: number;
     analyticsRecorder?: Pick<
       WebsiteAnalyticsV2BusinessRecorder,
@@ -432,6 +444,14 @@ export function createDrizzlePaymentRequestRepository(
   }
   const analyticsRecorder = options.analyticsRecorder
     ?? createWebsiteAnalyticsV2BusinessRecorder(database);
+
+  function scheduleInvoices(ids: string[]) {
+    for (const id of ids) {
+      try { (options.onNewInvoiceOrder ?? scheduleNewOrderInvoiceEmail)(id); } catch {
+        console.error("invoice automatic scheduling failed", { jobId: id });
+      }
+    }
+  }
 
   async function recordLedgerEntry(entryId: string): Promise<void> {
     try {
@@ -676,6 +696,7 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async recordBankTransfer(input) {
+      const newInvoiceJobs: string[] = [];
       const result = await database.transaction(async (transaction) => {
         const order = await lockOrder(transaction, input.orderId);
         const [existing] = await transaction.select().from(paymentLedgerEntries).where(and(
@@ -727,15 +748,17 @@ export function createDrizzlePaymentRequestRepository(
           createdBy: input.createdBy,
           idempotencyKey: input.idempotencyKey,
         }).returning();
-        await updateOrderPaymentStatus(transaction, order, now);
+        await updateOrderPaymentStatus(transaction, order, now, newInvoiceJobs);
         await reconcileOrderRequests(transaction, order, now);
         return ledgerRecord(created);
       });
+      scheduleInvoices(newInvoiceJobs);
       await recordLedgerEntry(result.id);
       return result;
     },
 
     async reverseBankTransfer(input) {
+      const newInvoiceJobs: string[] = [];
       const [candidate] = await database.select({ orderId: paymentLedgerEntries.orderId })
         .from(paymentLedgerEntries).where(eq(paymentLedgerEntries.id, input.entryId)).limit(1);
       if (!candidate?.orderId) throw new PaymentRequestNotFoundError();
@@ -783,10 +806,11 @@ export function createDrizzlePaymentRequestRepository(
           createdBy: input.createdBy,
           idempotencyKey: input.idempotencyKey,
         }).returning();
-        await updateOrderPaymentStatus(transaction, order, now);
+        await updateOrderPaymentStatus(transaction, order, now, newInvoiceJobs);
         await reconcileOrderRequests(transaction, order, now);
         return ledgerRecord(created);
       });
+      scheduleInvoices(newInvoiceJobs);
       await recordLedgerEntry(result.id);
       return result;
     },
@@ -978,8 +1002,10 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async applyVerifiedResult(input) {
+      const newInvoiceJobs: string[] = [];
       const result = await database.transaction((transaction) =>
-        applyRequestVerifiedResult(transaction, input));
+        applyRequestVerifiedResult(transaction, input, newInvoiceJobs));
+      scheduleInvoices(newInvoiceJobs);
       await recordAttemptLedgerEntry(input.attemptId);
       return result;
     },
@@ -997,6 +1023,7 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async applyVerifiedWebhookEventAtomically(input) {
+      const newInvoiceJobs: string[] = [];
       const outcome = await database.transaction(async (transaction) => {
         const inserted = await transaction.insert(webhookEvents).values({
           provider: input.provider,
@@ -1030,7 +1057,7 @@ export function createDrizzlePaymentRequestRepository(
           attemptId: candidate.id,
           result: input.result,
           source: "verified_webhook",
-        });
+        }, newInvoiceJobs);
         const now = await databaseNow(transaction);
         await transaction.update(webhookEvents).set({
           paymentAttemptId: candidate.id,
@@ -1039,6 +1066,7 @@ export function createDrizzlePaymentRequestRepository(
         }).where(eq(webhookEvents.id, event.id));
         return Object.freeze({ status: "applied" as const, attemptId: candidate.id });
       });
+      scheduleInvoices(newInvoiceJobs);
       if (outcome.attemptId) await recordAttemptLedgerEntry(outcome.attemptId);
       return outcome.status;
     },
@@ -1089,6 +1117,7 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async applyReconciliationResult(input) {
+      const newInvoiceJobs: string[] = [];
       const result = await database.transaction(async (transaction) => {
         const [attempt] = await transaction.select(paymentAttemptCoreColumns).from(paymentAttempts)
           .where(eq(paymentAttempts.id, input.attemptId)).for("update").limit(1);
@@ -1103,8 +1132,9 @@ export function createDrizzlePaymentRequestRepository(
           attemptId: input.attemptId,
           result: input.result,
           source: "reconciliation",
-        });
+        }, newInvoiceJobs);
       });
+      scheduleInvoices(newInvoiceJobs);
       await recordAttemptLedgerEntry(input.attemptId);
       return result;
     },

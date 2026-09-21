@@ -3,6 +3,7 @@ import { allocateOrderNumber, formatOrderNumber } from "./order-number";
 
 describe("numeric order numbers", () => {
   it.each([
+    [7_327, "07327"],
     [7_242, "07242"],
     [8_000, "08000"],
     [8_001, "08001"],
@@ -12,9 +13,9 @@ describe("numeric order numbers", () => {
     expect(formatOrderNumber(value)).toBe(expected);
   });
 
-  it("allocates the next padded PostgreSQL sequence value", async () => {
-    const execute = vi.fn().mockResolvedValue({ rows: [{ value: "08000" }] });
-    await expect(allocateOrderNumber({ execute } as never)).resolves.toBe("08000");
+  it("formats the transaction counter without truncating six digits", async () => {
+    const execute = vi.fn().mockResolvedValue({ rows: [{ value: "100000" }] });
+    await expect(allocateOrderNumber({ execute } as never)).resolves.toBe("100000");
     expect(execute).toHaveBeenCalledOnce();
   });
 

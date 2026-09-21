@@ -32,6 +32,7 @@ import type {
   VerifiedProviderEvent,
 } from "./types";
 import {
+  paymentTargetReference,
   PaymentProviderRequestError,
   PaymentProviderVerificationError,
 } from "./types";
@@ -206,6 +207,7 @@ function providerPaymentOrder(order: PaymentOrder): PaymentOrder {
   return Object.freeze({
     id: order.id,
     orderNumber: order.orderNumber,
+    ...(order.paymentReference ? { paymentReference: order.paymentReference } : {}),
     amountCents: order.amountCents,
     currency: order.currency,
     customer: Object.freeze({ ...order.customer }),
@@ -291,7 +293,7 @@ function matchesReconciliationAuthority(
     result.amountCents === candidate.order.amountCents &&
     result.currency === candidate.attempt.currency &&
     result.currency === candidate.order.currency &&
-    result.orderNumber === candidate.order.orderNumber;
+    result.orderNumber === paymentTargetReference(candidate.order);
 }
 
 export function createPaymentService({
@@ -541,7 +543,7 @@ export function createPaymentService({
           providerStatus: "ABANDONED:NOT_FOUND",
           amountCents: current.attempt.expectedAmountCents,
           currency: current.attempt.currency,
-          orderNumber: current.order.orderNumber,
+          orderNumber: paymentTargetReference(current.order),
           status: "cancelled" as const,
         });
       } else {
@@ -944,7 +946,7 @@ export function createPaymentService({
         storedAttempt.providerReference !== input.providerReference ||
         storedAttempt.returnStateDigest !== digestReturnState(input.returnState) ||
         storedAttempt.orderId !== storedOrder.id ||
-        storedOrder.orderNumber !== input.orderNumber ||
+        paymentTargetReference(storedOrder) !== input.orderNumber ||
         storedAttempt.expectedAmountCents !== storedOrder.amountCents ||
         storedAttempt.currency !== storedOrder.currency
       ) {
@@ -983,7 +985,7 @@ export function createPaymentService({
             providerStatus: "RETURN_STATUS_UNKNOWN",
             amountCents: storedAttempt.expectedAmountCents,
             currency: storedAttempt.currency,
-            orderNumber: storedOrder.orderNumber,
+            orderNumber: paymentTargetReference(storedOrder),
             status: "processing",
           },
           source: "browser_return",
@@ -1001,7 +1003,7 @@ export function createPaymentService({
         applied.order.paymentStatus === "paid",
       );
       reportNotificationOutbox(applied.order.paymentStatus);
-      return Object.freeze({ orderNumber: storedOrder.orderNumber });
+      return Object.freeze({ orderNumber: applied.order.orderNumber });
     },
 
     async start(
@@ -1076,7 +1078,7 @@ export function createPaymentService({
             trustedOrigin,
             registration.provider.key,
             "return",
-            order.orderNumber,
+            paymentTargetReference(order),
             method,
             returnState,
           ),
@@ -1084,7 +1086,7 @@ export function createPaymentService({
             trustedOrigin,
             registration.provider.key,
             "cancel",
-            order.orderNumber,
+            paymentTargetReference(order),
             method,
             returnState,
           ),

@@ -80,3 +80,8 @@ describe("payment recovery intent", () => {
     expect(sessionStorage.getItem(PAYMENT_INTENT_STORAGE_KEY)).toBeNull();
   });
 });
+
+it.each(["07327", "99999", "100000", "RNR-PENDING-AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"])("preserves recovery reference %s", (orderNumber) => {
+  const intent = { ...rich, orderNumber };
+  expect(parsePaymentRecoveryIntent(JSON.stringify(intent))).toEqual(intent);
+});

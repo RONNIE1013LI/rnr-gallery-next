@@ -569,4 +569,60 @@ describe("drizzle production job repository", () => {
       eq(adminAuditLogs.action, "production_job.deleted"),
     ))).resolves.toHaveLength(1);
   });
+  function numberedManualInput() {
+    return { idempotencyKey: randomUUID(), customerName: "Number Test", customerEmail: "number@example.test", customerPhone: "0210000000",
+      customerSource: "phone", urgent: false, neededDate: "2026-09-30", deliveryMethod: "pickup", assignedUserId: null,
+      designRequirements: "", internalNotes: "", manualStatus: "new", manualPaymentStatus: "awaiting_payment",
+      amountPayableCents: 1000, amountPaidCents: 0, artistFeeCents: 0, materialCostCents: 0,
+      items: [{ productTitle: "Canvas", sizeLabel: "A4", quantity: 1, designText: "", notes: "" }] };
+  }
+  async function numberCounter() {
+    return BigInt((await pool.query("select current_value from business_number_counter where key='order_job'")).rows[0].current_value);
+  }
+
+  it("allocates inside manual transaction; concurrent duplicate requests consume only one number", async () => {
+    const before = await numberCounter();
+    const service = createProductionJobService(createDrizzleProductionJobRepository(database, { onNewInvoiceOrder: () => {} }));
+    const actor = { userId: actorId, email: `manager-${suffix}@example.test` };
+    const input = numberedManualInput();
+    const results = await Promise.all(Array.from({ length: 6 }, () => service.createManual(actor, input, { canUpdateFinance: true })));
+    jobIds.push(results[0].job.id);
+    expect(new Set(results.map(({ job }) => job.id)).size).toBe(1);
+    expect(new Set(results.map(({ job }) => job.jobNumber))).toEqual(new Set([(before + BigInt(1)).toString().padStart(5, "0")]));
+    expect(await numberCounter()).toBe(before + BigInt(1));
+    const savedInvoices = await database.select().from(invoices).where(eq(invoices.jobId, results[0].job.id));
+    expect(savedInvoices).toMatchObject([{ invoiceNumber: `INV-${results[0].job.jobNumber}`, reference: results[0].job.jobNumber }]);
+  });
+
+  it("rolls back manual allocation when final business write fails, and retries with the same number", async () => {
+    const before = await numberCounter();
+    const input = numberedManualInput();
+    const actor = { userId: actorId, email: `manager-${suffix}@example.test` };
+    await expect(database.transaction(async (transaction) => {
+      const service = createProductionJobService(createDrizzleProductionJobRepository(transaction as unknown as typeof database, { onNewInvoiceOrder: () => {} }));
+      await service.createManual(actor, input, { canUpdateFinance: true });
+      throw new Error("manual transaction failure");
+    })).rejects.toThrow("manual transaction failure");
+    expect(await numberCounter()).toBe(before);
+    expect(await database.select().from(productionJobs).where(eq(productionJobs.idempotencyKey, input.idempotencyKey))).toHaveLength(0);
+    const service = createProductionJobService(createDrizzleProductionJobRepository(database, { onNewInvoiceOrder: () => {} }));
+    const result = await service.createManual(actor, input, { canUpdateFinance: true });
+    jobIds.push(result.job.id);
+    expect(result.job.jobNumber).toBe((before + BigInt(1)).toString().padStart(5, "0"));
+  });
+
+  it("does not reclaim a formally allocated manual number after physical deletion", async () => {
+    const before = await numberCounter();
+    const repo = createDrizzleProductionJobRepository(database, { onNewInvoiceOrder: () => {} });
+    const service = createProductionJobService(repo);
+    const actor = { userId: actorId, email: `manager-${suffix}@example.test` };
+    const first = await service.createManual(actor, numberedManualInput(), { canUpdateFinance: true });
+    jobIds.push(first.job.id);
+    await repo.deleteManual({ actor, jobId: first.job.id, expectedJobNumber: first.job.jobNumber, idempotencyKey: randomUUID() });
+    const second = await service.createManual(actor, numberedManualInput(), { canUpdateFinance: true });
+    jobIds.push(second.job.id);
+    expect(second.job.jobNumber).toBe((before + BigInt(2)).toString().padStart(5, "0"));
+    expect(await numberCounter()).toBe(before + BigInt(2));
+  });
+
 });

@@ -7,7 +7,6 @@ import {
   recordManualConversionEvidence,
 } from "@/server/production/drizzle-production-job-repository";
 import { createProductionJobService } from "@/server/production/production-job-service";
-import { allocateOrderNumber } from "@/server/orders/order-number";
 import type { NotificationDeliveryTrigger } from "@/server/notifications/immediate-notification-delivery";
 
 export function getAdminProductionRuntime(
@@ -18,7 +17,6 @@ export function getAdminProductionRuntime(
   const service = createProductionJobService(
     repository,
     {
-      createJobNumber: () => allocateOrderNumber(database),
       onNotificationOutboxAvailable,
     },
   );

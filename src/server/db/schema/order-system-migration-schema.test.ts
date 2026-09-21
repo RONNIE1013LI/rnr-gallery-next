@@ -99,7 +99,7 @@ describe("historical order migration schema", () => {
   });
 
   it("matches the applied order-number sequence definition", () => {
-    expect(orderNumberSequence.seqName).toBe("rnr_order_number_seq");
+    expect(orderNumberSequence.seqName).toBe("rnr_order_number_seq_retired");
     expect(orderNumberSequence.schema).toBeUndefined();
     expect(orderNumberSequence.seqOptions).toEqual({
       increment: 1,

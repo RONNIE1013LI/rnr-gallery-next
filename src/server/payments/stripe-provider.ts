@@ -131,7 +131,7 @@ function verifiedResult(
     currency: order.currency,
     ...("merchantReference" in order
       ? { merchantReference: order.merchantReference }
-      : { orderNumber: order.orderNumber }),
+      : { orderNumber: paymentTargetReference(order) }),
     status,
     ...(status === "failed" ? { sanitizedFailureCode: "payment_method_required" } : {}),
   });

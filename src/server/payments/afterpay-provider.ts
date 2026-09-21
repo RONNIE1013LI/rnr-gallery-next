@@ -426,7 +426,7 @@ function paymentResult(
     currency: order.currency,
     ...("merchantReference" in order
       ? { merchantReference: order.merchantReference }
-      : { orderNumber: order.orderNumber }),
+      : { orderNumber: paymentTargetReference(order) }),
     status,
     ...(status === "failed" ? { sanitizedFailureCode: "declined" } : {}),
   });
@@ -454,7 +454,7 @@ function cancelledAbsentResult(order: ProviderPaymentTarget, providerReference: 
     currency: order.currency,
     ...("merchantReference" in order
       ? { merchantReference: order.merchantReference }
-      : { orderNumber: order.orderNumber }),
+      : { orderNumber: paymentTargetReference(order) }),
     status: "cancelled" as const,
   });
 }

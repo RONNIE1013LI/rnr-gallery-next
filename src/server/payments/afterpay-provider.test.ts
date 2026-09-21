@@ -158,6 +158,19 @@ function completeInput(
 }
 
 describe("Afterpay provider", () => {
+  it("keeps the opaque merchant reference after assigning a formal number", async () => {
+    const paymentReference = "RNR-PENDING-OPAQUE";
+    const numbered = { ...order(), orderNumber: "07327", paymentReference };
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(configuration()))
+      .mockResolvedValueOnce(jsonResponse({ ...checkoutResponse(), merchantReference: paymentReference }))
+      .mockResolvedValueOnce(jsonResponse(capturedPayment({ merchantReference: paymentReference })));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+    const input = sessionInput(numbered);
+    await provider.createOrReuse({ ...input, returnUrl: input.returnUrl.replace("07327", paymentReference), cancelUrl: input.cancelUrl.replace("07327", paymentReference) });
+    expect(JSON.parse(String((fetchImpl.mock.calls[1]?.[1] as RequestInit).body)).merchantReference).toBe(paymentReference);
+    await expect(provider.retrieve({ order: numbered, providerReference: token })).resolves.toMatchObject({ kind: "verified", result: { orderNumber: paymentReference, status: "paid" } });
+  });
   describe("read-only configuration diagnostic", () => {
     it("checks Australian cross-border eligibility with one GET and returns only safe statuses", async () => {
       const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(cbtConfiguration()));

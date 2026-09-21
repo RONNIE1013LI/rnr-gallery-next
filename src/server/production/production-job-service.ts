@@ -331,7 +331,7 @@ type JobUpdate = z.output<typeof jobUpdateSchema>;
 
 export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "artistPaid" | "fileSent" | "downloaded" | "printed" | "customerNotified" | "delivered" | "completed" | "invoiceDraft" | "conversionEvidence"> & {
   requestDigest: string;
-  jobNumber: string;
+  jobNumber?: string;
   actor: AdminActor;
   createdAt: Date;
   canUpdateFinance: boolean;
@@ -344,7 +344,7 @@ export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "arti
   completedAt: Date | null;
   items: readonly Readonly<z.output<typeof itemSchema> & { position: number }>[];
   invoice: Readonly<InvoiceDraft & ReturnType<typeof calculateInvoiceTotals> & {
-    invoiceNumber: string;
+    invoiceNumber?: string;
     currency: MarketCurrency;
     gstRateBasisPoints: number;
   }> | null;
@@ -478,16 +478,16 @@ export function createProductionJobService(
       }
 
       const createdAt = dependencies.now?.() ?? new Date();
-      const jobNumber = await (dependencies.createJobNumber?.() ?? createManualJobNumber(createdAt));
+      const jobNumber = await dependencies.createJobNumber?.();
       let invoice: CreateManualProductionJob["invoice"] = null;
       if (job.invoiceDraft !== undefined) {
         try {
           const parsed = parseInvoiceDraft(job.invoiceDraft);
           invoice = Object.freeze({
             ...parsed,
-            reference: parsed.reference === "DRAFT" ? jobNumber : parsed.reference,
+            reference: parsed.reference === "DRAFT" && jobNumber ? jobNumber : parsed.reference,
             ...calculateInvoiceTotals(parsed, 1_500),
-            invoiceNumber: buildInvoiceNumber(jobNumber),
+            ...(jobNumber ? { invoiceNumber: buildInvoiceNumber(jobNumber) } : {}),
             currency: "NZD" as const,
             gstRateBasisPoints: 1_500,
           });

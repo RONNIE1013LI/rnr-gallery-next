@@ -806,4 +806,11 @@ describe("OrderPaymentPanel", () => {
     await waitFor(() => expect(screen.getByText("Payment is processing. Your order is not yet confirmed.")).toBeInTheDocument());
     expect(screen.queryByText("Paid")).not.toBeInTheDocument();
   });
+  it("clears the original checkout reference when the confirmed order URL has its formal number", async () => {
+    seedDurablePendingCheckout();
+    render(<OrderPaymentPanel orderNumber={durableIntent.orderNumber} paymentStatus="paid" methods={methods} orderHref="/orders/07327" />);
+    await waitFor(() => expect(window.localStorage.getItem("rnr:commerce:v1:guest:checkout:pending")).toBeNull());
+    expect(screen.getByText("Payment confirmed.")).toBeInTheDocument();
+  });
+
 });

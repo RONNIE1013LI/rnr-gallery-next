@@ -90,3 +90,8 @@ describe("PaymentProvider contract", () => {
     ).resolves.toEqual(verifiedResult);
   });
 });
+
+import { paymentTargetReference } from "./types";
+it("keeps the provider reference stable after business number assignment", () => {
+  expect(paymentTargetReference({ ...order, orderNumber: "07327", paymentReference: "RNR-PENDING-ABC" })).toBe("RNR-PENDING-ABC");
+});

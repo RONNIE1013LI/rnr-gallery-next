@@ -39,7 +39,6 @@ import {
   type PaymentStartDTO,
   type PaymentOrderCreationResult,
 } from "@/server/orders/order-service";
-import { allocateOrderNumber } from "@/server/orders/order-number";
 import {
   createShippingService,
   selectShippingProvider,
@@ -91,7 +90,6 @@ function defaults(): Dependencies {
       repository,
       shippingService: createShippingService({ provider: selectShippingProvider() }),
       productRegistryService: getProductRegistryRuntime(),
-      createOrderNumber: () => allocateOrderNumber(database),
     }),
     getOptionalSession,
     analyticsConfig,

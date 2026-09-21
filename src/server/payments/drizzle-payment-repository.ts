@@ -1,3 +1,4 @@
+import { allocateOrderNumber } from "@/server/orders/order-number";
 import { scheduleNewOrderInvoiceEmail, automaticInvoiceActor } from "@/server/admin/admin-invoice-runtime";
 import { createDrizzleInvoiceRepository } from "@/server/invoices/drizzle-invoice-repository";
 import { createInvoiceService } from "@/server/invoices/invoice-service";
@@ -12,6 +13,7 @@ import {
   isNotNull,
   isNull,
   notInArray,
+  or,
   sql,
 } from "drizzle-orm";
 import { normalizeAddress } from "@/domain/address/schema";
@@ -242,6 +244,7 @@ function paymentOrder(
   return Object.freeze({
     id: order.id,
     orderNumber: order.orderNumber,
+    ...(order.paymentReference ? { paymentReference: order.paymentReference } : {}),
     amountCents: order.totalInclGstCents,
     currency: order.currency,
     customer: Object.freeze({
@@ -274,7 +277,7 @@ async function loadAddresses(
     .where(eq(orderAddresses.orderId, orderId));
 }
 
-async function ensurePaidWebOrderProductionJob(
+export async function ensurePaidWebOrderProductionJob(
   transaction: Transaction,
   order: OrderRow,
   now: Date,
@@ -332,6 +335,36 @@ async function ensurePaidWebOrderProductionJob(
     console.error("new formal order invoice creation failed", { jobId: job.id });
   }
   newInvoiceJobs.push(job.id);
+}
+
+export async function enqueuePaidWebOrderNotifications(
+  transaction: Transaction,
+  order: OrderRow,
+  now: Date,
+) {
+  await transaction.delete(orderNotificationOutbox).where(and(
+    eq(orderNotificationOutbox.orderId, order.id),
+    eq(orderNotificationOutbox.kind, "payment_failed"),
+    inArray(orderNotificationOutbox.status, ["pending", "failed"]),
+  ));
+  await transaction.insert(orderNotificationOutbox).values({
+    eventKey: `payment-confirmed:${order.id}`,
+    kind: "payment_confirmed",
+    orderId: order.id,
+    recipientEmail: order.customerEmail,
+    availableAt: now,
+    createdAt: now,
+    updatedAt: now,
+  }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
+  await enqueueInternalNotifications(transaction, {
+    topic: "web_order_paid",
+    sourceEventId: order.id,
+    resourceType: "order",
+    resourceId: order.id,
+    resourceReference: order.orderNumber,
+    payload: { version: 1, adminPath: `/admin/orders/${order.id}` },
+    createdAt: now,
+  });
 }
 
 async function loadDirectPaymentEvidence(
@@ -633,7 +666,7 @@ function assertVerifiedResult(
     result.amountCents !== order.totalInclGstCents ||
     result.currency !== attempt.currency ||
     result.currency !== order.currency ||
-    result.orderNumber !== order.orderNumber
+    result.orderNumber !== (order.paymentReference ?? order.orderNumber)
   ) {
     throw new PaymentVerificationMismatchError();
   }
@@ -704,6 +737,10 @@ async function applyLockedVerifiedResult(
         order.paymentStatus === "paid" && orderStatus === "refunded"
       ? "refund" as const
       : null;
+  // The order row is locked. A failed transaction also rolls back this increment.
+  if (orderStatus === "paid" && order.paymentReference === order.orderNumber) {
+    order.orderNumber = await allocateOrderNumber(transaction);
+  }
   const attemptUpdates = {
     status: attemptStatus,
     sanitizedFailureCode: input.result.sanitizedFailureCode ?? null,
@@ -726,36 +763,14 @@ async function applyLockedVerifiedResult(
     .returning(paymentAttemptCoreColumns);
   const [updatedOrder] = await transaction
     .update(orders)
-    .set({ paymentStatus: orderStatus, updatedAt: now })
+    .set({ paymentStatus: orderStatus, orderNumber: order.orderNumber, updatedAt: now })
     .where(eq(orders.id, order.id))
     .returning();
   if (updatedOrder.paymentStatus === "paid" || order.paymentStatus === "paid") {
     await ensurePaidWebOrderProductionJob(transaction, updatedOrder, now, newInvoiceJobs);
   }
   if (orderStatus === "paid") {
-    await transaction.delete(orderNotificationOutbox).where(and(
-      eq(orderNotificationOutbox.orderId, order.id),
-      eq(orderNotificationOutbox.kind, "payment_failed"),
-      inArray(orderNotificationOutbox.status, ["pending", "failed"]),
-    ));
-    await transaction.insert(orderNotificationOutbox).values({
-      eventKey: `payment-confirmed:${order.id}`,
-      kind: "payment_confirmed",
-      orderId: order.id,
-      recipientEmail: order.customerEmail,
-      availableAt: now,
-      createdAt: now,
-      updatedAt: now,
-    }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
-    await enqueueInternalNotifications(transaction, {
-      topic: "web_order_paid",
-      sourceEventId: order.id,
-      resourceType: "order",
-      resourceId: order.id,
-      resourceReference: order.orderNumber,
-      payload: { version: 1, adminPath: `/admin/orders/${order.id}` },
-      createdAt: now,
-    });
+    await enqueuePaidWebOrderNotifications(transaction, order, now);
   } else if (orderStatus === "failed") {
     await transaction.insert(orderNotificationOutbox).values({
       eventKey: `payment-failed:${attempt.id}`,
@@ -834,14 +849,14 @@ export function createDrizzlePaymentRepository(
   ): Promise<PaymentOrder | null> {
     const ownership = access.kind === "guest"
       ? and(
-          eq(orders.orderNumber, access.orderNumber),
+          or(eq(orders.orderNumber, access.orderNumber), eq(orders.paymentReference, access.orderNumber)),
           isNull(orders.customerId),
           eq(checkoutSessions.tokenDigest, access.tokenDigest),
           isNotNull(checkoutSessions.completedAt),
           sql`${checkoutSessions.expiresAt} > clock_timestamp()`,
         )
       : and(
-          eq(orders.orderNumber, access.orderNumber),
+          or(eq(orders.orderNumber, access.orderNumber), eq(orders.paymentReference, access.orderNumber)),
           eq(orders.customerId, access.customerId),
         );
     const [order] = await database
@@ -860,6 +875,7 @@ export function createDrizzlePaymentRepository(
       return Object.freeze({
         id: hydrated.id,
         orderNumber: hydrated.orderNumber,
+        ...(hydrated.paymentReference ? { paymentReference: hydrated.paymentReference } : {}),
         amountCents: hydrated.amountCents,
         currency: hydrated.currency,
         customer: hydrated.customer,
@@ -876,14 +892,14 @@ export function createDrizzlePaymentRepository(
   ): Promise<PaymentAttemptWithOrder | null> {
     const ownership = access.kind === "guest"
       ? and(
-          eq(orders.orderNumber, access.orderNumber),
+          or(eq(orders.orderNumber, access.orderNumber), eq(orders.paymentReference, access.orderNumber)),
           isNull(orders.customerId),
           eq(checkoutSessions.tokenDigest, access.tokenDigest),
           isNotNull(checkoutSessions.completedAt),
           sql`${checkoutSessions.expiresAt} > clock_timestamp()`,
         )
       : and(
-          eq(orders.orderNumber, access.orderNumber),
+          or(eq(orders.orderNumber, access.orderNumber), eq(orders.paymentReference, access.orderNumber)),
           eq(orders.customerId, access.customerId),
         );
     const [row] = await database
@@ -1084,7 +1100,7 @@ export function createDrizzlePaymentRepository(
           attempt.method !== input.method ||
           attempt.returnStateDigest !== input.digest ||
           attempt.providerReference !== input.providerReference ||
-          order.orderNumber !== input.orderNumber
+          (order.paymentReference ?? order.orderNumber) !== input.orderNumber
         ) {
           return null;
         }
