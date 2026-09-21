@@ -1,6 +1,7 @@
--- Run only after stopping/draining old checkout/manual writers. Retiring the
--- sequence makes stale application instances fail closed instead of colliding
--- with the counter. Never restart or lower either allocator during rollback.
+-- Retiring the sequence takes a lock that drains existing nextval transactions.
+-- Revoke runtime allocation on the retained object before reading its high-water
+-- mark, including early-bound/OID references. All changes commit atomically.
+-- Never restart or lower either allocator during rollback.
 DO $$
 DECLARE
   floor_value numeric;
@@ -15,6 +16,16 @@ BEGIN
   END IF;
   IF to_regclass('public.rnr_order_number_seq_retired') IS NULL THEN
     RAISE EXCEPTION 'Historical business sequence is missing; cannot establish safe floor';
+  END IF;
+  -- The rename lock is retained until commit. Runtime cannot allocate through
+  -- a cached regclass/OID reference after cutover, either.
+  REVOKE USAGE, UPDATE ON SEQUENCE public.rnr_order_number_seq_retired FROM PUBLIC;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rnr_app_runtime') THEN
+    REVOKE USAGE, UPDATE ON SEQUENCE public.rnr_order_number_seq_retired FROM rnr_app_runtime;
+    IF has_sequence_privilege('rnr_app_runtime', 'public.rnr_order_number_seq_retired', 'USAGE')
+      OR has_sequence_privilege('rnr_app_runtime', 'public.rnr_order_number_seq_retired', 'UPDATE') THEN
+      RAISE EXCEPTION 'Runtime retains effective legacy allocation privileges';
+    END IF;
   END IF;
   -- Includes sequence CACHE reservations and is_called=false; never subtract 1.
   SELECT last_value INTO sequence_floor FROM public.rnr_order_number_seq_retired;

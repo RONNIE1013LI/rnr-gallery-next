@@ -84,7 +84,9 @@ The guarded migration:
 
 No historical numbers or gaps are reclaimed. Payment Request `PAY-<year>-<opaque suffix>` references use a separate random namespace; they are not formal Order/Job numbers. Customer data, payment evidence, unpaid orders and historical migration records are not deleted or rewritten.
 
-**Cutover requires a coordinated maintenance window.** Stop and drain old checkout/manual writers before migration; prevent old-instance business writes during the Git-triggered deployment. Renaming the sequence deliberately makes old allocators unavailable until the new app is live. This is not a zero-downtime rolling migration. Do not run it while ordinary checkout traffic is being admitted. The runtime no longer uses the retired sequence.
+**Cutover uses a database fence, without a preliminary maintenance deployment.** The sequence rename takes and retains a lock that waits for existing `nextval` transactions. In the same migration transaction, revoke `USAGE` and `UPDATE` from PUBLIC and `rnr_app_runtime`, verify the runtime has neither effective privilege, then read the sequence reservation floor and initialize the counter. Cached OID / prepared references cannot allocate after commit. Previously returned numbers are already covered by the sequence floor. Old checkout/manual creation fails closed between migration and deployment; this brief interruption is intentional. Other existing-order workflows retain their schema. This is not zero downtime.
+
+The additional disposable PostgreSQL cutover test passed: an in-flight allocation blocks migration; sequence CACHE reservations remain in the floor; old OID/prepared calls fail after commit; rollback restores name and privileges. A permission failure or migration error rolls the entire transaction back. No new role is created in Production.
 
 ## 7–8. Stripe and Afterpay
 
@@ -189,3 +191,9 @@ Changed files (relative to this isolated worktree):
 ## 15. Production approval gate
 
 **Production migration approval is required and has not been requested for execution or granted.** No Production migration/deployment was performed. Before a future release, re-fetch `origin/main`, recheck the configured Production Branch/deployment SHA/ref/all aliases, exact-prefix migration lineage and actual database identity. Verify new-counter runtime privileges in an isolated rehearsal. Use the repository's disposable release database gate with scoped tests; this local work used disposable localhost databases through the canonical migration runner, not the complete Production release gate. Agree on the maintenance window and rollback point first. Then use verified worktree → `main` → automatic Vercel Production; never feature-branch promotion or `vercel --prod`.
+
+## Authorized release preparation update
+
+The user explicitly authorized Production migration and coordinated main release. Initial implementation commit: `3fe92e1c57aed95682b01935878f21395cee84ed`. GitHub Actions read-only guard run `35561174425` passed identity/lineage and drift checks against main. The direct owner connection was retrieved through the authenticated Neon Console without exposing the secret. Direct hostname fingerprint is `41042203be4e7e82e0bd0d555acf75c7ec24adc2be29e7385092119cbe6210bb`; its pooled counterpart matches the previously certified `baa43ddcddcac5530101232bdf74cd8f649aa60f2276c7dbd95214b3c4d2d304`. Owner and runtime object grants were verified read-only. The old deployment rollback point remains `dpl_E1n1FHZxAnBmbyLptgsVBRfopnet` / `804196c76534893783f9180205e381f6ea5022bb`.
+
+Only migration SQL and a new cutover integration test changed after the final successful application build. Application tests/build are not repeated. The new test passes; affected lint and TypeScript are checked for that addition. Final migration/deployment results are reported after execution, not assumed here.
