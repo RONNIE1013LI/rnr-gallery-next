@@ -10,21 +10,15 @@ import { StructuredData } from "./structured-data";
 import { AnalyticsLink } from "./analytics-link";
 import styles from "./storefront.module.css";
 
-export function AdLandingPage({ content, product, priceInclGstCents, standardHeadings = false }: Readonly<{
+export function AdLandingPage({ content, product, priceInclGstCents }: Readonly<{
   content: AdLandingPageContent;
   product: Product;
   priceInclGstCents: number;
-  standardHeadings?: boolean;
 }>) {
   const siteUrl = getSiteUrl();
   const configureHref = `/products/${product.slug}/configure`;
   return (
-    <main
-      id="main-content"
-      className={standardHeadings
-        ? `${styles.adLandingPage} ${styles.adLandingStandardHeadings}`
-        : styles.adLandingPage}
-    >
+    <main id="main-content" className={styles.adLandingPage}>
       <StructuredData id="rnr-landing-product" data={{
         "@context": "https://schema.org",
         "@type": "Product",
@@ -46,9 +40,6 @@ export function AdLandingPage({ content, product, priceInclGstCents, standardHea
         { name: product.title, path: content.path },
       ])} />
 
-      <nav className={styles.publicBreadcrumbs} aria-label="Breadcrumb">
-        <Link href="/">Home</Link><span aria-hidden="true">/</span><span aria-current="page">{product.title}</span>
-      </nav>
       <section className={styles.adLandingHero}>
         <div className={styles.adLandingCopy}>
           <p className={styles.eyebrow}>{content.eyebrow}</p>

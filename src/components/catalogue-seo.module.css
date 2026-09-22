@@ -56,3 +56,9 @@
   max-width: 100%;
   overflow-wrap: anywhere;
 }
+
+@media (max-width: 520px) {
+  .section h3 {
+    line-height: 1;
+  }
+}

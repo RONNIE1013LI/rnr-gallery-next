@@ -17,10 +17,25 @@ vi.mock("@/server/seo/metadata", () => ({
 
 import { generateMetadata as canvasMetadata } from "./canvas/page";
 import { generateMetadata as bannerMetadata } from "./banners/page";
+import { generateMetadata as auCanvasMetadata } from "./au/canvas/page";
+import { generateMetadata as auBannerMetadata } from "./au/banners/page";
 
 beforeEach(() => {
   market.enabled = true;
   market.ready = true;
+});
+
+describe("AU category metadata input", () => {
+  it.each([
+    ["/au/canvas", auCanvasMetadata, "Canvas Prints Australia | Personalised Canvas"],
+    ["/au/banners", auBannerMetadata, "Custom Banners Australia | Birthday & Memorial Banners"],
+  ] as const)("describes %s for Australia and preserves its canonical path", async (path, generate, title) => {
+    expect(await generate()).toMatchObject({
+      title,
+      path,
+      includeMarketAlternates: true,
+    });
+  });
 });
 
 describe("NZ category metadata input", () => {

@@ -33,7 +33,7 @@ export default async function CanvasPage() {
         (product) => product.active && product.category === "canvas",
       )}
     >
-      <CatalogueBuyingGuide category="canvas" />
+      <CatalogueBuyingGuide category="canvas" market="NZ" />
     </CataloguePage>
   );
 }

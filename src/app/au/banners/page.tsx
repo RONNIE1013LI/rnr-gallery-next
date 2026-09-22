@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CatalogueBuyingGuide } from "@/components/catalogue-buying-guide";
 import { CataloguePage } from "@/components/catalogue-page";
 import { AustraliaUnavailable } from "@/components/market-unavailable";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
@@ -15,8 +16,8 @@ export async function generateMetadata(): Promise<Metadata> {
     return { title: "Australia ordering is not available yet", robots: { index: false, follow: false } };
   }
   return buildPublicMetadata({
-    title: "Custom banners Australia",
-    description: "Personalised roll-up banners, wall banners and grave covers with fixed AUD pricing.",
+    title: "Custom Banners Australia | Birthday & Memorial Banners",
+    description: "Shop personalised birthday, memorial and event banners for Australia. Compare roll-up banners, fabric wall banners and matching banner bundles with AUD pricing.",
     path: "/au/banners",
     image: "/media/products/roll-up-banner-shop.webp",
     imageAlt: "Personalised R&R Gallery roll-up banner",
@@ -39,14 +40,16 @@ export default async function AustraliaBannersPage() {
   return (
     <CataloguePage
       eyebrow="BANNERS · AUD"
-      title="Custom banners made for your occasion."
-      description="Choose a roll-up banner, wall banner or grave cover, then personalise the details."
+      title="Custom Banners for Australia"
+      description="Compare personalised roll-up banners, fabric wall banners, grave covers and matching packages with AUD pricing before starting your design."
       path="/au/banners"
       breadcrumbLabel="Banners Australia"
       showProductDetailLinks
       products={products}
       market="AU"
       pricesInclTaxCents={pricesInclTaxCents}
-    />
+    >
+      <CatalogueBuyingGuide category="banners" market="AU" />
+    </CataloguePage>
   );
 }

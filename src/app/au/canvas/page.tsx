@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { CatalogueBuyingGuide } from "@/components/catalogue-buying-guide";
 import { CataloguePage } from "@/components/catalogue-page";
 import { AustraliaUnavailable } from "@/components/market-unavailable";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
@@ -15,8 +16,8 @@ export async function generateMetadata(): Promise<Metadata> {
     return { title: "Australia ordering is not available yet", robots: { index: false, follow: false } };
   }
   return buildPublicMetadata({
-    title: "Custom canvas Australia",
-    description: "Personalised photo print, digital oil painting and themed canvas artwork with fixed AUD pricing.",
+    title: "Canvas Prints Australia | Personalised Canvas",
+    description: "Shop personalised canvas prints for Australia. Compare photo print, digital oil painting and custom themed canvas options with AUD pricing.",
     path: "/au/canvas",
     image: "/media/products/photo-print-canvas-shop.webp",
     imageAlt: "Personalised photo print canvas",
@@ -39,14 +40,16 @@ export default async function AustraliaCanvasPage() {
   return (
     <CataloguePage
       eyebrow="CANVAS · AUD"
-      title="Personalised canvas made from your photos."
-      description="Choose photo print, digital oil painting or a custom themed canvas."
+      title="Custom Canvas Prints for Australia"
+      description="Choose a photo print, digital oil painting or themed canvas made from your photos. Compare the options and AUD pricing before starting your design."
       path="/au/canvas"
       breadcrumbLabel="Canvas Australia"
       showProductDetailLinks
       products={products}
       market="AU"
       pricesInclTaxCents={pricesInclTaxCents}
-    />
+    >
+      <CatalogueBuyingGuide category="canvas" market="AU" />
+    </CataloguePage>
   );
 }

@@ -76,35 +76,30 @@ describe("AdLandingPage", () => {
     });
   });
 
-  it("applies the shared page and section heading scale only when explicitly enabled", () => {
+  it("uses the shared heading scale, hides the visual breadcrumb, and preserves structured breadcrumbs", () => {
     const content = adLandingPages.rollUp;
     const product = getRegistryProductBySlug(defaultProductRegistry, content.productSlug)!;
-    const { container, rerender } = render(
-      <AdLandingPage
-        content={content}
-        product={product}
-        priceInclGstCents={54_321}
-        standardHeadings
-      />,
-    );
-
-    expect(container.querySelector("main")?.className).toContain("adLandingStandardHeadings");
-
-    rerender(
+    const { container } = render(
       <AdLandingPage
         content={content}
         product={product}
         priceInclGstCents={54_321}
       />,
     );
-    expect(container.querySelector("main")?.className).not.toContain("adLandingStandardHeadings");
+
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).not.toBeInTheDocument();
+    expect(container.querySelector("#rnr-landing-breadcrumbs")).not.toBeNull();
 
     const stylesheet = readFileSync("src/components/storefront.module.css", "utf8");
     expect(stylesheet).toMatch(
-      /\.adLandingStandardHeadings \.adLandingCopy h1\s*\{[^}]*font-size:\s*var\(--type-page\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.045em[^}]*line-height:\s*1\.02/,
+      /\.adLandingCopy h1\s*\{[^}]*font-size:\s*var\(--type-page\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.045em[^}]*line-height:\s*1\.02/,
     );
     expect(stylesheet).toMatch(
-      /\.adLandingStandardHeadings \.adLandingSection h2,[\s\S]*?\.adLandingStandardHeadings \.adLandingFinalCta h2\s*\{[^}]*font-size:\s*var\(--type-section\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.035em[^}]*line-height:\s*1/,
+      /\.adLandingSection h2,[\s\S]*?\.adLandingFinalCta h2\s*\{[^}]*font-size:\s*var\(--type-section\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.035em[^}]*line-height:\s*1/,
     );
+    expect(stylesheet).toMatch(
+      /\.adLandingHeroMedia\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3[^}]*min-height:\s*0/,
+    );
+    expect(stylesheet).toMatch(/\.adLandingHeroMedia img\s*\{[^}]*object-fit:\s*contain/);
   });
 });

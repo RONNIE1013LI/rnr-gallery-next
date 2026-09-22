@@ -32,7 +32,9 @@ describe("Australia category pages", () => {
     state.registry = enabledAustraliaRegistry();
     render(await AustraliaCanvasPage());
 
-    expect(screen.getByRole("heading", { name: "Personalised canvas made from your photos." }))
+    expect(screen.getByRole("heading", { name: "Custom Canvas Prints for Australia" }))
+      .toBeVisible();
+    expect(screen.getByRole("heading", { name: "Choosing personalised canvas for Australia" }))
       .toBeVisible();
     expect(screen.getAllByText("From A$400.00 AUD").length).toBeGreaterThan(0);
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
@@ -47,7 +49,9 @@ describe("Australia category pages", () => {
     state.registry = enabledAustraliaRegistry();
     render(await AustraliaBannersPage());
 
-    expect(screen.getByRole("heading", { name: "Custom banners made for your occasion." }))
+    expect(screen.getByRole("heading", { name: "Custom Banners for Australia" }))
+      .toBeVisible();
+    expect(screen.getByRole("heading", { name: "Choosing a banner for Australia" }))
       .toBeVisible();
     expect(screen.getAllByText("From A$400.00 AUD").length).toBeGreaterThan(0);
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();

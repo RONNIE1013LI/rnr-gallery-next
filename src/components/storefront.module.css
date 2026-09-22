@@ -5771,8 +5771,10 @@
 .adLandingCopy h1 {
   margin-top: 0.8rem;
   font-family: var(--font-display);
-  font-size: clamp(2.4rem, 6vw, 5.2rem);
-  line-height: 0.98;
+  font-size: var(--type-page);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
   overflow-wrap: anywhere;
 }
 
@@ -5781,7 +5783,8 @@
 }
 
 .adLandingHeroMedia {
-  min-height: clamp(25rem, 54vw, 40rem);
+  aspect-ratio: 4 / 3;
+  min-height: 0;
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-card);
@@ -5789,7 +5792,7 @@
 }
 
 .adLandingHeroMedia img {
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .adLandingSection,
@@ -5813,21 +5816,6 @@
 .adLandingFinalCta h2 {
   margin-top: 0.5rem;
   font-family: var(--font-display);
-  font-size: clamp(2rem, 4vw, 3.5rem);
-  line-height: 1.05;
-}
-
-.adLandingStandardHeadings .adLandingCopy h1 {
-  font-size: var(--type-page);
-  font-weight: 650;
-  letter-spacing: -0.045em;
-  line-height: 1.02;
-}
-
-.adLandingStandardHeadings .adLandingSection h2,
-.adLandingStandardHeadings .adLandingExamples h2,
-.adLandingStandardHeadings .adLandingFaq h2,
-.adLandingStandardHeadings .adLandingFinalCta h2 {
   font-size: var(--type-section);
   font-weight: 650;
   letter-spacing: -0.035em;
@@ -5906,10 +5894,6 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .adLandingHeroMedia {
-    min-height: 28rem;
-  }
-
   .adLandingFinalCta {
     align-items: flex-start;
     flex-direction: column;
@@ -5919,10 +5903,6 @@
 @media (max-width: 520px) {
   .adLandingPage {
     width: min(100% - 1.5rem, 76rem);
-  }
-
-  .adLandingHeroMedia {
-    min-height: 23rem;
   }
 
   .adLandingExamples > div:last-child {

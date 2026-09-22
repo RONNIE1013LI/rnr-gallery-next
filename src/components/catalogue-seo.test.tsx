@@ -52,7 +52,7 @@ describe("Catalogue public product links", () => {
   it("renders route-specific buying guidance without introducing a second H1", () => {
     render(
       <CataloguePage eyebrow="CANVAS" title="Canvas" description="" products={canvasProducts}>
-        <CatalogueBuyingGuide category="canvas" />
+        <CatalogueBuyingGuide category="canvas" market="NZ" />
       </CataloguePage>,
     );
     expect(screen.getByRole("heading", { level: 2, name: "Choosing your personalised canvas" })).toBeVisible();
@@ -64,13 +64,13 @@ describe("Catalogue public product links", () => {
 
 describe("NZ category buying guidance", () => {
   it("distinguishes digitally created canvas artwork from hand-applied oil paint", () => {
-    render(<CatalogueBuyingGuide category="canvas" />);
+    render(<CatalogueBuyingGuide category="canvas" market="NZ" />);
     expect(screen.getByText(/It is digital artwork printed on canvas/)).toBeVisible();
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
 
   it("connects banner formats to the existing occasion and product guides", () => {
-    render(<CatalogueBuyingGuide category="banners" />);
+    render(<CatalogueBuyingGuide category="banners" market="NZ" />);
     for (const [name, href] of [
       ["roll-up banner guide", "/custom-roll-up-banners-nz"],
       ["wall banner guide", "/custom-wall-banners-nz"],
@@ -80,5 +80,40 @@ describe("NZ category buying guidance", () => {
       expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
     }
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+  });
+});
+
+describe("AU category buying guidance", () => {
+  it("uses Australian canvas copy and verified AU or shared destinations", () => {
+    render(<CatalogueBuyingGuide category="canvas" market="AU" />);
+
+    expect(screen.getByRole("heading", { level: 2, name: "Choosing personalised canvas for Australia" }))
+      .toBeVisible();
+    expect(screen.getByRole("link", { name: "photo canvas product details" }))
+      .toHaveAttribute("href", "/au/products/photo-print-canvas");
+    expect(screen.getByRole("link", { name: "design gallery" }))
+      .toHaveAttribute("href", "/design-gallery");
+    expect(screen.queryByText(/New Zealand|NZ\$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/local production|pickup|fixed shipping/i)).not.toBeInTheDocument();
+  });
+
+  it("uses Australian banner product pages instead of NZ-only guides", () => {
+    const { container } = render(<CatalogueBuyingGuide category="banners" market="AU" />);
+
+    for (const [name, href] of [
+      ["roll-up banner details", "/au/products/roll-up-banner"],
+      ["wall banner details", "/au/products/custom-themed-wall-banner"],
+      ["banner bundle details", "/au/products/banner-bundle"],
+      ["grave cover details", "/au/products/grave-cover"],
+    ]) {
+      expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
+    }
+    expect(Array.from(container.querySelectorAll("a")).map((link) => link.getAttribute("href")))
+      .not.toEqual(expect.arrayContaining([
+        "/custom-roll-up-banners-nz",
+        "/custom-wall-banners-nz",
+        "/birthday-banners",
+        "/memorial-banners",
+      ]));
   });
 });

@@ -43,7 +43,7 @@ export default async function BannersPage() {
       products={products}
       pricesInclTaxCents={pricesInclTaxCents}
     >
-      <CatalogueBuyingGuide category="banners" />
+      <CatalogueBuyingGuide category="banners" market="NZ" />
     </CataloguePage>
   );
 }
