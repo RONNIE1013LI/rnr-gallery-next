@@ -13,6 +13,10 @@ const privateCrawlPaths = [
   "/pay/",
 ];
 
+// Only user-triggered Meta previews may fetch payment-page metadata.
+// All other private paths stay excluded; generic crawlers retain /pay/ below.
+const metaPreviewPrivateCrawlPaths = privateCrawlPaths.filter((path) => path !== "/pay/");
+
 export function buildRobots(siteUrl: URL): MetadataRoute.Robots {
   return {
     rules: [
@@ -24,11 +28,10 @@ export function buildRobots(siteUrl: URL): MetadataRoute.Robots {
         disallow: privateCrawlPaths,
       },
       {
-        // User-shared configurator links need previews, not search indexing.
-        // Keep every private/transactional path excluded for these agents too.
+        // Shared payment and configurator links need previews, not indexing.
         userAgent: ["facebookexternalhit", "Facebot", "meta-externalfetcher"],
-        allow: "/",
-        disallow: privateCrawlPaths,
+        allow: ["/", "/pay/"],
+        disallow: metaPreviewPrivateCrawlPaths,
       },
       {
         userAgent: "meta-externalagent",

@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 
 const { notFound, publicByToken, methods } = vi.hoisted(() => ({
@@ -20,25 +22,73 @@ describe("Payment Request page", () => {
   it("is dynamic and noindex", async () => {
     expect(dynamic).toBe("force-dynamic");
     expect(await generateMetadata({ params: Promise.resolve({ token: "token" }) })).toMatchObject({
-      robots: { index: false, follow: false, noarchive: true, nosnippet: true },
+      robots: { index: false, follow: true, noarchive: true, nosnippet: true },
     });
   });
 
   it("publishes the homepage social preview for crawlers", async () => {
     expect(await generateMetadata({ params: Promise.resolve({ token: "A token/with spaces" }) })).toMatchObject({
-      title: "Secure payment",
+      title: "R&R Gallery | Secure Payment",
       description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
       openGraph: {
-        title: "Secure payment",
+        title: "R&R Gallery | Secure Payment",
         description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
         url: "https://rnrgallery.com/pay/A%20token%2Fwith%20spaces",
-        images: [{ url: "https://rnrgallery.com/media/social/rr-gallery-social-share-2026.webp" }],
+        type: "website",
+        siteName: "R&R Gallery",
+        images: [{
+          url: "https://rnrgallery.com/media/social/rr-gallery-social-share-2026.jpg",
+          width: 1200,
+          height: 630,
+          type: "image/jpeg",
+          alt: "R&R Gallery custom canvas and digital oil painting display",
+        }],
       },
       twitter: {
         card: "summary_large_image",
-        images: ["https://rnrgallery.com/media/social/rr-gallery-social-share-2026.webp"],
+        title: "R&R Gallery | Secure Payment",
+        description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
+        images: ["https://rnrgallery.com/media/social/rr-gallery-social-share-2026.jpg"],
       },
     });
+  });
+
+  it("publishes only generic metadata without reading payment or payer data", async () => {
+    publicByToken.mockClear();
+    methods.mockClear();
+    const token = randomBytes(32).toString("base64url");
+    const metadata = await generateMetadata({ params: Promise.resolve({ token }) });
+    const { url, ...social } = metadata.openGraph!;
+    expect(url).toBe(`https://rnrgallery.com/pay/${token}`);
+    expect({ ...metadata, openGraph: social }).toEqual({
+      title: "R&R Gallery | Secure Payment",
+      description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
+      robots: { index: false, follow: true, noarchive: true, nosnippet: true },
+      openGraph: {
+        type: "website",
+        siteName: "R&R Gallery",
+        title: "R&R Gallery | Secure Payment",
+        description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
+        images: [{
+          url: "https://rnrgallery.com/media/social/rr-gallery-social-share-2026.jpg",
+          width: 1200, height: 630, type: "image/jpeg",
+          alt: "R&R Gallery custom canvas and digital oil painting display",
+        }],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: "R&R Gallery | Secure Payment",
+        description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
+        images: ["https://rnrgallery.com/media/social/rr-gallery-social-share-2026.jpg"],
+      },
+    });
+    expect(publicByToken).not.toHaveBeenCalled();
+    expect(methods).not.toHaveBeenCalled();
+  });
+
+  it("serves a baseline 1200 by 630 JPEG social asset", async () => {
+    const image = await sharp("public/media/social/rr-gallery-social-share-2026.jpg").metadata();
+    expect(image).toMatchObject({ format: "jpeg", width: 1200, height: 630, isProgressive: false });
   });
 
   it("loads the server-owned request and available methods", async () => {

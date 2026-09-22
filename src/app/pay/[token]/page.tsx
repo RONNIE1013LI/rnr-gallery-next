@@ -7,7 +7,8 @@ import { getSiteUrl } from "@/server/seo/site-url";
 
 export const dynamic = "force-dynamic";
 
-const socialImage = "/media/social/rr-gallery-social-share-2026.webp";
+const socialImage = "/media/social/rr-gallery-social-share-2026.jpg";
+const socialTitle = "R&R Gallery | Secure Payment";
 const socialDescription = "Personalised canvas, banners and print artwork made with care in New Zealand.";
 
 export async function generateMetadata({
@@ -18,21 +19,29 @@ export async function generateMetadata({
   const absoluteSocialImage = new URL(socialImage, siteUrl).toString();
 
   return {
-    title: "Secure payment",
+    title: socialTitle,
     description: socialDescription,
     openGraph: {
-      title: "Secure payment",
+      type: "website",
+      siteName: "R&R Gallery",
+      title: socialTitle,
       description: socialDescription,
       url: paymentUrl,
-      images: [{ url: absoluteSocialImage }],
+      images: [{
+        url: absoluteSocialImage,
+        width: 1200,
+        height: 630,
+        type: "image/jpeg",
+        alt: "R&R Gallery custom canvas and digital oil painting display",
+      }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Secure payment",
+      title: socialTitle,
       description: socialDescription,
       images: [absoluteSocialImage],
     },
-    robots: { index: false, follow: false, noarchive: true, nosnippet: true },
+    robots: { index: false, follow: true, noarchive: true, nosnippet: true },
   };
 }
 

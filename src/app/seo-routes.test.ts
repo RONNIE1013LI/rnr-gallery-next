@@ -251,7 +251,7 @@ describe("public SEO routes", () => {
     }
   });
 
-  it.each(["facebookexternalhit", "Facebot", "meta-externalfetcher"])("allows %s product previews without exposing private crawl paths", (userAgent) => {
+  it.each(["facebookexternalhit", "Facebot", "meta-externalfetcher"])("allows %s payment and product previews while blocking other private paths", (userAgent) => {
     const robots = buildRobots(getSiteUrl());
     const rules = Array.isArray(robots.rules) ? robots.rules : [robots.rules];
     const rule = rules.find((entry) => {
@@ -260,12 +260,13 @@ describe("public SEO routes", () => {
     });
 
     expect(rule).toMatchObject({
-      allow: "/",
+      allow: ["/", "/pay/"],
       disallow: expect.arrayContaining([
         "/admin/", "/account/", "/api/", "/cart", "/checkout",
-        "/forms/", "/order-system", "/orders/", "/pay/",
+        "/forms/", "/order-system", "/orders/",
       ]),
     });
+    expect(rule?.disallow).not.toContain("/pay/");
     expect(rule?.disallow).not.toContain("/products/*/configure");
     expect(rule?.disallow).not.toContain("/au/products/*/configure");
   });
