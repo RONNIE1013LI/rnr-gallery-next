@@ -76,10 +76,59 @@ describe("public SEO routes", () => {
     expect(urls).toContain("https://shop.example.test/custom-photo-canvas-nz");
     expect(urls).not.toContain(`https://shop.example.test/products/${registry.products[0].slug}`);
     expect(urls.some((url) => /\/(?:admin|account|cart|checkout|orders|pay)(?:\/|$)/.test(url))).toBe(false);
-    expect(sitemap.every((entry) => entry.lastModified instanceof Date)).toBe(true);
+    expect(sitemap.every((entry) => entry.lastModified === undefined)).toBe(true);
+    expect(sitemap.find((entry) => entry.url === "https://shop.example.test/")).not
+      .toHaveProperty("lastModified");
+    expect(sitemap.find((entry) =>
+      entry.url === "https://shop.example.test/designs/40th-birthday-a1b2c3d4"
+    )).not.toHaveProperty("lastModified");
     expect(urls.every((url) => !url.includes("?"))).toBe(true);
     expect(urls.some((url) => url.includes("/au"))).toBe(false);
     expect(sitemap.some((entry) => entry.alternates)).toBe(false);
+  });
+
+  it("keeps the established sitemap URL set while omitting unreliable modification dates", () => {
+    const sitemap = buildPublicSitemap(defaultProductRegistry, new URL("https://shop.example.test"), [{
+      slug: "40th-birthday-a1b2c3d4",
+      createdAt: new Date("2020-01-02T03:04:05Z"),
+    }]);
+
+    expect(sitemap.map((entry) => entry.url).sort()).toEqual([
+      "https://shop.example.test/",
+      "https://shop.example.test/1st-birthday-banners",
+      "https://shop.example.test/21st-birthday-banners",
+      "https://shop.example.test/about",
+      "https://shop.example.test/anniversary-designs",
+      "https://shop.example.test/banners",
+      "https://shop.example.test/birthday-banners",
+      "https://shop.example.test/canvas",
+      "https://shop.example.test/contact",
+      "https://shop.example.test/custom-photo-canvas-nz",
+      "https://shop.example.test/custom-roll-up-banners-nz",
+      "https://shop.example.test/custom-wall-banners-nz",
+      "https://shop.example.test/design-gallery",
+      "https://shop.example.test/designs/40th-birthday-a1b2c3d4",
+      "https://shop.example.test/graduation-banners",
+      "https://shop.example.test/help",
+      "https://shop.example.test/how-it-works",
+      "https://shop.example.test/memorial-banners",
+      "https://shop.example.test/polynesian-banners",
+      "https://shop.example.test/privacy",
+      "https://shop.example.test/products/banner-bundle",
+      "https://shop.example.test/products/custom-themed-canvas",
+      "https://shop.example.test/products/custom-themed-wall-banner",
+      "https://shop.example.test/products/digital-oil-painting-banner",
+      "https://shop.example.test/products/digital-oil-painting-canvas",
+      "https://shop.example.test/products/grave-cover",
+      "https://shop.example.test/products/photo-print-canvas",
+      "https://shop.example.test/products/roll-up-banner",
+      "https://shop.example.test/returns-refunds",
+      "https://shop.example.test/shipping-delivery",
+      "https://shop.example.test/shop",
+      "https://shop.example.test/terms",
+      "https://shop.example.test/welcome-home-banners",
+    ]);
+    expect(sitemap.every((entry) => entry.lastModified === undefined)).toBe(true);
   });
 
   it("lists Australian routes only after the fixed AUD price book is complete and enabled", () => {

@@ -37,8 +37,6 @@ const pages = [
   ["/terms", 0.2, "yearly"],
 ] as const;
 
-const contentLastModified = new Date("2026-08-16T00:00:00+12:00");
-
 export function buildPublicSitemap(
   registry: ProductRegistryDocument,
   siteUrl: URL,
@@ -58,7 +56,6 @@ export function buildPublicSitemap(
       url: new URL(pathname, siteUrl).toString(),
       priority,
       changeFrequency,
-      lastModified: contentLastModified,
       ...(languages ? { alternates: { languages } } : {}),
     };
   };
@@ -78,10 +75,9 @@ export function buildPublicSitemap(
           ),
         ]
       : []),
-    ...designs.map((design) => ({
-      ...entry(`/designs/${design.slug}`, 0.7, "monthly"),
-      lastModified: design.createdAt,
-    })),
+    ...designs.map((design) =>
+      entry(`/designs/${design.slug}`, 0.7, "monthly"),
+    ),
   ];
 }
 

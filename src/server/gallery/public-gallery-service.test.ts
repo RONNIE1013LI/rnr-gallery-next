@@ -42,6 +42,27 @@ function repository(rows: readonly GalleryPublicCandidate[]): GalleryRepository 
 }
 
 describe("public gallery service", () => {
+  it("keeps only indexable, visible designs in the sitemap feed", async () => {
+    const indexable = candidate(1, {
+      id: "88e63ad4c403d5bcdb37f2ee2f142d63100c970b43808f82f5b6ca21a1aea5aa",
+    });
+    const canonicalDuplicate = candidate(2, {
+      id: "ddd53b2fa128d66cfc1a4ea69e2371823f2c0bd0b440a8e6b4eaea35740fa8c6",
+    });
+    const brokenArtwork = candidate(3, {
+      id: "d670df82400b7a107ad9a1133bf5a0ac0484ba7b6da5d3408631e10457975206",
+    });
+    const service = createPublicGalleryService({
+      repository: repository([indexable, canonicalDuplicate, brokenArtwork]),
+      imageAvailable: async () => true,
+    });
+
+    await expect(service.listSitemapDesigns()).resolves.toEqual([{
+      slug: "5th-birthday-88e63ad4",
+      createdAt: indexable.createdAt,
+    }]);
+  });
+
   it("returns requested curated designs in the requested order and skips unavailable images", async () => {
     const first = candidate(1);
     const second = candidate(2);
