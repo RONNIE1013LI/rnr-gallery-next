@@ -286,6 +286,7 @@ const jobUpdateSchema = z.object({
   customerPhone: z.string().trim().max(80).optional(),
   assignedUserId: z.string().trim().min(1).max(255).nullable().optional(),
   urgent: z.boolean().optional(),
+  pinned: z.boolean().optional(),
   customerSource: z.enum(customerSources).optional(),
   neededDate: z.string().refine(validCalendarDate).optional(),
   deliveryMethod: z.enum(deliveryMethods).optional(),
@@ -377,7 +378,7 @@ export interface ProductionJobRepository {
   createManual(input: CreateManualProductionJob): Promise<ProductionJobIdentity>;
   update(
     input: UpdateProductionJob,
-  ): Promise<"updated" | "duplicate" | "conflict" | "not_found" | "invalid_source">;
+  ): Promise<"updated" | "duplicate" | "conflict" | "not_found" | "invalid_source" | "invalid_pinned">;
   deleteManual(input: Readonly<{
     actor: Readonly<{ userId: string; email: string }>;
     jobId: string;
@@ -600,6 +601,7 @@ export function createProductionJobService(
       if (result === "conflict") throw new ProductionJobConflictError("The job changed before this update was saved");
       if (result === "not_found") throw new ProductionJobNotFoundError();
       if (result === "invalid_source") throw new ProductionJobValidationError("Linked web order status must be updated from the order workflow");
+      if (result === "invalid_pinned") throw new ProductionJobValidationError("Shipped orders cannot be pinned.");
       if (result === "updated") {
         try {
           dependencies.onNotificationOutboxAvailable?.();

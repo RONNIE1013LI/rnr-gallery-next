@@ -484,6 +484,68 @@ describe("forms workbench repository", () => {
     expect(result.items.map((item) => item.id)).toEqual([legacyJobId]);
   });
 
+  it("orders pinned jobs before pagination while preserving search and filters", async () => {
+    const pinIds = Array.from({ length: 22 }, () => randomUUID());
+    const prefix = `PIN-${suffix.slice(0, 6)}`;
+    const access = {
+      actorUserId: operatorId,
+      assignedOnly: false,
+      canViewCustomerContact: false,
+      canViewFinance: false,
+    };
+    await database.insert(productionJobs).values(pinIds.map((id, index) => ({
+      id,
+      jobNumber: `${prefix}-${String(index).padStart(2, "0")}`,
+      source: "manual" as const,
+      idempotencyKey: `pin-list-${id}`,
+      requestDigest: "d".repeat(64),
+      customerName: index < 3 ? "Matching customer" : "Other customer",
+      customerEmail: "",
+      customerPhone: "0210000000",
+      customerSource: "rnr" as const,
+      manualStatus: "new" as const,
+      manualPaymentStatus: "awaiting_payment" as const,
+      amountPayableCents: 0,
+      amountPaidCents: 0,
+      artistFeeCents: 0,
+      materialCostCents: 0,
+      deliveryMethod: index < 3 ? "post" as const : "pickup" as const,
+      neededDate: "2026-09-24",
+      createdAt: new Date(Date.UTC(2026, 8, 1, 0, index)),
+      updatedAt: new Date(Date.UTC(2026, 8, 1, 0, index)),
+    })));
+    try {
+      const query = (extra: Record<string, string | string[] | undefined> = {}) =>
+        parseFormWorkbenchQuery({ q: prefix, perPage: "20", ...extra });
+      const original = await listFormOrders(database, query(), access);
+      expect(original.items.map((item) => item.id)).not.toContain(pinIds[0]);
+      expect(original.total).toBe(22);
+
+      await database.update(productionJobs).set({ pinnedAt: new Date("2026-09-24T09:00:00Z") }).where(eq(productionJobs.id, pinIds[0]));
+      await database.update(productionJobs).set({ pinnedAt: new Date("2026-09-24T09:05:00Z") }).where(eq(productionJobs.id, pinIds[1]));
+      await database.update(productionJobs).set({ pinnedAt: new Date("2026-09-24T09:10:00Z") }).where(eq(productionJobs.id, pinIds[2]));
+      const pinned = await listFormOrders(database, query(), access);
+      expect(pinned.items.slice(0, 3).map((item) => item.id)).toEqual(pinIds.slice(0, 3));
+      expect(pinned.items[0].pinnedAt).toBe("2026-09-24T09:00:00.000Z");
+      expect((await listFormOrders(database, query({ q: "Matching customer" }), access)).items
+        .map((item) => item.id)).toEqual(pinIds.slice(0, 3));
+      expect((await listFormOrders(database, query({ q: prefix, filter: "deliveryMethod~equals~pickup" }), access)).items
+        .map((item) => item.id)).not.toContain(pinIds[0]);
+
+      await database.update(productionJobs).set({ pinnedAt: null }).where(eq(productionJobs.id, pinIds[1]));
+      expect((await listFormOrders(database, query(), access)).items.slice(0, 2).map((item) => item.id))
+        .toEqual([pinIds[0], pinIds[2]]);
+      await database.update(productionJobs).set({ pinnedAt: null }).where(eq(productionJobs.id, pinIds[0]));
+      await database.update(productionJobs).set({ pinnedAt: null }).where(eq(productionJobs.id, pinIds[2]));
+      const restored = await listFormOrders(database, query(), access);
+      expect(restored.items.map((item) => item.id)).toEqual(original.items.map((item) => item.id));
+      expect((await listFormOrders(database, query({ page: "2" }), access)).items.map((item) => item.id))
+        .toContain(pinIds[0]);
+    } finally {
+      await database.delete(productionJobs).where(inArray(productionJobs.id, pinIds));
+    }
+  });
+
   it("uses the visible migrated submitter for empty and not-equals comparisons", async () => {
     const access = {
       actorUserId: operatorId,

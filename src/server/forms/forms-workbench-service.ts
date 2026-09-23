@@ -211,6 +211,7 @@ export type FormWorkbenchQuery = Readonly<{
 export type FormOrderRow = Readonly<{
   id: string;
   source: "web" | "manual";
+  pinnedAt: string | null;
   version: string;
   submittedAt: string;
   reference: string;

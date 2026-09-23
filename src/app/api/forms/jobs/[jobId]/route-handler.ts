@@ -326,6 +326,8 @@ export function createFormsJobRoute(dependencies?: Dependencies) {
           return Response.json({
             result,
             version: refreshed?.job.updatedAt.toISOString() ?? full.expectedUpdatedAt,
+            pinnedAt: refreshed?.job.pinnedAt?.toISOString() ?? null,
+            deliveredAt: refreshed?.job.deliveredAt?.toISOString() ?? null,
           }, { headers: noStore });
         }
         if (financeFields.has(patch.data.field) && !hasFormPermission(access.formRole, access.formProfile, "update_finance")) {
@@ -345,6 +347,8 @@ export function createFormsJobRoute(dependencies?: Dependencies) {
         return Response.json({
           result,
           version: refreshed?.job.updatedAt.toISOString() ?? patch.data.expectedUpdatedAt,
+          pinnedAt: refreshed?.job.pinnedAt?.toISOString() ?? null,
+          deliveredAt: refreshed?.job.deliveredAt?.toISOString() ?? null,
         }, { headers: noStore });
       } catch (error) {
         return errorResponse(error);

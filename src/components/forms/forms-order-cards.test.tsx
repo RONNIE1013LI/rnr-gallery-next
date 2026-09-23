@@ -54,6 +54,16 @@ describe("FormsOrderCards", () => {
     expect(screen.queryByText("AmtPayable")).not.toBeInTheDocument();
   });
 
+  it("marks pinned mobile cards without showing a pin action or label", () => {
+    const { container } = render(<FormsOrderCards
+      rows={[{ ...formOrderRow, pinnedAt: "2026-09-24T09:00:00.000Z" }]}
+      startIndex={0} canViewFinance onOpen={vi.fn()}
+    />);
+    expect(container.querySelector('article[data-pinned="true"]')).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /pinned?|unpinned?/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Pinned")).not.toBeInTheDocument();
+  });
+
   it("shows HOLD for a manual order that is on hold", () => {
     render(<FormsOrderCards
       rows={[{ ...formOrderRow, source: "manual", status: "on_hold" }]}

@@ -1783,6 +1783,14 @@
   background: #fbfbfc;
 }
 
+.orderTable tbody tr[data-pinned="true"] td {
+  background: #fff8d6;
+}
+
+.orderTable tbody tr[data-pinned="true"]:hover td {
+  background: #fff2b9;
+}
+
 .orderTable tbody tr[data-urgent="true"] td:first-child {
   box-shadow: inset 3px 0 #d92d20;
 }
@@ -1917,6 +1925,11 @@
   border: 1px solid var(--forms-border);
   border-radius: 8px;
   background: var(--forms-surface);
+}
+
+.orderCard[data-pinned="true"],
+.orderCard[data-pinned="true"] dd:not([data-status]) {
+  background: #fff8d6;
 }
 
 .orderCard[data-urgent="true"] {
@@ -2480,6 +2493,15 @@
   .orderTable tbody tr:nth-child(odd) td:nth-child(2),
   .orderTable tbody tr:nth-child(odd) td:nth-child(3) {
     background: #fff;
+  }
+
+  .orderTable tbody tr[data-pinned="true"] td,
+  .orderTable tbody tr[data-pinned="true"] td:nth-child(-n + 3) {
+    background: #fff8d6;
+  }
+
+  .orderTable tbody tr[data-pinned="true"]:hover td {
+    background: #fff2b9;
   }
 
   .referenceButton,

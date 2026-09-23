@@ -26,6 +26,17 @@ describe("FormsOrderTable", () => {
     expect(screen.getByRole("cell", { name: "101" })).toBeInTheDocument();
   });
 
+  it("marks pinned rows for the pale yellow background without adding a pin control or column", () => {
+    const { container } = render(<FormsOrderTable
+      rows={[{ ...formOrderRow, pinnedAt: "2026-09-24T09:00:00.000Z" }, { ...formOrderRow, id: "job-2", reference: "07189" }]}
+      canViewFinance onOpen={vi.fn()}
+    />);
+    expect(container.querySelectorAll('tbody tr[data-pinned="true"]')).toHaveLength(1);
+    expect(container.querySelectorAll('tbody tr[data-pinned="false"]')).toHaveLength(1);
+    expect(screen.queryByRole("columnheader", { name: /pinned?/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /pinned?|unpinned?/i })).not.toBeInTheDocument();
+  });
+
   it("keeps stable column hooks for visual grouping", () => {
     render(<FormsOrderTable rows={[formOrderRow]} canViewFinance onOpen={vi.fn()} />);
 

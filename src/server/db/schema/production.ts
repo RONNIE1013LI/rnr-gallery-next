@@ -171,6 +171,7 @@ export const productionJobs = pgTable(
     printedAt: timestamp("printed_at", { withTimezone: true }),
     customerNotifiedAt: timestamp("customer_notified_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    pinnedAt: timestamp("pinned_at", { withTimezone: true }),
     artistPaidAt: timestamp("artist_paid_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdByUserId: text("created_by_user_id").references(() => user.id, {
@@ -202,6 +203,10 @@ export const productionJobs = pgTable(
     check(
       "production_jobs_source_valid",
       sql`${table.source} in ('web', 'manual')`,
+    ),
+    check(
+      "production_jobs_pin_requires_undelivered",
+      sql`${table.pinnedAt} is null or ${table.deliveredAt} is null`,
     ),
     check(
       "production_jobs_source_link_valid",

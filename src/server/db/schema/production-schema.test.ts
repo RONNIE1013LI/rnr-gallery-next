@@ -59,12 +59,18 @@ describe("production job schema", () => {
       "printed_at",
       "customer_notified_at",
       "delivered_at",
+      "pinned_at",
       "artist_paid_at",
       "completed_at",
       "created_by_user_id",
       "created_at",
       "updated_at",
     ]);
+  });
+
+  it("allows pinning only while a production job is undelivered", () => {
+    expect(getTableConfig(productionJobs).checks.map((constraint) => constraint.name))
+      .toContain("production_jobs_pin_requires_undelivered");
   });
 
   it("gives imported historical jobs a paired, allowlisted source identity", () => {

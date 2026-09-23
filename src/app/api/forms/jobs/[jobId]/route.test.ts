@@ -181,6 +181,53 @@ describe("forms job inline update route", () => {
     );
   });
 
+  it("uses Forms update permission and returns authoritative pin state", async () => {
+    const update = vi.fn().mockResolvedValue("updated");
+    const requirePermission = vi.fn().mockResolvedValue(adminAccess);
+    const route = createFormsJobRoute({
+      requirePermission,
+      update,
+      detail: vi.fn().mockResolvedValue({ job: {
+        updatedAt: new Date("2026-09-24T09:00:01Z"),
+        pinnedAt: new Date("2026-09-24T09:00:00Z"),
+        deliveredAt: null,
+      } }),
+      trustedOrigin: "https://shop.example.test",
+    });
+    const response = await route.PATCH(request({
+      pinned: true,
+      expectedUpdatedAt: "2026-09-24T08:59:00.000Z",
+      idempotencyKey: "pin-order-123",
+    }), context);
+    expect(response.status).toBe(200);
+    expect(requirePermission).toHaveBeenCalledWith("update_jobs");
+    expect(update).toHaveBeenCalledWith(
+      { userId: "admin-1", email: "admin@example.test" },
+      expect.objectContaining({ pinned: true, jobId: "550e8400-e29b-41d4-a716-446655440000" }),
+      { canUpdateFinance: true },
+    );
+    expect(await response.json()).toMatchObject({
+      pinnedAt: "2026-09-24T09:00:00.000Z", deliveredAt: null,
+    });
+  });
+
+  it("rejects customer or unauthorised pin requests before mutation", async () => {
+    const update = vi.fn();
+    const route = createFormsJobRoute({
+      requirePermission: vi.fn().mockRejectedValue(new HttpError("Forbidden", 403)),
+      update,
+      detail: vi.fn(),
+      trustedOrigin: "https://shop.example.test",
+    });
+    const response = await route.PATCH(request({
+      pinned: true,
+      expectedUpdatedAt: "2026-09-24T08:59:00.000Z",
+      idempotencyKey: "pin-order-123",
+    }), context);
+    expect(response.status).toBe(403);
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("rejects unauthorised, cross-origin and linked web finance changes before update", async () => {
     const update = vi.fn();
     const forbidden = createFormsJobRoute({

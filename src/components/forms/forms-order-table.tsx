@@ -190,7 +190,7 @@ export function FormsOrderTable({
         </thead>
         <tbody>
           {rows.map((row, index) => (
-            <tr key={row.id} data-urgent={row.urgent}>
+            <tr key={row.id} data-urgent={row.urgent} data-pinned={Boolean(row.pinnedAt)}>
               <td data-column="rowNumber">{startIndex + index + 1}</td>
               {columns.map((column) => (
                 <td key={column.key} data-column={column.key}>

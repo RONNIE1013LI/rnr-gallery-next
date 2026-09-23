@@ -3,6 +3,7 @@ import type { FormOrderRow } from "@/server/forms/forms-workbench-service";
 export const formOrderRow: FormOrderRow = Object.freeze({
   id: "job-1",
   source: "manual",
+  pinnedAt: null,
   version: "2026-08-05T01:00:00.000Z",
   submittedAt: "2026-08-05T00:00:00.000Z",
   reference: "07188",

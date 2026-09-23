@@ -379,6 +379,7 @@ export async function listFormOrders(
       id: productionJobs.id,
       jobNumber: productionJobs.jobNumber,
       source: productionJobs.source,
+      pinnedAt: productionJobs.pinnedAt,
       orderNumber: orders.orderNumber,
       webOrderNumber: productionJobs.webOrderNumber,
       customerName: productionJobs.customerName,
@@ -414,7 +415,12 @@ export async function listFormOrders(
     }).from(productionJobs)
       .leftJoin(orders, eq(orders.id, productionJobs.orderId))
       .where(where)
-      .orderBy(order(sortExpression(query)), desc(productionJobs.jobNumber))
+      .orderBy(
+        sql`case when ${productionJobs.pinnedAt} is null then 1 else 0 end`,
+        asc(productionJobs.pinnedAt),
+        order(sortExpression(query)),
+        desc(productionJobs.jobNumber),
+      )
       .limit(query.pageSize)
       .offset((query.page - 1) * query.pageSize),
     database.select({ total: count() })
@@ -513,6 +519,7 @@ export async function listFormOrders(
     return Object.freeze({
       id: row.id,
       source: row.source,
+      pinnedAt: row.pinnedAt?.toISOString() ?? null,
       version: row.updatedAt.toISOString(),
       submittedAt: row.createdAt.toISOString(),
       reference: displayFormReference(row.source, row.jobNumber),

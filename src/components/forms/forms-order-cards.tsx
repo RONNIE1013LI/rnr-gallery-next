@@ -33,7 +33,7 @@ export function FormsOrderCards({
   return (
     <div className={styles.orderCards} aria-label="Mobile orders data list">
       {rows.map((row, index) => (
-        <article className={styles.orderCard} key={row.id} data-urgent={row.urgent}>
+        <article className={styles.orderCard} key={row.id} data-urgent={row.urgent} data-pinned={Boolean(row.pinnedAt)}>
           <header>
             <button type="button" title={row.reference} onClick={() => onOpen(row.id)} aria-label={`Open order ${row.reference}`}>{row.reference}</button>
             <time dateTime={row.submittedAt}>{submittedAtFormat.format(new Date(row.submittedAt))}</time>

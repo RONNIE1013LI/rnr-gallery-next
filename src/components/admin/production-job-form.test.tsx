@@ -75,6 +75,72 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
   }
 
+  it("keeps the pin control beside Data entry and follows the server response", async () => {
+    const pinnedAt = "2026-09-24T09:00:00.000Z";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "updated", version: "2026-09-24T09:00:01.000Z", pinnedAt, deliveredAt: null,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance={false}
+      canPin
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingOrder={{ ...existingOrder, pinnedAt: null }}
+    />);
+    const button = screen.getByRole("button", { name: "Pin order" });
+    expect(button.parentElement?.textContent).toContain("Data entry");
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Unpin order" }))
+      .toHaveAttribute("aria-pressed", "true"));
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toMatchObject({ pinned: true });
+  });
+
+  it("saves a pending Data entry edit together with the requested pin", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "updated", version: "2026-09-24T09:00:01.000Z",
+      pinnedAt: "2026-09-24T09:00:00.000Z", deliveredAt: null,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance={false}
+      canPin
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingOrder={{ ...existingOrder, pinnedAt: null }}
+    />);
+    const name = screen.getByLabelText("Cust.Name");
+    fireEvent.focus(name);
+    fireEvent.change(name, { target: { value: "Edited before pin" } });
+    fireEvent.blur(name);
+    fireEvent.click(screen.getByRole("button", { name: "Pin order" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toMatchObject({
+      pinned: true, customerName: "Edited before pin",
+    });
+  });
+
+  it("disables pinning for shipped orders and without edit permission", () => {
+    const { rerender } = render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance={false}
+      canPin
+      manualEntryLayout
+      existingOrder={{ ...existingOrder, milestones: { ...existingOrder.milestones, delivered: true } }}
+    />);
+    expect(screen.getByRole("button", { name: "Pin order" })).toBeDisabled();
+    rerender(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance={false}
+      manualEntryLayout
+      existingOrder={existingOrder}
+    />);
+    expect(screen.queryByRole("button", { name: "Pin order" })).not.toBeInTheDocument();
+  });
+
   it("marks only a new manual order for persistent submit actions", () => {
     const { container, rerender } = render(
       <ProductionJobForm assignees={assignees} canManageFinance={false} manualEntryLayout />,

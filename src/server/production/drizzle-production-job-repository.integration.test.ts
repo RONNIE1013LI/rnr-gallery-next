@@ -7,12 +7,14 @@ import {
   adminAuditLogs,
   checkoutSessions,
   orders,
+  orderNotificationOutbox,
   productionJobItems,
   internalNotificationOutbox,
   internalNotificationRecipients,
   internalNotificationSubscriptions,
   invoiceItems,
   invoices,
+  manualOrderNotificationOutbox,
   productionJobs,
   productionJobFiles,
   user,
@@ -98,6 +100,177 @@ describe("drizzle production job repository", () => {
     if (checkoutIds.length) await database.delete(checkoutSessions).where(inArray(checkoutSessions.id, checkoutIds));
     await database.delete(user).where(inArray(user.id, [actorId, artistId, formArtistId]));
     await pool.end();
+  });
+
+  it("pins, audits and atomically unpins NO/HOLD orders when shipped without duplicate notifications", async () => {
+    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    jobIds.push(...ids);
+    await database.insert(productionJobs).values(ids.map((id, index) => ({
+      id,
+      jobNumber: `PIN-${index}-${suffix}`,
+      source: "manual" as const,
+      idempotencyKey: `pin-job-${id}`,
+      requestDigest: "a".repeat(64),
+      customerName: `Pin Customer ${index}`,
+      customerEmail: "",
+      customerPhone: "0210000000",
+      customerSource: "rnr" as const,
+      manualStatus: index === 1 ? "on_hold" as const : "new" as const,
+      manualPaymentStatus: "awaiting_payment" as const,
+      amountPayableCents: 0,
+      amountPaidCents: 0,
+      artistFeeCents: 0,
+      materialCostCents: 0,
+      deliveryMethod: "pickup" as const,
+      neededDate: "2026-09-24",
+      createdAt: new Date("2026-09-01T00:00:00Z"),
+      updatedAt: new Date("2026-09-01T00:00:00Z"),
+    })));
+    let tick = 0;
+    const service = createProductionJobService(createDrizzleProductionJobRepository(database), {
+      now: () => new Date(Date.UTC(2026, 8, 24, 0, 0, ++tick)),
+    });
+    const actor = { userId: actorId, email: `manager-${suffix}@example.test` };
+    const update = async (jobId: string, values: { pinned?: boolean; milestones?: { delivered: boolean }; manualStatus?: "new" }) => {
+      const [before] = await database.select().from(productionJobs).where(eq(productionJobs.id, jobId));
+      return service.update(actor, {
+        jobId, idempotencyKey: randomUUID(), expectedUpdatedAt: before.updatedAt.toISOString(), ...values,
+      }, { canUpdateFinance: false });
+    };
+    for (const id of ids.slice(0, 2)) {
+      const [original] = await database.select().from(productionJobs).where(eq(productionJobs.id, id));
+      expect(original.pinnedAt).toBeNull();
+      await expect(update(id, { pinned: true })).resolves.toBe("updated");
+      const [pinned] = await database.select().from(productionJobs).where(eq(productionJobs.id, id));
+      expect(pinned.pinnedAt).toBeInstanceOf(Date);
+      expect(pinned.deliveredAt).toBeNull();
+      expect(pinned.customerName).toBe(original.customerName);
+      await expect(update(id, { milestones: { delivered: true }, ...(id === ids[1] ? { manualStatus: "new" } : {}) }))
+        .resolves.toBe("updated");
+      const [shipped] = await database.select().from(productionJobs).where(eq(productionJobs.id, id));
+      expect(shipped.deliveredAt).toBeInstanceOf(Date);
+      expect(shipped.pinnedAt).toBeNull();
+      expect(shipped.customerName).toBe(original.customerName);
+      await expect(update(id, { pinned: true })).rejects.toThrow("Shipped orders cannot be pinned.");
+      await expect(update(id, { milestones: { delivered: true } })).resolves.toBe("updated");
+      const outbox = await database.select().from(manualOrderNotificationOutbox)
+        .where(eq(manualOrderNotificationOutbox.jobId, id));
+      expect(outbox).toHaveLength(1);
+      const audit = await database.select().from(adminAuditLogs)
+        .where(eq(adminAuditLogs.resourceId, id));
+      expect(JSON.stringify(audit)).toContain("Normal (shipped)");
+    }
+    await expect(update(ids[2], { milestones: { delivered: true } })).resolves.toBe("updated");
+    const [ordinary] = await database.select().from(productionJobs).where(eq(productionJobs.id, ids[2]));
+    expect(ordinary.pinnedAt).toBeNull();
+  });
+
+  it("keeps shipped orders unpinned when pin and shipment race", async () => {
+    const jobId = randomUUID();
+    jobIds.push(jobId);
+    await database.insert(productionJobs).values({
+      id: jobId,
+      jobNumber: `PIN-RACE-${suffix}`,
+      source: "manual",
+      idempotencyKey: `pin-race-${jobId}`,
+      requestDigest: "b".repeat(64),
+      customerName: "Race Customer",
+      customerEmail: "",
+      customerPhone: "0210000000",
+      customerSource: "rnr",
+      manualStatus: "new",
+      manualPaymentStatus: "awaiting_payment",
+      amountPayableCents: 0,
+      amountPaidCents: 0,
+      artistFeeCents: 0,
+      materialCostCents: 0,
+      deliveryMethod: "pickup",
+      neededDate: "2026-09-24",
+      createdAt: new Date("2026-09-01T00:00:00Z"),
+      updatedAt: new Date("2026-09-01T00:00:00Z"),
+    });
+    let tick = 0;
+    const service = createProductionJobService(createDrizzleProductionJobRepository(database), {
+      now: () => new Date(Date.UTC(2026, 8, 24, 1, 0, ++tick)),
+    });
+    const actor = { userId: actorId, email: `manager-${suffix}@example.test` };
+    const [initial] = await database.select().from(productionJobs).where(eq(productionJobs.id, jobId));
+    const makeInput = (expectedUpdatedAt: string) => ({
+      jobId, idempotencyKey: randomUUID(), expectedUpdatedAt,
+    });
+    await Promise.allSettled([
+      service.update(actor, { ...makeInput(initial.updatedAt.toISOString()), pinned: true }, { canUpdateFinance: false }),
+      service.update(actor, { ...makeInput(initial.updatedAt.toISOString()), milestones: { delivered: true } }, { canUpdateFinance: false }),
+    ]);
+    const [intermediate] = await database.select().from(productionJobs).where(eq(productionJobs.id, jobId));
+    if (!intermediate.deliveredAt) {
+      await expect(service.update(actor, {
+        ...makeInput(intermediate.updatedAt.toISOString()), milestones: { delivered: true },
+      }, { canUpdateFinance: false })).resolves.toBe("updated");
+    }
+    const [final] = await database.select().from(productionJobs).where(eq(productionJobs.id, jobId));
+    expect(final.deliveredAt).not.toBeNull();
+    expect(final.pinnedAt).toBeNull();
+    await expect(service.update(actor, {
+      ...makeInput(final.updatedAt.toISOString()), pinned: true,
+    }, { canUpdateFinance: false })).rejects.toThrow("Shipped orders cannot be pinned.");
+  });
+
+  it("unpins a shipped web job without changing tracking or duplicating its shipping event", async () => {
+    const checkoutId = randomUUID();
+    const orderId = randomUUID();
+    const jobId = randomUUID();
+    checkoutIds.push(checkoutId);
+    orderIds.push(orderId);
+    jobIds.push(jobId);
+    await database.insert(checkoutSessions).values({
+      id: checkoutId, tokenDigest: randomUUID(), expiresAt: new Date("2099-01-01"),
+    });
+    await database.insert(orders).values({
+      id: orderId, orderNumber: `PIN-WEB-${suffix}`,
+      checkoutSessionId: checkoutId, checkoutSessionVersion: 1, idempotencyKey: randomUUID(),
+      customerEmail: "web-pin@example.test",
+      pricingSnapshot: {} as (typeof orders.$inferInsert)["pricingSnapshot"],
+      deliveryMethod: "pickup", shippingServiceCode: "pickup", shippingServiceName: "Pickup",
+      productSubtotalExGstCents: 20000, productGstCents: 3000, productTotalInclGstCents: 23000,
+      shippingExGstCents: 0, shippingGstCents: 0, shippingTotalInclGstCents: 0,
+      totalExGstCents: 20000, totalGstCents: 3000, totalInclGstCents: 23000,
+      paymentStatus: "paid", fulfilmentStatus: "new",
+      trackingCarrier: "NZ Post", trackingNumber: "TRACK-123", trackingUrl: "https://example.test/track/123",
+    });
+    await database.insert(productionJobs).values({
+      id: jobId, jobNumber: `PIN-WEB-${suffix}`, source: "web", orderId,
+      customerName: "Web Pin Customer", customerEmail: "web-pin@example.test", customerPhone: "0210000000",
+      customerSource: "web", neededDate: "2026-09-24", deliveryMethod: "pickup",
+      trackingCarrier: "NZ Post", trackingNumber: "TRACK-123", trackingUrl: "https://example.test/track/123",
+      createdAt: new Date("2026-09-01T00:00:00Z"), updatedAt: new Date("2026-09-01T00:00:00Z"),
+    });
+    let tick = 0;
+    const service = createProductionJobService(createDrizzleProductionJobRepository(database), {
+      now: () => new Date(Date.UTC(2026, 8, 24, 2, 0, ++tick)),
+    });
+    const actor = { userId: actorId, email: `manager-${suffix}@example.test` };
+    const update = async (values: { pinned?: boolean; milestones?: { delivered: boolean } }) => {
+      const [current] = await database.select().from(productionJobs).where(eq(productionJobs.id, jobId));
+      return service.update(actor, {
+        jobId, idempotencyKey: randomUUID(), expectedUpdatedAt: current.updatedAt.toISOString(), ...values,
+      }, { canUpdateFinance: false });
+    };
+    await expect(update({ pinned: true })).resolves.toBe("updated");
+    await expect(update({ milestones: { delivered: true } })).resolves.toBe("updated");
+    await expect(update({ milestones: { delivered: true } })).resolves.toBe("updated");
+    const [job] = await database.select().from(productionJobs).where(eq(productionJobs.id, jobId));
+    const [order] = await database.select().from(orders).where(eq(orders.id, orderId));
+    const outbox = await database.select().from(orderNotificationOutbox)
+      .where(eq(orderNotificationOutbox.orderId, orderId));
+    expect(job.deliveredAt).not.toBeNull();
+    expect(job.pinnedAt).toBeNull();
+    expect(order.fulfilmentStatus).toBe("completed");
+    expect([order.trackingCarrier, order.trackingNumber, order.trackingUrl]).toEqual([
+      "NZ Post", "TRACK-123", "https://example.test/track/123",
+    ]);
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0].eventKey).toBe(`order-shipped:${orderId}`);
   });
 
   it("saves shared Web editor fields and reads them back without changing checkout or products", async () => {

@@ -912,6 +912,9 @@ export function createDrizzleProductionJobRepository(
         if (current.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
           return "conflict" as const;
         }
+        if (input.pinned && (current.deliveredAt !== null || input.deliveredAt !== undefined && input.deliveredAt !== null)) {
+          return "invalid_pinned" as const;
+        }
         const websiteShipped = current.source === "web"
           && current.deliveredAt === null
           && input.deliveredAt !== undefined
@@ -954,6 +957,15 @@ export function createDrizzleProductionJobRepository(
           currentItems,
           input.items,
         )];
+        if (current.pinnedAt && input.deliveredAt !== undefined && input.deliveredAt !== null) {
+          changes.push({ field: "pinnedAt", before: "Pinned", after: "Normal (shipped)" });
+        } else if (input.pinned !== undefined && Boolean(current.pinnedAt) !== input.pinned) {
+          changes.push({
+            field: "pinnedAt",
+            before: current.pinnedAt ? "Pinned" : "Normal",
+            after: input.pinned ? "Pinned" : "Normal",
+          });
+        }
         const values: Partial<typeof productionJobs.$inferInsert> = {
           updatedAt: input.updatedAt,
           ...(websiteShipped ? { completedAt: input.updatedAt } : {}),
@@ -1047,7 +1059,14 @@ export function createDrizzleProductionJobRepository(
           }
           if (input.customFields.length) changes.push({ field: "customFields" });
         }
-        const [updated] = await transaction.update(productionJobs).set(values)
+        const [updated] = await transaction.update(productionJobs).set({
+          ...values,
+          ...(input.deliveredAt !== undefined && input.deliveredAt !== null
+            ? { pinnedAt: null }
+            : input.pinned !== undefined
+              ? { pinnedAt: input.pinned ? sql`statement_timestamp()` : null }
+              : {}),
+        })
           .where(and(
             eq(productionJobs.id, input.jobId),
             eq(productionJobs.updatedAt, input.expectedUpdatedAt),

@@ -45,6 +45,7 @@ export type ExistingProductionOrder = Readonly<{
   customerPhone: string;
   customerSource: string;
   urgent: boolean;
+  pinnedAt?: string | null;
   neededDate: string;
   deliveryMethod: string;
   deliveryAddress: string;
@@ -92,6 +93,7 @@ type Props = Readonly<{
   existingPaymentProofs?: readonly ProductionFileSummary[];
   canDeleteFiles?: boolean;
   canEdit?: boolean;
+  canPin?: boolean;
   canViewInvoice?: boolean;
   canUpdateProductionStatus?: boolean;
   canUpdateDeliveryStatus?: boolean;
@@ -406,6 +408,7 @@ export function ProductionJobForm({
   existingPaymentProofs = [],
   canDeleteFiles = false,
   canEdit = true,
+  canPin = false,
   canViewInvoice = canManageFinance,
   canUpdateProductionStatus = true,
   canUpdateDeliveryStatus = true,
@@ -437,6 +440,10 @@ export function ProductionJobForm({
   const [savedPaymentProofs, setSavedPaymentProofs] = useState(() => existingPaymentProofs.filter((file) => file.kind === "payment_proof"));
   const [viewingPaymentProofKey, setViewingPaymentProofKey] = useState<string | null>(null);
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState(existingOrder?.expectedUpdatedAt ?? "");
+  const [pinnedAt, setPinnedAt] = useState(existingOrder?.pinnedAt ?? null);
+  const [shipped, setShipped] = useState(Boolean(existingOrder?.milestones.delivered));
+  const pinRequestInFlight = useRef(false);
+  const pinOnNextSave = useRef<boolean | null>(null);
   const [visibleAuditCount, setVisibleAuditCount] = useState(5);
   const formRef = useRef<HTMLFormElement>(null);
   const customerNameRef = useRef<HTMLInputElement>(null);
@@ -473,6 +480,66 @@ export function ProductionJobForm({
       autoSaveTimer.current = null;
       if (formRef.current?.checkValidity()) formRef.current.requestSubmit();
     }, delay);
+  }
+
+  async function togglePinned() {
+    if (!existingOrder || !canPin || pending || shipped || pinRequestInFlight.current) return;
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+      if (!formRef.current?.checkValidity()) {
+        setFeedback("Save or correct the current changes before pinning this order.");
+        return;
+      }
+      pinOnNextSave.current = !pinnedAt;
+      formRef.current.requestSubmit();
+      return;
+    }
+    pinRequestInFlight.current = true;
+    setPending(true);
+    setFeedback("");
+    try {
+      const response = await fetch(`${endpoint}/${existingOrder.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedUpdatedAt,
+          idempotencyKey: createClientId(),
+          pinned: !pinnedAt,
+        }),
+      });
+      const result = await response.json().catch(() => null) as {
+        error?: string;
+        version?: string;
+        pinnedAt?: string | null;
+        deliveredAt?: string | null;
+      } | null;
+      if (!response.ok || !result?.version) {
+        throw new Error(result?.error || "The order pin could not be saved.");
+      }
+      setExpectedUpdatedAt(result.version);
+      setPinnedAt(result.pinnedAt ?? null);
+      setShipped(Boolean(result.deliveredAt));
+      onSaved?.();
+    } catch (error) {
+      try {
+        const response = await fetch(`${endpoint}/${existingOrder.id}`, { headers: { Accept: "application/json" } });
+        if (response.ok) {
+          const body = await response.json() as { detail?: { job?: { pinnedAt?: string | null; deliveredAt?: string | null; updatedAt?: string } } };
+          if (body.detail?.job) {
+            setPinnedAt(body.detail.job.pinnedAt ?? null);
+            setShipped(Boolean(body.detail.job.deliveredAt));
+            if (body.detail.job.updatedAt) setExpectedUpdatedAt(body.detail.job.updatedAt);
+          }
+        }
+      } catch {
+        // Keep the last confirmed state if the refresh is unavailable.
+      }
+      setFeedback(error instanceof Error ? error.message : "The order pin could not be saved.");
+    } finally {
+      pinRequestInFlight.current = false;
+      setPending(false);
+    }
   }
 
   function pasteCustomerDetails(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -735,7 +802,10 @@ export function ProductionJobForm({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (paymentRecovery) return;
+    if (paymentRecovery) {
+      pinOnNextSave.current = null;
+      return;
+    }
     setPending(true);
     setFeedback("");
     setPaymentProofError("");
@@ -754,12 +824,14 @@ export function ProductionJobForm({
           : "awaiting_payment";
       const requiresPaymentProof = !isWebOrder && (finalPaymentStatus === "processing" || finalPaymentStatus === "paid");
       if (requiresPaymentProof && !hasPaymentProof) {
+        pinOnNextSave.current = null;
         setPaymentProofError(`Attach the payment proof before marking this order as ${finalPaymentStatus}.`);
         setPending(false);
         return;
       }
       const oversizedProof = selectedPaymentProofs.find((proof) => proof.size > 25 * 1024 * 1024);
       if (oversizedProof) {
+        pinOnNextSave.current = null;
         setPaymentProofError(`${oversizedProof.name} must be 25 MB or smaller.`);
         setPending(false);
         return;
@@ -855,6 +927,7 @@ export function ProductionJobForm({
         const updateBody = {
           expectedUpdatedAt,
           idempotencyKey: createIdempotencyKey,
+          ...(pinOnNextSave.current !== null ? { pinned: pinOnNextSave.current } : {}),
           ...(!isWebOrder ? {
             customerName: body.customerName,
             customerEmail: body.customerEmail,
@@ -894,9 +967,12 @@ export function ProductionJobForm({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updateBody),
         });
-        const updateResult = await updateResponse.json().catch(() => null) as { error?: string; version?: string } | null;
+        const updateResult = await updateResponse.json().catch(() => null) as { error?: string; version?: string; pinnedAt?: string | null; deliveredAt?: string | null } | null;
         if (!updateResponse.ok) throw new Error(updateResult?.error || "The order could not be saved.");
+        pinOnNextSave.current = null;
         if (updateResult?.version) setExpectedUpdatedAt(updateResult.version);
+        setPinnedAt(updateResult?.pinnedAt ?? null);
+        setShipped(Boolean(updateResult?.deliveredAt));
         for (const proof of paymentProofsRef.current) {
           if (proof.previewUrl) URL.revokeObjectURL(proof.previewUrl);
         }
@@ -937,6 +1013,7 @@ export function ProductionJobForm({
       setFeedback(`Created ${result.job.jobNumber ?? "production job"}. Opening details…`);
       router.push(`${detailBasePath}/${result.job.id}`);
     } catch (error) {
+      pinOnNextSave.current = null;
       setFeedback(error instanceof Error ? error.message : "The production job could not be created.");
       setPending(false);
     }
@@ -980,7 +1057,17 @@ export function ProductionJobForm({
       }}
     >
       <div className={styles.formUtilityBar}>
-        <span>Data entry</span>
+        <div className={styles.formUtilityTitle}>
+          <span>Data entry</span>
+          {existingOrder && canPin ? <button
+            type="button"
+            className={styles.pinOrderToggle}
+            aria-label={pinnedAt ? "Unpin order" : "Pin order"}
+            aria-pressed={Boolean(pinnedAt)}
+            disabled={pending || shipped}
+            onClick={() => void togglePinned()}
+          >{pinnedAt ? "Pinned" : "Normal"}</button> : null}
+        </div>
         <div>
           {canViewInvoice && !isWebOrder ? <button type="button" onClick={openInvoice} disabled={pending}>Invoice</button> : null}
           {onBack ? <button type="button" onClick={onBack}>Back</button> : <Link href={backHref}>Back</Link>}

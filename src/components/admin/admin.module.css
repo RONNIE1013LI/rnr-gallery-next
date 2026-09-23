@@ -4286,6 +4286,11 @@ button.paymentProofPreviewMedia {
   gap: 8px;
 }
 
+.formUtilityBar .formUtilityTitle {
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .formUtilityBar button,
 .formUtilityBar a {
   display: inline-flex;
@@ -4306,6 +4311,31 @@ button.paymentProofPreviewMedia {
 .formUtilityBar button {
   color: #fff;
   background: #173247;
+}
+
+.formUtilityBar .pinOrderToggle {
+  min-height: 28px;
+  padding: 4px 9px;
+  border-color: #cbd5df;
+  color: #344054;
+  background: #fff;
+  font-size: 11px;
+  text-transform: none;
+}
+
+.formUtilityBar .pinOrderToggle[aria-pressed="true"] {
+  border-color: #d6b857;
+  background: #fff8d6;
+}
+
+.formUtilityBar .pinOrderToggle:focus-visible {
+  outline: 2px solid #173247;
+  outline-offset: 2px;
+}
+
+.formUtilityBar .pinOrderToggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 /* The standalone Forms portal mirrors the compact running order-system drawer. */
@@ -5553,6 +5583,14 @@ button.paymentProofPreviewMedia {
 }
 
 @media (max-width: 680px) {
+  .formUtilityBar {
+    flex-wrap: wrap;
+  }
+
+  .formUtilityBar .pinOrderToggle {
+    min-height: 36px;
+  }
+
   .formUtilityBar button,
   .formUtilityBar a {
     min-height: 44px;

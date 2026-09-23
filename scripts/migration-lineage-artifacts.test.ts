@@ -112,11 +112,12 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(70);
+    expect(journal.entries).toHaveLength(71);
     expect(journal.entries[69]).toMatchObject({ idx: 69, tag: "0069_transactional_business_numbers" });
+    expect(journal.entries[70]).toMatchObject({ idx: 70, tag: "0070_production_job_pinning" });
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(70);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(70);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(71);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(71);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -233,6 +234,9 @@ describe("migration lineage artifacts", () => {
     });
     expect(sha256("drizzle/0068_photo_print_canvas_gallery_constraints.sql")).toBe(
       "45c2103519958ca759ee665970080850c40ce9bf527134c41eaa5534454e7a38",
+    );
+    expect(sha256("drizzle/0070_production_job_pinning.sql")).toBe(
+      "f3cf3f7725f31efa23198426f32314b99d03a4c3657aa2a0b9c8ad30faa360f8",
     );
   });
 

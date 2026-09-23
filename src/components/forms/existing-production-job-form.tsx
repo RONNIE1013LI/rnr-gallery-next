@@ -71,6 +71,7 @@ export function ExistingProductionJobForm({
     customerPhone: detail.job.customerPhone,
     customerSource: detail.job.customerSource,
     urgent: detail.job.urgent,
+    pinnedAt: detail.job.pinnedAt?.toISOString() ?? null,
     neededDate: detail.job.neededDate,
     deliveryMethod: detail.job.deliveryMethod,
     deliveryAddress: detail.job.deliveryAddress,
@@ -108,6 +109,7 @@ export function ExistingProductionJobForm({
     canUploadFiles={canUploadFiles}
     canDeleteFiles={canDeleteFiles}
     canEdit={canEdit}
+    canPin={canEdit}
     canUpdateProductionStatus={canUpdateProductionStatus}
     canUpdateDeliveryStatus={canUpdateDeliveryStatus}
     showTrackingForWebOrder
