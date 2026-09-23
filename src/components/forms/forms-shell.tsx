@@ -8,12 +8,14 @@ export function FormsShell({
   operator,
   canCreateJobs,
   canViewStats,
+  canManagePayment,
   currentPath = "/order-system",
   children,
 }: Readonly<{
   operator: Readonly<{ name?: string; email?: string }>;
   canCreateJobs: boolean;
   canViewStats: boolean;
+  canManagePayment: boolean;
   currentPath?: string;
   children: React.ReactNode;
 }>) {
@@ -25,6 +27,7 @@ export function FormsShell({
           <nav className={styles.primaryNav} aria-label="Forms workspace">
             <Link href="/order-system" aria-current={currentRoute === "/order-system" ? "page" : undefined}>Data list</Link>
             {canViewStats ? <Link href="/order-system/stats" aria-current={currentRoute === "/order-system/stats" ? "page" : undefined}>Custom stats</Link> : null}
+            {canManagePayment ? <Link className={styles.paymentRequestNav} href="/admin/payment-requests">AfterPay Req.</Link> : null}
           </nav>
         </div>
         <div className={styles.operatorActions}>
@@ -32,6 +35,7 @@ export function FormsShell({
             {operator.name || operator.email || "Operator"}
           </span>
           <FormsSignOut />
+          {canManagePayment ? <Link className={styles.paymentRequestAction} href="/admin/payment-requests">AfterPay Req.</Link> : null}
           {canCreateJobs ? <FormsOrderEntryLink currentPath={currentPath} /> : null}
         </div>
       </header>

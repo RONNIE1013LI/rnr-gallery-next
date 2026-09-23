@@ -21,6 +21,7 @@ describe("FormsShell", () => {
         operator={{ name: "Rosemary", email: "rosemary@example.test" }}
         canCreateJobs
         canViewStats
+        canManagePayment
         currentPath="/order-system?q=07188&page=2"
       >
         <p>Workbench</p>
@@ -30,6 +31,12 @@ describe("FormsShell", () => {
     expect(screen.getByRole("link", { name: "Data list" })).toHaveAttribute("href", "/order-system");
     expect(screen.getByRole("link", { name: "Data list" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Custom stats" })).toHaveAttribute("href", "/order-system/stats");
+    const paymentLinks = screen.getAllByRole("link", { name: "AfterPay Req." });
+    expect(paymentLinks).toHaveLength(2);
+    expect(paymentLinks[0]).toHaveAttribute("href", "/admin/payment-requests");
+    expect(paymentLinks[1]).toHaveAttribute("href", "/admin/payment-requests");
+    expect(paymentLinks[0].parentElement).toHaveAttribute("aria-label", "Forms workspace");
+    expect(paymentLinks[1].parentElement).toContainElement(screen.getByRole("button", { name: "Log out" }));
     expect(screen.queryByRole("link", { name: "Gallery" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Order entry" })).toHaveAttribute("href", "/order-system?q=07188&page=2&entry=new");
     expect(screen.getByText("Rosemary")).toBeInTheDocument();
@@ -44,6 +51,7 @@ describe("FormsShell", () => {
         operator={{ name: "Viewer", email: "viewer@example.test" }}
         canCreateJobs={false}
         canViewStats={false}
+        canManagePayment={false}
       >
         <p>Read only</p>
       </FormsShell>,
@@ -51,11 +59,12 @@ describe("FormsShell", () => {
 
     expect(screen.queryByRole("link", { name: "Custom stats" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Order entry" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "AfterPay Req." })).not.toBeInTheDocument();
   });
 
   it("gives the data list a route-specific scroll container without changing other pages", () => {
     const dataList = render(
-      <FormsShell operator={{ name: "Viewer" }} canCreateJobs={false} canViewStats currentPath="/order-system">
+      <FormsShell operator={{ name: "Viewer" }} canCreateJobs={false} canViewStats canManagePayment={false} currentPath="/order-system">
         <p>Data list</p>
       </FormsShell>,
     );
@@ -63,7 +72,7 @@ describe("FormsShell", () => {
     dataList.unmount();
 
     render(
-      <FormsShell operator={{ name: "Viewer" }} canCreateJobs={false} canViewStats currentPath="/order-system/stats">
+      <FormsShell operator={{ name: "Viewer" }} canCreateJobs={false} canViewStats canManagePayment={false} currentPath="/order-system/stats">
         <p>Stats</p>
       </FormsShell>,
     );

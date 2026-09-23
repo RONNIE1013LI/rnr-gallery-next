@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { buildFormAccessProfile } from "@/server/forms/forms-permissions";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 
 import FormsPortalLayout from "./layout";
 
@@ -29,5 +30,36 @@ describe("forms portal layout", () => {
     expect(screen.getByText("Protected workbench")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Order entry" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Custom stats" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "AfterPay Req." })).not.toBeInTheDocument();
+  });
+
+  it("shows payment requests to an admin with forms access", async () => {
+    headers.mockResolvedValue(new Headers({ "x-rnr-request-path": "/order-system/stats" }));
+    requireFormsPage.mockResolvedValue({
+      user: { id: "admin-1", name: "Admin" },
+      formRole: "admin",
+      formProfile: null,
+    });
+
+    render(await FormsPortalLayout({ children: <p>Protected workbench</p> }));
+
+    expect(screen.getAllByRole("link", { name: "AfterPay Req." })).toHaveLength(2);
+  });
+
+  it("shows payment requests to staff only with the payment grant", async () => {
+    headers.mockResolvedValue(new Headers({ "x-rnr-request-path": "/order-system/stats" }));
+    requireFormsPage.mockResolvedValue({
+      user: { id: "staff-1", name: "Staff" },
+      formRole: "staff",
+      formProfile: normalizeStaffAccessProfile({
+        adminPermissions: ["manage_payment"],
+        formPermissions: { access_forms: true },
+        assignedOnly: true,
+      }),
+    });
+
+    render(await FormsPortalLayout({ children: <p>Protected workbench</p> }));
+
+    expect(screen.getAllByRole("link", { name: "AfterPay Req." })).toHaveLength(2);
   });
 });
