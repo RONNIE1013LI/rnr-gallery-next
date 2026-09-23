@@ -59,7 +59,7 @@ export function CustomerReviewCard({ review, featured = false }: Readonly<{
 
   return <article ref={cardRef} className={`${styles.reviewCard} ${featured ? styles.featuredCard : ""}`} aria-label={`${featured ? "Featured recommendation" : "Recommendation"} from ${review.reviewerName}`}>
     <header className={styles.reviewerHeader}>
-      {review.avatar ? <Image className={styles.avatar} src={review.avatar.url} alt="" width={review.avatar.width} height={review.avatar.height} sizes="48px" unoptimized /> : <span className={styles.initials} aria-hidden="true">{initials(review.reviewerName)}</span>}
+      {review.avatar ? <Image className={styles.avatar} src={review.avatar.url} alt="" width={review.avatar.width} height={review.avatar.height} sizes="48px" /> : <span className={styles.initials} aria-hidden="true">{initials(review.reviewerName)}</span>}
       <div><strong>{review.reviewerName}</strong><time dateTime={date.dateTime} title={date.title}>{date.label}</time></div>
       {sourceIcon}
     </header>

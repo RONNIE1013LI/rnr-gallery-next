@@ -97,7 +97,7 @@ describe("CustomerReviewsSection", () => {
       featured: {
         ...featuredReview,
         featuredImage: {
-          url: `/review-media/${featuredReview.id}/featured-image`,
+          url: `/review-media/${featuredReview.id}/featured-image?v=${"a".repeat(64)}`,
           mimeType: "image/webp",
           width,
           height,
@@ -113,6 +113,25 @@ describe("CustomerReviewsSection", () => {
     expect(image).not.toHaveAttribute("data-nimg", "fill");
     expect(image).not.toHaveStyle({ position: "absolute" });
     expect(image.parentElement).toHaveClass(styles.featuredImage);
+    expect(image.getAttribute("src")).toContain("/_next/image?url=");
+    expect(image.getAttribute("srcset")).toContain("/_next/image?url=");
+    expect(new URLSearchParams(image.getAttribute("src")?.split("?")[1]).get("url"))
+      .toBe(`/review-media/${featuredReview.id}/featured-image?v=${"a".repeat(64)}`);
+  });
+
+  it("optimizes a versioned public avatar at its existing 48px display size", () => {
+    const avatarUrl = `/review-media/${secondReview.id}/avatar?v=${"b".repeat(64)}`;
+    render(<CustomerReviewsSection data={{
+      ...section,
+      reviews: [{ ...secondReview, avatar: { url: avatarUrl, mimeType: "image/jpeg", width: 1000, height: 992 } }],
+    }} />);
+
+    const avatar = document.querySelector<HTMLImageElement>(`img.${styles.avatar}`)!;
+    expect(avatar).not.toBeNull();
+    expect(avatar).toHaveAttribute("sizes", "48px");
+    expect(avatar.getAttribute("src")).toContain("/_next/image?url=");
+    expect(new URLSearchParams(avatar.getAttribute("src")?.split("?")[1]).get("url"))
+      .toBe(avatarUrl);
   });
 
   it("keeps the text-only featured variant to a single content column", () => {

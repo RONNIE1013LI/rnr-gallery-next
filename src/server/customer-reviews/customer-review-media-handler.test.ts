@@ -53,6 +53,31 @@ describe("customer review media handlers", () => {
     expect(stale.status).toBe(404);
   });
 
+  it("keeps featured image versions and ETag validation unchanged", async () => {
+    const read = vi.fn().mockResolvedValue(Buffer.from("image"));
+    const handler = createPublicReviewMediaHandler({
+      findPublic: vi.fn().mockResolvedValue(record),
+      read,
+    });
+    const params = {
+      reviewId: "00000000-0000-4000-8000-000000000001",
+      kind: "featured-image",
+    };
+    const url = `https://shop.example.test/review-media/${params.reviewId}/${params.kind}?v=${record.sha256}`;
+    const current = await handler.GET(new Request(url), params);
+    const conditional = await handler.GET(new Request(url, {
+      headers: { "If-None-Match": `"${record.sha256}"` },
+    }), params);
+    const stale = await handler.GET(new Request(url.replace(record.sha256, "b".repeat(64))), params);
+
+    expect(current.status).toBe(200);
+    expect(current.headers.get("Cache-Control")).toContain("immutable");
+    expect(current.headers.get("ETag")).toBe(`"${record.sha256}"`);
+    expect(conditional.status).toBe(304);
+    expect(stale.status).toBe(404);
+    expect(read).toHaveBeenCalledOnce();
+  });
+
   it("returns a uniform 404 for invalid IDs, evidence, and non-public reviews", async () => {
     const findPublic = vi.fn().mockResolvedValue(null);
     const handler = createPublicReviewMediaHandler({

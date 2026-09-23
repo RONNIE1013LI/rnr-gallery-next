@@ -38,6 +38,7 @@ const nextConfig: NextConfig = {
     localPatterns: [
       { pathname: "/**", search: "" },
       { pathname: "/gallery-images/**" },
+      { pathname: "/review-media/**" },
     ],
   },
   devIndicators: false,

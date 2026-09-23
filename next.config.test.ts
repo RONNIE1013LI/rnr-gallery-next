@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import nextConfig, { buildSecurityHeaders } from "./next.config";
+import { hasLocalMatch } from "next/dist/shared/lib/match-local-pattern";
 import { products } from "./src/domain/catalogue/products";
 
 const knownStaticMigrationTargets = new Set([
@@ -76,6 +77,12 @@ describe("Next.js workspace configuration", () => {
     expect(nextConfig.images?.localPatterns).toContainEqual({
       pathname: "/gallery-images/**",
     });
+    expect(nextConfig.images?.localPatterns).toContainEqual({
+      pathname: "/review-media/**",
+    });
+    expect(hasLocalMatch(nextConfig.images?.localPatterns, `/review-media/00000000-0000-4000-8000-000000000001/featured-image?v=${"a".repeat(64)}`)).toBe(true);
+    expect(hasLocalMatch(nextConfig.images?.localPatterns, `/review-media/00000000-0000-4000-8000-000000000001/avatar?v=${"a".repeat(64)}`)).toBe(true);
+    expect(hasLocalMatch(nextConfig.images?.localPatterns, `/api/admin/customer-reviews/00000000-0000-4000-8000-000000000001/media/permission-evidence?v=${"a".repeat(64)}`)).toBe(false);
     expect(nextConfig.images?.imageSizes).toEqual([
       32, 48, 64, 96, 128, 256, 320, 384,
     ]);
