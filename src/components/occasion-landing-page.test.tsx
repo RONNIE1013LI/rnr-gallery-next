@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
@@ -17,6 +18,14 @@ const artwork: PublicGalleryItem = {
 describe("occasion landing output", () => {
   it.each(Object.values(occasionLandingPages))("renders accessible commercial content at $path", (content) => {
     const { container } = render(<OccasionLandingPage content={content} registry={defaultProductRegistry} market="NZ" artwork={[artwork]} />);
+    const guidance = container.querySelector('section[aria-labelledby="guidance-heading"]')!;
+    expect(guidance).not.toBeNull();
+    expect(guidance.querySelectorAll("ul > li")).toHaveLength(content.guidance.length);
+    for (const { text } of content.guidance) expect(guidance).toHaveTextContent(text);
+    const html = renderToStaticMarkup(<OccasionLandingPage content={content} registry={defaultProductRegistry} market="NZ" artwork={[artwork]} />);
+    const serverDocument = new DOMParser().parseFromString(html, "text/html");
+    for (const { text } of content.guidance) expect(serverDocument.body.textContent).toContain(text);
+    for (const item of content.faq) expect(serverDocument.body.textContent).toContain(item.answer);
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(content.heading);
     expect(container.querySelectorAll("details")).toHaveLength(5);

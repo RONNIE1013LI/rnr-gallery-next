@@ -13,6 +13,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Prebuilt minified showroom engine; lint the maintained application source.
+    "public/media/showroom/engine.bundle.mjs",
   ]),
 ]);
 

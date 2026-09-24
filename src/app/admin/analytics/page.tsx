@@ -82,9 +82,9 @@ function WebsiteAnalyticsV1({
     </nav> : null}
 
     <div className={styles.metricGrid}>
-      <article><span>Visitors</span><strong>{result.metrics.visitors}</strong></article>
-      <article><span>Sessions</span><strong>{result.metrics.sessions}</strong></article>
-      <article><span>Page Views</span><strong>{result.metrics.pageviews}</strong></article>
+      <div><span>Visitors</span><strong>{result.metrics.visitors}</strong></div>
+      <div><span>Sessions</span><strong>{result.metrics.sessions}</strong></div>
+      <div><span>Page Views</span><strong>{result.metrics.pageviews}</strong></div>
     </div>
 
     <section className={styles.panel}>

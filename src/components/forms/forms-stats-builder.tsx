@@ -301,8 +301,9 @@ export function FormsStatsBuilder({
             const request = buildFormsStatsStatisticRequest(widget, queryContext);
             const previewing = Boolean(previewLayout);
             const position = `widget ${index + 1} of ${widgets.length}`;
-            return <article
+            return <section
               className={styles.statsCanvasWidget}
+              aria-label={`${widget.title}, ${position}`}
               data-selected={selectedId === widget.id}
               data-widget-id={widget.id}
               data-widget-type={widget.type}
@@ -328,7 +329,7 @@ export function FormsStatsBuilder({
                     instanceId={`builder-${widget.id}`}
                   />
                 : <p className={styles.statsPreviewHint}>Select Preview to load this statistic.</p>}
-            </article>;
+            </section>;
           })}
         </section>
 

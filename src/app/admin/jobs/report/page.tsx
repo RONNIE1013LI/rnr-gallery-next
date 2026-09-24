@@ -28,7 +28,7 @@ export default async function ProductionReportPage() {
         <div className={styles.headerActions}><Link className={styles.recordCount} href="/admin/jobs">Back to production</Link>{hasAdminPermission(access.adminRole, access.adminPermissions, "export_production_jobs") ? <Link prefetch={false} className={styles.primaryAdminButton} href="/api/admin/jobs/export">Export all CSV</Link> : null}</div>
       </header>
 
-      <section className={styles.reportMetrics}>{metrics.map(([name, value]) => <article key={name}><span>{name}</span><strong>{value}</strong></article>)}</section>
+      <section className={styles.reportMetrics}>{metrics.map(([name, value]) => <div key={name}><span>{name}</span><strong>{value}</strong></div>)}</section>
 
       <div className={styles.reportGrid}>
         <section className={styles.panel}>

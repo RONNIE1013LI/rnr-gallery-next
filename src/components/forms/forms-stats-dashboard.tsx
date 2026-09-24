@@ -143,7 +143,7 @@ export function FormsStatsDashboard({
     <section className={styles.statsDashboard} aria-label="Saved custom reports" data-can-view-finance={canViewFinance}>
       {feedback ? <p className={styles.formFeedback} role="alert">{feedback}</p> : null}
       {layouts.length === 0 ? <p className={styles.statsEmpty}>No custom reports have been saved yet.</p> : layouts.map((layout) => (
-        <article className={styles.statsReportCard} key={layout.id}>
+        <section className={styles.statsReportCard} aria-label={layout.name} key={layout.id}>
           <header className={styles.statsReportHeader}>
             <div><h2>{layout.name}</h2><p>{reportSummary(layout)}</p></div>
             {canManage ? <div className={styles.statsReportActions}>
@@ -161,7 +161,7 @@ export function FormsStatsDashboard({
               </section>;
             })}
           </div>
-        </article>
+        </section>
       ))}
     </section>
   );

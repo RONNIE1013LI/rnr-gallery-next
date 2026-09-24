@@ -26,7 +26,7 @@ describe("Admin operational visual system", () => {
   });
 
   it("keeps dashboard metrics compact and scannable", () => {
-    const cards = cssRule(css, ".metricGrid article");
+    const cards = cssRule(css, ".metricGrid > div");
     expect(cards).toContain("gap: 6px;");
     expect(cards).toContain("padding: 14px;");
   });

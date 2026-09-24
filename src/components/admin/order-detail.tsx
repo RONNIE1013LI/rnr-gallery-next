@@ -181,11 +181,11 @@ export function AdminOrderDetail({
 
         <section className={styles.twoColumnPanels}>
           {detail.addresses.map((address) => (
-            <article className={styles.panel} key={address.kind}>
+            <section className={styles.panel} key={address.kind}>
               <h2>{label(address.kind)} address</h2>
               <address>{addressLines(address).map((line) => <span key={line}>{line}</span>)}</address>
               <p>{address.phone}<br />{address.email}</p>
-            </article>
+            </section>
           ))}
         </section>
 

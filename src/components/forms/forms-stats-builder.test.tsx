@@ -32,7 +32,7 @@ describe("FormsStatsBuilder", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add line chart" }));
     const lineHeading = within(screen.getByRole("region", { name: "Report canvas" })).getByRole("heading", { name: "Line chart" });
-    expect(lineHeading.closest("article")).toHaveAttribute("data-widget-id", "widget-1");
+    expect(lineHeading.closest("section")).toHaveAttribute("data-widget-id", "widget-1");
 
     const dataTransfer = {
       setData: vi.fn(),
@@ -44,7 +44,7 @@ describe("FormsStatsBuilder", () => {
     expect(dataTransfer.setData).toHaveBeenCalledWith("text/plain", "pie");
     fireEvent.drop(screen.getByRole("region", { name: "Report canvas" }), { dataTransfer });
     const pieHeading = within(screen.getByRole("region", { name: "Report canvas" })).getByRole("heading", { name: "Pie chart" });
-    expect(pieHeading.closest("article")).toHaveAttribute("data-widget-id", "widget-2");
+    expect(pieHeading.closest("section")).toHaveAttribute("data-widget-id", "widget-2");
     expect(randomUUID).toHaveBeenCalledTimes(2);
   });
 
@@ -55,7 +55,7 @@ describe("FormsStatsBuilder", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Move Text up, widget 2 of 2" }));
     const canvas = screen.getByRole("region", { name: "Report canvas" });
-    expect(within(canvas).getAllByRole("article").map((item) => item.getAttribute("data-widget-type"))).toEqual(["text", "number"]);
+    expect(within(canvas).getAllByRole("region").map((item) => item.getAttribute("data-widget-type"))).toEqual(["text", "number"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Select Number, widget 2 of 2" }));
     expect(screen.getByRole("button", { name: "Select Number, widget 2 of 2" })).toHaveAttribute("aria-pressed", "true");
@@ -72,12 +72,12 @@ describe("FormsStatsBuilder", () => {
 
     const first = screen.getByRole("button", { name: "Select Number, widget 1 of 2" });
     const second = screen.getByRole("button", { name: "Select Number, widget 2 of 2" });
-    expect(first.closest("article")).toHaveAttribute("data-widget-id", "widget-1");
-    expect(second.closest("article")).toHaveAttribute("data-widget-id", "widget-2");
+    expect(first.closest("section")).toHaveAttribute("data-widget-id", "widget-1");
+    expect(second.closest("section")).toHaveAttribute("data-widget-id", "widget-2");
 
     fireEvent.click(screen.getByRole("button", { name: "Move Number up, widget 2 of 2" }));
-    expect(screen.getByRole("button", { name: "Select Number, widget 1 of 2" }).closest("article")).toHaveAttribute("data-widget-id", "widget-2");
-    expect(screen.getByRole("button", { name: "Select Number, widget 2 of 2" }).closest("article")).toHaveAttribute("data-widget-id", "widget-1");
+    expect(screen.getByRole("button", { name: "Select Number, widget 1 of 2" }).closest("section")).toHaveAttribute("data-widget-id", "widget-2");
+    expect(screen.getByRole("button", { name: "Select Number, widget 2 of 2" }).closest("section")).toHaveAttribute("data-widget-id", "widget-1");
   });
 
   it("guards dirty Back while a pristine draft returns immediately", () => {
@@ -228,7 +228,7 @@ describe("FormsStatsBuilder", () => {
 
     expect(screen.getByLabelText("Report name")).toHaveValue("Locked report");
     expect(screen.getByLabelText("Widget title")).toHaveValue("Number");
-    expect(within(screen.getByRole("region", { name: "Report canvas" })).getAllByRole("article")).toHaveLength(2);
+    expect(within(screen.getByRole("region", { name: "Report canvas" })).getAllByRole("region")).toHaveLength(2);
     expect(onBack).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -314,7 +314,7 @@ describe("FormsStatsBuilder", () => {
     expect(screen.getByLabelText("Report name")).toHaveValue("Weekly sales");
     expect(screen.getByLabelText("Widget title")).toHaveValue("Weekly orders");
     fireEvent.change(screen.getByLabelText("Widget title"), { target: { value: "Orders by week" } });
-    expect(screen.getByRole("heading", { name: "Orders by week" }).closest("article")).toHaveAttribute("data-widget-id", "weekly-orders");
+    expect(screen.getByRole("heading", { name: "Orders by week" }).closest("section")).toHaveAttribute("data-widget-id", "weekly-orders");
     expect(randomUUID).not.toHaveBeenCalled();
   });
 });

@@ -222,15 +222,15 @@ export function ProductionJobDetail({
         </section> : null}
 
         <section className={styles.twoColumnPanels}>
-          <article className={styles.panel}>
+          <section className={styles.panel}>
             <h2>Design &amp; Notes</h2>
             {detail.items.map((item) => <div key={item.id}>
               {item.designText ? <div className={styles.customerText}><strong>{item.productTitle} — artwork direction</strong><p>{item.designText}</p></div> : null}
               {item.notes ? <div className={styles.customerText}><strong>{item.productTitle} — item notes</strong><p>{item.notes}</p></div> : null}
             </div>)}
             <p className={styles.preWrapText}>{job.designRequirements || "No separate requirements recorded."}</p>
-          </article>
-          <article className={styles.panel}><h2>Internal notes</h2><p className={styles.preWrapText}>{job.internalNotes || "No internal notes recorded."}</p></article>
+          </section>
+          <section className={styles.panel}><h2>Internal notes</h2><p className={styles.preWrapText}>{job.internalNotes || "No internal notes recorded."}</p></section>
         </section>
 
         <section className={styles.panel}>

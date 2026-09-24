@@ -83,9 +83,14 @@ export function OccasionLandingPage({ content, registry, market, artwork, artwor
           <ProductCard key={product.slug} product={product} market={market} priceInclTaxCents={getMarketStartingPriceInclTaxCents(registry, market, product.key)} />,
         )}</div>
       </section>
-      <section className={styles.adLandingSection}>
-        <h2 className={landing.sectionTitle}>{content.guidanceHeading}</h2>
-        <div>{content.guidance.map((paragraph) => <p className={landing.paragraph} key={paragraph}>{paragraph}</p>)}</div>
+      <section className={landing.guidance} aria-labelledby="guidance-heading">
+        <h2 className={landing.sectionTitle} id="guidance-heading">{content.guidanceHeading}</h2>
+        <ul className={landing.guidanceCards} role="list">
+          {content.guidance.map((item) => <li key={item.heading}>
+            <h3>{item.heading}</h3>
+            <p>{item.text}</p>
+          </li>)}
+        </ul>
       </section>
       <section className={styles.adLandingSection}>
         <div><h2 className={landing.sectionTitle}>From your photos to a finished display</h2><PurchaseTrustStrip /></div>

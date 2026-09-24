@@ -16,7 +16,7 @@ export type OccasionLandingContent = Readonly<{
   productSlugs: readonly string[];
   cta: string;
   guidanceHeading: string;
-  guidance: readonly string[];
+  guidance: readonly Readonly<{ heading: string; text: string }>[];
   faq: readonly Readonly<{ question: string; answer: string }>[];
   related: readonly OccasionLandingSlug[];
   parent?: "birthday-banners";
@@ -37,7 +37,10 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     artworkHeading: "Birthday designs for different milestones",
     productSlugs: bannerProducts, cta: "Start Your Birthday Banner",
     guidanceHeading: "Plan the banner around your celebration",
-    guidance: ["Choose a main photo that will read clearly from across the room, or supply a selection for a photo composition.", "Include the name, age, event wording and colour direction in your brief. A wide wall banner suits a backdrop; a roll-up banner comes with a stand for an upright display."],
+    guidance: [
+      { heading: "Photos", text: "Choose a main photo that will read clearly from across the room, or supply a selection for a photo composition." },
+      { heading: "Wording and venue", text: "Include the name, age, event wording and colour direction in your brief. A wide wall banner suits a backdrop; a roll-up banner comes with a stand for an upright display." },
+    ],
     faq: [
       { question: "Can the banner include several birthday photos?", answer: "Yes. Supply the photos you would like included and explain which one should be the main image. The layout is reviewed in your design proof." },
       { question: "Which format suits a party entrance or a backdrop?", answer: "A roll-up banner is an upright display with its own stand. A wall banner is a wide format with corner eyelets; check the available hanging space at your venue." },
@@ -54,7 +57,10 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     query: parseGalleryQuery({ occasion: "birthday", birthday_age: "1st Birthday", design_type: bannerTypes }),
     artworkHeading: "Real first-birthday designs", productSlugs: ["custom-themed-wall-banner", "roll-up-banner"], cta: "Start Your 1st Birthday Banner",
     guidanceHeading: "Choose the details that matter for their first birthday",
-    guidance: ["One clear portrait can be the focus, with smaller photos alongside it if you want to show different moments from the first year.", "Send the child's name exactly as you want it printed, your preferred ONE or 1st Birthday wording, and a colour or theme reference. Consider where the banner will sit behind the cake or beside the entrance."],
+    guidance: [
+      { heading: "Portrait and first-year photos", text: "One clear portrait can be the focus, with smaller photos alongside it if you want to show different moments from the first year." },
+      { heading: "Name, theme and display space", text: "Send the child's name exactly as you want it printed, your preferred ONE or 1st Birthday wording, and a colour or theme reference. Consider where the banner will sit behind the cake or beside the entrance." },
+    ],
     faq: [
       { question: "Should I choose one baby photo or several?", answer: "Either can work. Select the clearest photo for the main portrait and tell us if you would like smaller photos included in the composition." },
       { question: "Can the design say ONE instead of 1st Birthday?", answer: "Add the exact wording you want, including the child's name and any date. The proof lets you check spelling and placement before printing." },
@@ -71,7 +77,10 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     query: parseGalleryQuery({ occasion: "birthday", birthday_age: "21st Birthday", design_type: bannerTypes }),
     artworkHeading: "Real twenty-first birthday designs", productSlugs: bannerProducts, cta: "Start Your 21st Birthday Banner",
     guidanceHeading: "Build a milestone display with a clear focal point",
-    guidance: ["Choose a main portrait for impact, then decide whether childhood or family photos should support it. Send separate original files where possible.", "Write out any quote, scripture or message exactly as you want it printed. Include the name, date and colour direction, and share your own cultural references if they are part of the celebration."],
+    guidance: [
+      { heading: "Main portrait and supporting photos", text: "Choose a main portrait for impact, then decide whether childhood or family photos should support it. Send separate original files where possible." },
+      { heading: "Message and cultural references", text: "Write out any quote, scripture or message exactly as you want it printed. Include the name, date and colour direction, and share your own cultural references if they are part of the celebration." },
+    ],
     faq: [
       { question: "Can I combine a current portrait with childhood photos?", answer: "Yes. Supply the separate images and identify the main portrait. Explain the order or importance of the supporting photos in your brief." },
       { question: "Can a 21st banner include scripture or a quote?", answer: "Include the exact text and any reference you want shown. Check the wording, punctuation and layout in the proof before approving it." },
@@ -88,7 +97,10 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     query: parseGalleryQuery({ occasion: "memorial", design_type: [...bannerTypes, "grave-cover"] }),
     artworkHeading: "Memorial designs and remembrance formats", productSlugs: ["digital-oil-painting-banner", ...bannerProducts, "grave-cover"], cta: "Start Your Memorial Banner",
     guidanceHeading: "Prepare the portrait and wording for review",
-    guidance: ["Choose one main portrait, or send additional family photos with instructions about their placement. Include names and dates in the exact form you want printed.", "You may supply scripture, a remembrance message and your own background or cultural references. A roll-up or wall banner is a display format; a grave cover is a separate remembrance option. Confirm any close event deadline with the team."],
+    guidance: [
+      { heading: "Portrait, names and dates", text: "Choose one main portrait, or send additional family photos with instructions about their placement. Include names and dates in the exact form you want printed." },
+      { heading: "Remembrance wording, format and timing", text: "You may supply scripture, a remembrance message and your own background or cultural references. A roll-up or wall banner is a display format; a grave cover is a separate remembrance option. Confirm any close event deadline with the team." },
+    ],
     faq: [
       { question: "Can the design use one portrait with family photos?", answer: "Yes. Identify the main portrait and supply the additional photos separately. Include any placement preferences in your instructions." },
       { question: "Can I include dates, scripture and remembrance wording?", answer: "Send the exact names, dates and text to include. Please review every detail in the proof before giving approval to print." },
@@ -106,7 +118,10 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     artworkHeading: "Graduation design service", artworkNote: "There are no verified graduation examples in the published Design Gallery right now. Use the product formats below and provide your own portrait, wording and graduation details for a custom brief.",
     productSlugs: bannerProducts, cta: "Start Your Graduation Banner",
     guidanceHeading: "Make the achievement easy to read",
-    guidance: ["Start with a clear graduate portrait and write the name, graduation year and qualification exactly as you want them shown. A short message leaves more space for the photo.", "Share your preferred colours and choose the format for your venue: an upright roll-up display or a wide hanging banner. This is a personalised family or event design service; no school or university affiliation is implied."],
+    guidance: [
+      { heading: "Graduate portrait and qualification", text: "Start with a clear graduate portrait and write the name, graduation year and qualification exactly as you want them shown. A short message leaves more space for the photo." },
+      { heading: "Colours and venue", text: "Share your preferred colours and choose the format for your venue: an upright roll-up display or a wide hanging banner. This is a personalised family or event design service; no school or university affiliation is implied." },
+    ],
     faq: [
       { question: "Which graduation details should I supply?", answer: "Include the graduate's name, portrait, graduation year and the exact qualification wording you want printed. Add a personal message if you would like one." },
       { question: "Can I request colours that suit the celebration?", answer: "Yes. Supply your preferred colour direction and references with the brief. Any school or university references are customer instructions, not a claim of endorsement." },
@@ -124,7 +139,10 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     artworkHeading: "Real anniversary designs",
     productSlugs: ["digital-oil-painting-canvas", "custom-themed-wall-banner"], cta: "Start Your Anniversary Design",
     guidanceHeading: "Build the design around the milestone",
-    guidance: ["Choose the main portrait or photo sequence and provide the anniversary year or number of years exactly as you want it shown.", "Include names, dates, a short message and your preferred colour direction. If the design refers to a wedding anniversary, identify the wedding or couple photos you want to feature."],
+    guidance: [
+      { heading: "Photos and anniversary year", text: "Choose the main portrait or photo sequence and provide the anniversary year or number of years exactly as you want it shown." },
+      { heading: "Names, dates and message", text: "Include names, dates, a short message and your preferred colour direction. If the design refers to a wedding anniversary, identify the wedding or couple photos you want to feature." },
+    ],
     faq: [
       { question: "Can an anniversary design combine older and recent photos?", answer: "Yes. Supply the original images separately and explain their order or importance. A timeline or multi-photo composition can be reviewed in the proof." },
       { question: "Can I include the number of years or an anniversary date?", answer: "Yes. Send the exact number, date and wording you want printed and check every detail in the proof before approval." },
@@ -142,7 +160,10 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     artworkHeading: "Real Welcome Home and missionary return designs",
     productSlugs: bannerProducts, cta: "Start Your Welcome Home Banner",
     guidanceHeading: "Make the homecoming details easy to read",
-    guidance: ["Choose a clear main portrait and provide the exact Welcome Home wording, mission name and dates you want included.", "If the event also marks a birthday or another celebration, explain which occasion should be the main focus so the layout can balance both messages."],
+    guidance: [
+      { heading: "Portrait and Welcome Home wording", text: "Choose a clear main portrait and provide the exact Welcome Home wording, mission name and dates you want included." },
+      { heading: "Occasion and layout", text: "If the event also marks a birthday or another celebration, explain which occasion should be the main focus so the layout can balance both messages." },
+    ],
     faq: [
       { question: "Can the banner include the mission name and service dates?", answer: "Yes. Send the exact mission wording and dates and review them carefully in the proof." },
       { question: "Can I combine Welcome Home wording with a birthday message?", answer: "Yes. Explain which occasion should be the primary heading and provide the exact wording for both." },
@@ -161,7 +182,10 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     artworkNote: "These examples belong to the gallery's broad Cultural / Island collection. Individual cultural identities are not recorded, so the designs are not attributed to a specific tradition or labelled as a verified Polynesian collection.",
     productSlugs: ["custom-themed-wall-banner", "roll-up-banner"], cta: "Start Your Custom Banner",
     guidanceHeading: "Let your references guide the brief",
-    guidance: ["Tell us the family, event or cultural context you want represented and provide your own visual references. Do not rely on a gallery image to identify a particular culture or the meaning of a motif.", "Include the exact names, language, message and colour preferences you want used. Review the composition and wording in the proof; the examples here do not make claims about traditional symbolism or authenticity."],
+    guidance: [
+      { heading: "Context and your own references", text: "Tell us the family, event or cultural context you want represented and provide your own visual references. Do not rely on a gallery image to identify a particular culture or the meaning of a motif." },
+      { heading: "Language, wording and proof review", text: "Include the exact names, language, message and colour preferences you want used. Review the composition and wording in the proof; the examples here do not make claims about traditional symbolism or authenticity." },
+    ],
     faq: [
       { question: "Are all these examples identified as Polynesian designs?", answer: "No. These examples are grouped broadly as Cultural / Island, rather than identified by a particular Pacific tradition. Share your own references to explain the direction you want." },
       { question: "Can I provide my own family or cultural references?", answer: "Yes. Share the references you want considered and explain the context. The team can review your intended direction with your photos and wording." },

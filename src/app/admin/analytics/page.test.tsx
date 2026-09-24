@@ -148,6 +148,7 @@ describe("admin website analytics page", () => {
     expect(listOrders).not.toHaveBeenCalled();
     expect(screen.getByRole("navigation", { name: "Analytics period" })).toBeInTheDocument();
     expect(screen.getByText("Google Ads")).toBeInTheDocument();
+    expect(screen.getAllByText("Visitors")[0].closest("article")).toBeNull();
     expect(screen.getByText("/shop")).toBeInTheDocument();
   });
 

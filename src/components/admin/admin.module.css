@@ -1149,7 +1149,7 @@
   gap: 14px;
 }
 
-.metricGrid article {
+.metricGrid > div {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -2457,7 +2457,7 @@
   gap: 12px;
 }
 
-.reportMetrics article {
+.reportMetrics > div {
   display: grid;
   gap: 8px;
   padding: 16px;
@@ -5287,7 +5287,7 @@ button.paymentProofPreviewMedia {
     gap: 8px;
   }
 
-  .metricGrid article {
+  .metricGrid > div {
     min-height: 88px;
     padding: 12px;
   }

@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { products } from "@/domain/catalogue/products";
@@ -115,5 +116,32 @@ describe("AU category buying guidance", () => {
         "/birthday-banners",
         "/memorial-banners",
       ]));
+  });
+});
+
+
+describe("Catalogue commerce structure and server output", () => {
+  it.each(["NZ", "AU"] as const)("keeps both %s catalogues crawlable and actionable", (market) => {
+    for (const category of ["banners", "canvas"] as const) {
+      const prefix = market === "AU" ? "/au" : "";
+      const categoryProducts = products.filter((product) => product.category === category);
+      const html = renderToStaticMarkup(<CataloguePage title={category} eyebrow="" description="Compare products"
+        market={market} products={categoryProducts} showProductDetailLinks
+        pricesInclTaxCents={Object.fromEntries(categoryProducts.map((product) => [product.key, 32_000]))}>
+        <CatalogueBuyingGuide category={category} market={market} />
+      </CataloguePage>);
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      expect(doc.querySelectorAll("h1")).toHaveLength(1);
+      for (const product of categoryProducts) {
+        expect(doc.querySelector(`a[href="${prefix}/products/${product.slug}"]`)).not.toBeNull();
+        expect(doc.querySelector(`a[href="${prefix}/products/${product.slug}/configure"]`)?.textContent).toContain("Create Your Artwork");
+      }
+      const guide = doc.querySelector(`section[aria-labelledby="${category}-buying-guide"]`)!;
+      expect(guide.querySelectorAll("dl > div").length).toBeGreaterThanOrEqual(2);
+      expect(guide.querySelectorAll("ul > li").length).toBeGreaterThanOrEqual(2);
+      expect(guide.textContent).toContain(category === "canvas" ? "digital artwork printed on canvas" : "graveside");
+      expect(guide.querySelector('a[href="/contact"]')).not.toBeNull();
+      expect(guide.querySelector("[hidden], [aria-hidden=true], article")).toBeNull();
+    }
   });
 });

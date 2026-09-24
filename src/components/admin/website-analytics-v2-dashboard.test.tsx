@@ -180,6 +180,8 @@ describe("WebsiteAnalyticsV2Dashboard", () => {
     />);
 
     const kpis = screen.getByLabelText("Key performance indicators");
+    expect(kpis.querySelector("article")).toBeNull();
+    expect(kpis.children).toHaveLength(9);
     for (const label of [
       "Visitors", "Sessions", "Page Views", "Inquiries", "Orders", "Paid Orders",
       "Inquiry Conversion", "Order Conversion", "Paid Order Conversion",

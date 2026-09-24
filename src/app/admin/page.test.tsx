@@ -25,7 +25,9 @@ describe("admin dashboard", () => {
       shippingProvider: { label: "GoSweetSpot", enabled: true, environment: "production" },
     });
 
-    render(await AdminDashboardPage());
+    const { container } = render(await AdminDashboardPage());
+    expect(container.querySelector("article")).toBeNull();
+    expect(screen.getByText("Orders today").parentElement).toHaveTextContent("2");
 
     expect(requireAdminPage).toHaveBeenCalledWith("/admin", "access_admin");
     expect(screen.getByRole("heading", { name: "Operations overview" })).toBeInTheDocument();

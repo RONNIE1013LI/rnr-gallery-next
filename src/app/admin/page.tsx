@@ -37,7 +37,7 @@ export default async function AdminDashboardPage() {
       </header>
 
       <div className={styles.metricGrid}>
-        {metrics.map(([label, value]) => <article key={label}><span>{label}</span><strong>{value}</strong></article>)}
+        {metrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}
       </div>
 
       <div className={styles.dashboardGrid}>

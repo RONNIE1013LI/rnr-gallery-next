@@ -175,17 +175,17 @@ describe("InternalNotificationSettings", () => {
       coverage={{ ...emptyCoverage, web_order_paid: 1 }}
     />);
 
-    const active = screen.getByRole("article", { name: "active@example.test" });
+    const active = screen.getByRole("region", { name: "active@example.test" });
     expect(within(active).getByRole("button", { name: "Edit subscriptions" })).toBeInTheDocument();
     expect(within(active).getByRole("button", { name: "Delete active@example.test" })).toBeInTheDocument();
     expect(within(active).queryByRole("button", { name: /verification/i })).not.toBeInTheDocument();
 
-    const pending = screen.getByRole("article", { name: "pending@example.test" });
+    const pending = screen.getByRole("region", { name: "pending@example.test" });
     expect(within(pending).getByRole("button", { name: "Edit subscriptions" })).toBeInTheDocument();
     expect(within(pending).getByRole("button", { name: "Resend verification" })).toBeInTheDocument();
     expect(within(pending).getByRole("button", { name: "Delete pending@example.test" })).toBeInTheDocument();
 
-    const disabled = screen.getByRole("article", { name: "disabled@example.test" });
+    const disabled = screen.getByRole("region", { name: "disabled@example.test" });
     expect(within(disabled).queryByRole("button", { name: "Edit subscriptions" })).not.toBeInTheDocument();
     expect(within(disabled).queryByRole("button", { name: "Resend verification" })).not.toBeInTheDocument();
     expect(within(disabled).queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
@@ -209,7 +209,7 @@ describe("InternalNotificationSettings", () => {
       coverage={emptyCoverage}
     />);
 
-    const card = screen.getByRole("article", { name: "ops@example.test" });
+    const card = screen.getByRole("region", { name: "ops@example.test" });
     fireEvent.click(within(card).getByRole("button", { name: "Edit subscriptions" }));
     fireEvent.click(within(card).getByRole("checkbox", {
       name: "Website AI assistant needs human review",
@@ -240,7 +240,7 @@ describe("InternalNotificationSettings", () => {
     });
     render(<InternalNotificationSettings recipients={[pending]} coverage={emptyCoverage} />);
 
-    const card = screen.getByRole("article", { name: "ops@example.test" });
+    const card = screen.getByRole("region", { name: "ops@example.test" });
     fireEvent.click(within(card).getByRole("button", { name: "Edit subscriptions" }));
     fireEvent.click(within(card).getByRole("checkbox", { name: "Customer approved proof" }));
     fireEvent.click(within(card).getByRole("button", { name: "Save subscriptions" }));
@@ -355,7 +355,7 @@ describe("InternalNotificationSettings", () => {
     vi.stubGlobal("crypto", { randomUUID: () => "recipient-reenable-retry" });
     render(<InternalNotificationSettings recipients={[disabled]} coverage={emptyCoverage} />);
 
-    const card = screen.getByRole("article", { name: "ops@example.test" });
+    const card = screen.getByRole("region", { name: "ops@example.test" });
     const reenable = within(card).getByRole("button", { name: "Re-enable and send verification" });
     expect(reenable).toBeDisabled();
     fireEvent.click(within(card).getByRole("checkbox", {

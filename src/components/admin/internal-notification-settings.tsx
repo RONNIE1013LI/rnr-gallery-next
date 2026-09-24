@@ -349,7 +349,7 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
           const editing = editingRecipientId === recipient.id;
           const selectedReenableTopics = reenableTopics[recipient.id] ?? [];
           return (
-            <article
+            <section
               className={styles.notificationRecipientCard}
               aria-label={recipient.email}
               key={recipient.id}
@@ -441,7 +441,7 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
                   >Delete</button>
                 ) : null}
               </div>
-            </article>
+            </section>
           );
         })}
       </section>

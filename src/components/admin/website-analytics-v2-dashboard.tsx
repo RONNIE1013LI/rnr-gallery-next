@@ -178,14 +178,14 @@ function KpiGrid({
   metrics: WebsiteAnalyticsV2Metrics;
 }>) {
   return <div className={adminStyles.metricGrid} aria-label={label} role="region">
-    {countKpis.map(([itemLabel, key]) => <article key={key}>
+    {countKpis.map(([itemLabel, key]) => <div key={key}>
       <span>{itemLabel}</span>
       <strong>{metrics[key] ?? "—"}</strong>
-    </article>)}
-    {rateKpis.map(([itemLabel, key]) => <article key={key}>
+    </div>)}
+    {rateKpis.map(([itemLabel, key]) => <div key={key}>
       <span>{itemLabel}</span>
       <strong>{formatRate(metrics[key])}</strong>
-    </article>)}
+    </div>)}
   </div>;
 }
 
