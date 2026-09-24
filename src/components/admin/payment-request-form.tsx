@@ -37,7 +37,7 @@ function computeInitialMethods(preferred?: readonly PaymentMethodKey[]) {
 export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentRequestFormProps) {
   const [currency, setCurrency] = useState<MarketCurrency>(linkedOrder?.currency ?? "NZD");
   const [amount, setAmount] = useState(
-    linkedOrder ? String(linkedOrder.unreservedCents / 100) : "0",
+    linkedOrder ? (linkedOrder.unreservedCents / 100).toFixed(2) : "0.00",
   );
   const [description, setDescription] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -135,7 +135,25 @@ export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentReq
     </div> : null}
     <div className={styles.formGrid}>
       <label><span>Currency</span><select aria-label="Currency" disabled={Boolean(linkedOrder)} value={currency} onChange={(event) => setCurrency(event.target.value as MarketCurrency)}><option value="NZD">NZD</option><option value="AUD">AUD</option></select></label>
-      <label><span>Amount</span><input aria-label="Amount" min="0.01" max={linkedOrder ? linkedOrder.unreservedCents / 100 : MAX_STANDALONE_PAYMENT_REQUEST_CENTS / 100} required step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
+      <label><span>Amount</span><input
+        aria-label="Amount"
+        inputMode="decimal"
+        pattern="[0-9]+(?:\.[0-9]{0,2})?"
+        required
+        type="text"
+        value={amount}
+        onFocus={(event) => { if (Number(amount) === 0) event.currentTarget.select(); }}
+        onClick={(event) => { if (Number(amount) === 0) event.currentTarget.select(); }}
+        onChange={(event) => {
+          if (/^\d*(?:\.\d{0,2})?$/.test(event.target.value)) setAmount(event.target.value);
+        }}
+        onBlur={() => {
+          if (/^\d+(?:\.\d{0,2})?$/.test(amount)) {
+            const [whole, fraction = ""] = amount.split(".");
+            setAmount(`${whole}.${fraction.padEnd(2, "0")}`);
+          }
+        }}
+      /></label>
       <label className={styles.paymentRequestWideField}><span>Description</span><input aria-label="Description" maxLength={500} required value={description} onChange={(event) => setDescription(event.target.value)} /></label>
       {!linkedOrder ? <>
         <label><span>Customer name (optional)</span><input aria-label="Customer name (optional)" maxLength={120} value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>

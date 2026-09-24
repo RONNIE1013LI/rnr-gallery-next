@@ -22,7 +22,7 @@ describe("Admin PaymentRequestForm", () => {
     expect(screen.getByText("Order 08001")).toBeInTheDocument();
     expect(screen.getByLabelText("Currency")).toHaveValue("NZD");
     expect(screen.getByLabelText("Currency")).toBeDisabled();
-    expect(screen.getByLabelText("Amount")).toHaveValue(150);
+    expect(screen.getByLabelText("Amount")).toHaveValue("150.00");
     expect(screen.getByRole("checkbox", { name: "Card" })).not.toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Afterpay" })).toBeChecked();
     expect(screen.queryByRole("checkbox", { name: /zip/i })).not.toBeInTheDocument();
@@ -60,7 +60,7 @@ describe("Admin PaymentRequestForm", () => {
 
     const amount = screen.getByLabelText("Amount");
     fireEvent.change(amount, { target: { value: "" } });
-    expect(amount).toHaveValue(null);
+    expect(amount).toHaveValue("");
     fireEvent.change(amount, { target: { value: "200.25" } });
     fireEvent.change(screen.getByLabelText("Description"), {
       target: { value: "Outstanding balance" },
@@ -69,6 +69,28 @@ describe("Admin PaymentRequestForm", () => {
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toMatchObject({ amountCents: 20_025 });
+  });
+
+  it("selects the initial zero on click and pads typed amounts to two decimals on blur", () => {
+    render(<PaymentRequestForm />);
+    const amount = screen.getByLabelText("Amount") as HTMLInputElement;
+
+    expect(amount).toHaveValue("0.00");
+    fireEvent.focus(amount);
+    amount.setSelectionRange(4, 4);
+    fireEvent.click(amount);
+    expect(amount.selectionStart).toBe(0);
+    expect(amount.selectionEnd).toBe(4);
+
+    fireEvent.change(amount, { target: { value: "200" } });
+    fireEvent.blur(amount);
+    expect(amount).toHaveValue("200.00");
+
+    fireEvent.focus(amount);
+    expect(amount.selectionStart).toBe(amount.selectionEnd);
+    fireEvent.change(amount, { target: { value: "200.5" } });
+    fireEvent.blur(amount);
+    expect(amount).toHaveValue("200.50");
   });
 
   it("does not submit an empty amount", () => {

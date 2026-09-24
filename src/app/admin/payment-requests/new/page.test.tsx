@@ -24,7 +24,7 @@ describe("New Payment Request page", () => {
       "/admin/payment-requests/new?orderId=order-1", "manage_payment",
     );
     expect(orderSummary).toHaveBeenCalledWith("order-1");
-    expect(screen.getByLabelText("Amount")).toHaveValue(250);
+    expect(screen.getByLabelText("Amount")).toHaveValue("250.00");
     expect(screen.getByLabelText("Currency")).toHaveValue("AUD");
   });
 });
