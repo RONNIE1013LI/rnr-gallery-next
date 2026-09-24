@@ -3970,6 +3970,10 @@ button.paymentProofPreviewMedia {
   grid-column: 1 / -1;
 }
 
+.formGrid .paymentRequestCurrencySelect {
+  height: 44px;
+}
+
 .paymentRequestMethods {
   display: flex;
   flex-wrap: wrap;
@@ -4124,6 +4128,10 @@ button.paymentProofPreviewMedia {
 }
 
 @media (max-width: 700px) {
+  .formGrid .paymentRequestCurrencySelect {
+    height: 48px;
+  }
+
   .paymentBalanceGrid,
   .paymentLedgerForm,
   .reversalForm {

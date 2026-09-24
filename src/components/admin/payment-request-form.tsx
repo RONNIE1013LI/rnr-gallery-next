@@ -37,7 +37,7 @@ function computeInitialMethods(preferred?: readonly PaymentMethodKey[]) {
 export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentRequestFormProps) {
   const [currency, setCurrency] = useState<MarketCurrency>(linkedOrder?.currency ?? "NZD");
   const [amount, setAmount] = useState(
-    linkedOrder ? (linkedOrder.unreservedCents / 100).toFixed(2) : "0.00",
+    linkedOrder ? (linkedOrder.unreservedCents / 100).toFixed(2) : "",
   );
   const [description, setDescription] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -134,16 +134,15 @@ export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentReq
       <p>The amount defaults to the current unreserved balance and will be checked again before payment starts.</p>
     </div> : null}
     <div className={styles.formGrid}>
-      <label><span>Currency</span><select aria-label="Currency" disabled={Boolean(linkedOrder)} value={currency} onChange={(event) => setCurrency(event.target.value as MarketCurrency)}><option value="NZD">NZD</option><option value="AUD">AUD</option></select></label>
+      <label><span>Currency</span><select className={styles.paymentRequestCurrencySelect} aria-label="Currency" disabled={Boolean(linkedOrder)} value={currency} onChange={(event) => setCurrency(event.target.value as MarketCurrency)}><option value="NZD">NZD</option><option value="AUD">AUD</option></select></label>
       <label><span>Amount</span><input
         aria-label="Amount"
         inputMode="decimal"
         pattern="[0-9]+(?:\.[0-9]{0,2})?"
+        placeholder="0.00"
         required
         type="text"
         value={amount}
-        onFocus={(event) => { if (Number(amount) === 0) event.currentTarget.select(); }}
-        onClick={(event) => { if (Number(amount) === 0) event.currentTarget.select(); }}
         onChange={(event) => {
           if (/^\d*(?:\.\d{0,2})?$/.test(event.target.value)) setAmount(event.target.value);
         }}

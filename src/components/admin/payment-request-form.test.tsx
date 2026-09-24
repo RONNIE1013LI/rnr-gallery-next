@@ -71,23 +71,17 @@ describe("Admin PaymentRequestForm", () => {
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toMatchObject({ amountCents: 20_025 });
   });
 
-  it("selects the initial zero on click and pads typed amounts to two decimals on blur", () => {
+  it("starts empty with a zero hint and pads typed amounts to two decimals on blur", () => {
     render(<PaymentRequestForm />);
     const amount = screen.getByLabelText("Amount") as HTMLInputElement;
 
-    expect(amount).toHaveValue("0.00");
-    fireEvent.focus(amount);
-    amount.setSelectionRange(4, 4);
+    expect(amount).toHaveValue("");
+    expect(amount).toHaveAttribute("placeholder", "0.00");
     fireEvent.click(amount);
-    expect(amount.selectionStart).toBe(0);
-    expect(amount.selectionEnd).toBe(4);
-
     fireEvent.change(amount, { target: { value: "200" } });
     fireEvent.blur(amount);
     expect(amount).toHaveValue("200.00");
 
-    fireEvent.focus(amount);
-    expect(amount.selectionStart).toBe(amount.selectionEnd);
     fireEvent.change(amount, { target: { value: "200.5" } });
     fireEvent.blur(amount);
     expect(amount).toHaveValue("200.50");
