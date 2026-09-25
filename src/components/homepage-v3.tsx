@@ -17,6 +17,7 @@ import {
 } from "./homepage-gallery";
 import { ProofConversationScroller } from "./proof-conversation-scroller";
 import { HomepageFaq } from "./homepage-faq";
+import { HeroGalleryExperience } from "./hero-gallery-experience";
 import { CustomerReviewsSection } from "./customer-reviews/customer-reviews-section";
 import { homepageV3ImageSlots, type HomepageV3ImageSlot } from "./homepage-v3-images";
 import styles from "./homepage-v3.module.css";
@@ -248,16 +249,9 @@ export function HomepageV3({
 
           <div className={styles.heroArt}>
             <figure className={styles.heroFigure}>
-              <Image
-                className={styles.heroImage}
+              <HeroGalleryExperience
                 src={homepageV3ImageSlots.heroShowcase.src ?? ""}
                 alt={homepageV3ImageSlots.heroShowcase.alt}
-                width={4608}
-                height={2592}
-                sizes="(max-width: 760px) 100vw, (max-width: 1080px) calc(100vw - 4rem), (max-width: 1352px) calc(67vw + 1.17125rem), (max-width: 1427px) calc(17vw + 43.42125rem), (max-width: 1440px) calc(50vw + 14rem), 944px"
-                quality={60}
-                loading="eager"
-                fetchPriority="high"
               />
             </figure>
           </div>
