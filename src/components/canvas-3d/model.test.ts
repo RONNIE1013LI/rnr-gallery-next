@@ -74,7 +74,7 @@ describe("wrapped canvas geometry",()=>{
     expect(shell.geometry.groups.some(group=>group.materialIndex===5)).toBe(false);
     shell.geometry.computeBoundingBox();
     const extent=shell.geometry.boundingBox!.getSize(new THREE.Vector3());
-    expect(extent.x).toBeCloseTo(1.19,5);expect(extent.y).toBeCloseTo(.84,5);expect(extent.z).toBeCloseTo(.03,5);
+    expect(extent.x).toBeCloseTo(1.189,5);expect(extent.y).toBeCloseTo(.841,5);expect(extent.z).toBeCloseTo(.03,5);
     const position=shell.geometry.attributes.position,uv=shell.geometry.attributes.uv;
     const shared=new Map<string,[number,number]>();
     for(let i=0;i<position.count;i++){
@@ -103,7 +103,7 @@ describe("wrapped canvas geometry",()=>{
     for(const edge of boundary)for(const point of edge.ends)expect(vertices.has(point)).toBe(true);
     for(let i=0;i<b.count;i+=3){
       const cx=(b.getX(i)+b.getX(i+1)+b.getX(i+2))/3,cy=(b.getY(i)+b.getY(i+1)+b.getY(i+2))/3;
-      expect(Math.abs(cx)>=1.19/2-.018-.000001||Math.abs(cy)>=.84/2-.018-.000001).toBe(true);
+      expect(Math.abs(cx)>=1.189/2-.018-.000001||Math.abs(cy)>=.841/2-.018-.000001).toBe(true);
     }
   });
   it.each(["a0","a1"])("seats %s brace ends inside the rail opening",size=>{

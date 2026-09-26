@@ -283,7 +283,8 @@ describe("site shell", () => {
     const extremeRules = stylesheet.match(/@media \(max-width: 339px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
 
     expect(mobileRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.625rem/);
-    expect(mobileRules).toMatch(/\.site-header__market select\s*\{[^}]*height:\s*2\.75rem[^}]*font-size:\s*0\.72rem/);
+    expect(mobileRules).toMatch(/\.site-header__market\s*\{[^}]*padding-block:\s*0\.25rem/);
+    expect(mobileRules).toMatch(/\.site-header__market select\s*\{[^}]*height:\s*2\.25rem[^}]*font-size:\s*0\.72rem/);
     expect(narrowRules).toMatch(/\.site-header__market select\s*\{[^}]*width:\s*6\.375rem[^}]*padding-inline:\s*0\.5rem 1\.55rem/);
     expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.25rem/);
     expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__name\s*\{[^}]*font-size:\s*0\.9rem/);
