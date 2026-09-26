@@ -154,6 +154,10 @@
   text-wrap: nowrap;
 }
 
+.methodChoice {
+  display: contents;
+}
+
 .methodLabel {
   font-weight: 700;
 }
@@ -357,14 +361,31 @@
   }
 
   .methods label {
-    align-items: flex-start;
-    flex-direction: row;
+    align-items: center;
   }
 
-  .cardBrands {
-    margin-left: 0;
-    margin-right: auto;
-    margin-top: 0.2rem;
+  .methodChoice {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex: 0 0 auto;
+  }
+
+  .methods input[type="radio"] {
+    appearance: auto;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin: 0;
+    flex: 0 0 1.125rem;
+  }
+
+  .fields input,
+  .fields select,
+  .fields .readOnlyCountry {
+    box-sizing: border-box;
+    height: 48px;
+    padding-block: 0.5rem;
+    line-height: 1.5;
   }
 }
 

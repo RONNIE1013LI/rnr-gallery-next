@@ -168,15 +168,17 @@ export function PaymentRequestForm({
     <fieldset className={styles.methods}>
       <legend>Available methods</legend>
       {methods.map((option) => <label key={option.method}>
-        <input
-          aria-label={option.label}
-          checked={method === option.method}
-          name="payment-method"
-          onChange={() => setMethod(option.method)}
-          type="radio"
-          value={option.method}
-        />
-        <span className={styles.methodLabel}>{option.label}</span>
+        <span className={styles.methodChoice}>
+          <input
+            aria-label={option.label}
+            checked={method === option.method}
+            name="payment-method"
+            onChange={() => setMethod(option.method)}
+            type="radio"
+            value={option.method}
+          />
+          <span className={styles.methodLabel}>{option.label}</span>
+        </span>
         {option.method === "card" ? <span
           aria-label="Accepted cards: Visa, Mastercard and American Express"
           className={styles.cardBrands}
