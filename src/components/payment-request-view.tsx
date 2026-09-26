@@ -20,6 +20,8 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
   const [request, setRequest] = useState(initialRequest);
   const [activated, setActivated] = useState(false);
   const [activationFailed, setActivationFailed] = useState(false);
+  const [activationStopped, setActivationStopped] = useState(false);
+  const [activationRetry, setActivationRetry] = useState(0);
   const [remaining, setRemaining] = useState<number | null>(null);
   const anchor = useRef<{ remaining: number; receivedAt: number } | null>(null);
 
@@ -30,14 +32,22 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
     const endpoint = `/api/payment-requests/${encodeURIComponent(decodeURIComponent(match[1]))}`;
     let disposed = false;
     let opened = initialRequest.status !== "pending";
+    let attempts = 0;
     let timer: ReturnType<typeof setTimeout>;
-    const controller = new AbortController();
+    let controller: AbortController;
     async function refresh() {
+      controller = new AbortController();
       const sentAt = performance.now();
+      if (!opened) attempts++;
+      let permanentFailure = false;
+      const timeout = setTimeout(() => controller.abort(), 10000);
       try {
         const response = await fetch(opened ? endpoint : `${endpoint}/open`, {
-          method: opened ? "GET" : "POST", cache: "no-store", signal: controller.signal,
+          method: opened ? "GET" : "POST",
+          ...(!opened ? { headers: { "Content-Type": "application/json" }, body: "{}" } : {}),
+          cache: "no-store", signal: controller.signal,
         });
+        permanentFailure = response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429;
         const payload = await response.json() as { request?: PublicPaymentRequestDTO };
         if (!response.ok || !payload.request) throw new Error("Unavailable");
         if (disposed) return;
@@ -58,10 +68,19 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
           opened = true;
           setActivated(true);
         }
+        if (!opened && latest.status === "pending") throw new Error("Missing payment deadline");
         if (latest.status === "paid" || latest.status === "cancelled" || latest.status === "invalidated") return;
       } catch {
         if (disposed) return;
-        if (!opened) setActivationFailed(true);
+        if (!opened) {
+          setActivationFailed(true);
+          if (permanentFailure || attempts >= 3) {
+            setActivationStopped(true);
+            return;
+          }
+        }
+      } finally {
+        clearTimeout(timeout);
       }
       if (!disposed) timer = setTimeout(refresh, 5000);
     }
@@ -69,8 +88,8 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
     const tick = setInterval(() => {
       if (anchor.current) setRemaining(Math.max(0, anchor.current.remaining - (performance.now() - anchor.current.receivedAt)));
     }, 1000);
-    return () => { disposed = true; controller.abort(); clearTimeout(timer); clearInterval(tick); };
-  }, [initialRequest.status]);
+    return () => { disposed = true; controller?.abort(); clearTimeout(timer); clearInterval(tick); };
+  }, [initialRequest.status, activationRetry]);
 
   const paid = request.status === "paid";
   const expired = !paid && (request.status !== "pending" || remaining === 0);
@@ -110,7 +129,15 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
         </section>
         <PaymentRequestForm amountCents={request.amountCents} currency={request.currency} methods={methods}
           onStatusChange={(status) => setRequest((current) => ({ ...current, status }))} />
-      </> : <p className={styles.status} role="status">{activationFailed
+      </> : activationStopped ? <div className={styles.status} role="status">
+        <p>We could not confirm this payment link. Please try again or contact R&amp;R Gallery for help.</p>
+        <button type="button" className={styles.payButton} onClick={() => {
+          setActivationFailed(false);
+          setActivationStopped(false);
+          setActivationRetry((value) => value + 1);
+        }}>Try again</button>
+        <p><a href="/contact">Contact R&amp;R Gallery</a></p>
+      </div> : <p className={styles.status} role="status">{activationFailed
         ? "We could not confirm this payment link. Retrying automatically…"
         : "Checking your payment link…"}</p>}
     </section>

@@ -1,5 +1,6 @@
+import { assertPaymentRequestMutation } from "@/server/payment-requests/mutation-request";
 import { parseAuthConfig } from "@/server/auth/config";
-import { assertTrustedMutationRequest, MutationRequestError } from "@/server/http/mutation-request";
+import { MutationRequestError } from "@/server/http/mutation-request";
 import { getPublicPaymentRequestRuntime } from "@/server/payment-requests/public-payment-request-runtime";
 import type { PublicPaymentRequestDTO } from "@/server/payment-requests/types";
 
@@ -12,7 +13,7 @@ export function createPaymentRequestOpenRoute(dependencies?: Readonly<{
 }>) {
   return async function POST(request: Request, context: Context) {
     try {
-      assertTrustedMutationRequest(request, dependencies?.origin ?? parseAuthConfig().origin);
+      assertPaymentRequestMutation(request, dependencies?.origin ?? parseAuthConfig().origin);
       const { token } = await context.params;
       const activate = dependencies?.activateByToken
         ?? getPublicPaymentRequestRuntime().requests.activateByToken;

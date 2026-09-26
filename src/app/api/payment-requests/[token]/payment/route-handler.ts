@@ -1,7 +1,7 @@
+import { assertPaymentRequestMutation } from "@/server/payment-requests/mutation-request";
 import { ZodError } from "zod";
 import { parseAuthConfig } from "@/server/auth/config";
 import {
-  assertTrustedMutationRequest,
   MutationRequestError,
   parseBoundedJson,
 } from "@/server/http/mutation-request";
@@ -63,7 +63,7 @@ export function createPaymentRequestPaymentRoute(dependencies?: Dependencies) {
     async POST(request: Request, context: Context) {
       const deps = dependencies ?? defaults();
       try {
-        assertTrustedMutationRequest(request, deps.origin);
+        assertPaymentRequestMutation(request, deps.origin);
         const { token } = await context.params;
         const stored = await deps.publicByToken(token);
         if (!stored) {

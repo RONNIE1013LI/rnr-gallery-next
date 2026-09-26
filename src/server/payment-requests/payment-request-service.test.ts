@@ -3,6 +3,7 @@ import type {
   PaymentRequestRecord,
   PaymentRequestRepository,
 } from "./payment-request-repository";
+import { digestPaymentRequestToken } from "./token";
 import { createPaymentRequestService } from "./payment-request-service";
 
 const request: PaymentRequestRecord = Object.freeze({
@@ -205,6 +206,20 @@ describe("payment request first-open lifecycle DTO", () => {
     expect(store.activateByDigest).not.toHaveBeenCalled();
     expect(dto?.serverNow).toBe("2026-09-26T00:00:00.000Z");
     expect(dto?.expiresAt).toBeUndefined();
+  });
+
+  it("activates a pre-deployment pending request with the same token and serializes its DB deadline", async () => {
+    const token = "a".repeat(43);
+    const legacy = { ...request, createdAt: new Date("2026-08-18T00:00:00Z"), expiresAt: null };
+    const activateByDigest = vi.fn(async () => ({ ...legacy, expiresAt: new Date("2026-09-26T12:00:00Z") }));
+    const store = repository({ findPublicByDigest: vi.fn(async () => legacy), activateByDigest });
+    const service = createPaymentRequestService({ repository: store });
+    expect((await service.publicByToken(token))?.expiresAt).toBeUndefined();
+    expect(activateByDigest).not.toHaveBeenCalled();
+    const dto = JSON.parse(JSON.stringify(await service.activateByToken(token)));
+    expect(activateByDigest).toHaveBeenCalledWith(digestPaymentRequestToken(token));
+    expect(dto).toMatchObject({ status: "pending", expiresAt: "2026-09-26T12:00:00.000Z", serverNow: "2026-09-26T00:00:00.000Z" });
+    expect(store.preflightAndClaimAttempt).not.toHaveBeenCalled();
   });
 
   it("only explicit activation delegates to the atomic repository operation", async () => {

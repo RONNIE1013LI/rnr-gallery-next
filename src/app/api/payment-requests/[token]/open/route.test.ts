@@ -25,3 +25,28 @@ describe("payment link activation route", () => {
     }
   });
 });
+
+
+describe("production payment activation origins", () => {
+  it.each(["rnrgallery.com", "www.rnrgallery.com", "rrgallery.co.nz", "www.rrgallery.co.nz"])("allows same-origin JSON activation on %s", async (host) => {
+    const activateByToken = vi.fn(async () => null);
+    const route = createPaymentRequestOpenRoute({ origin: "https://rnrgallery.com", activateByToken });
+    const response = await route(new Request(`https://${host}/api/payment-requests/token/open`, {
+      method: "POST", headers: { Origin: `https://${host}`, "Sec-Fetch-Site": "same-origin", "Content-Type": "application/json" }, body: "{}",
+    }), context);
+    expect(response.status).toBe(404);
+    expect(activateByToken).toHaveBeenCalledOnce();
+  });
+  it.each([
+    ["https://evil.test", "https://evil.test", "same-origin"],
+    ["https://rrgallery.co.nz", "https://evil.test", "same-origin"],
+    ["https://rrgallery.co.nz", "https://rrgallery.co.nz", "cross-site"],
+    ["https://rrgallery.co.nz", "https://www.rrgallery.co.nz", "same-site"],
+  ])("rejects untrusted or cross-origin activation %s %s %s", async (target, source, site) => {
+    const activateByToken = vi.fn();
+    const route = createPaymentRequestOpenRoute({ origin: "https://rnrgallery.com", activateByToken });
+    const response = await route(new Request(`${target}/api/payment-requests/token/open`, { method: "POST", headers: { Origin: source, "Sec-Fetch-Site": site, "Content-Type": "application/json" }, body: "{}" }), context);
+    expect(response.status).toBe(403);
+    expect(activateByToken).not.toHaveBeenCalled();
+  });
+});

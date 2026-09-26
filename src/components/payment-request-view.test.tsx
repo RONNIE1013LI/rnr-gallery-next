@@ -29,6 +29,55 @@ describe("PaymentRequestView", () => {
     delete (window as Window & { google?: unknown }).google;
   });
 
+  it("activates an existing pending request using a JSON POST before rendering its form", async () => {
+    const fetchSpy = vi.fn().mockImplementation(async (_url, init) => {
+      const valid = init.headers?.["Content-Type"] === "application/json" && init.body === "{}";
+      return { ok: valid, status: valid ? 200 : 415, json: async () => valid ? { request } : { error: "Request bodies must use application/json" } };
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<PaymentRequestView request={{ ...request, expiresAt: undefined }} methods={[{ method: "card", label: "Card", isTest: false }]} />);
+    expect(await screen.findByLabelText("Full name")).toBeInTheDocument();
+    expect(screen.getByText("Payment link valid for 12 hours")).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops transient activation retries after three attempts and supports manual retry", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: false, status: 503, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<PaymentRequestView request={request} methods={[]} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByText(/Retrying automatically/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Contact R&R Gallery" })).toHaveAttribute("href", "/contact");
+    fetchSpy.mockResolvedValue({ ok: true, status: 200, json: async () => ({ request }) });
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
+    expect(screen.getByText("Payment link valid for 12 hours")).toBeInTheDocument();
+  });
+
+  it("bounds stalled activation requests with a timeout", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn((_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(new Error("Aborted")));
+    }));
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<PaymentRequestView request={request} methods={[]} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(45000); });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("does not automatically retry permanent activation failures", async () => {
+    vi.useFakeTimers();
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<PaymentRequestView request={request} methods={[]} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
   it("shows only the public fixed-payment details and does not expose editable amount controls", () => {
     render(<PaymentRequestView request={request} methods={[
       { method: "card", label: "Card", isTest: false },
