@@ -20,6 +20,7 @@ import {
   googleTagCommand,
   type Ga4LocationPolicy,
 } from "@/domain/analytics/runtime";
+import { deferThirdPartyTransport } from "@/domain/analytics/deferred-third-party";
 import { useAdvertisingConsent } from "./consent-preferences";
 
 type Ga4Window = Window & Record<string, unknown>;
@@ -131,6 +132,7 @@ export function applyGa4LocationPolicy(
   const policy = classifyGa4Location(url.pathname, url.searchParams);
 
   if (!production) {
+    root.removeAttribute("data-ga4-queue-enabled");
     root.removeAttribute("data-ga4-enabled");
     root.removeAttribute("data-ga4-private-commerce");
     root.removeAttribute("data-ga4-private-purchase");
@@ -142,16 +144,18 @@ export function applyGa4LocationPolicy(
   }
 
   const debugMode = controlledDebugMode(url);
-  if (analyticsAllowed && collectionReady) {
+  if (analyticsAllowed) {
     root.dataset.ga4AnalyticsEnabled = "true";
   } else {
     root.removeAttribute("data-ga4-analytics-enabled");
   }
-  if (advertisingAllowed && collectionReady) {
+  if (advertisingAllowed) {
     root.dataset.googleAdsEnabled = "true";
   } else {
     root.removeAttribute("data-google-ads-enabled");
   }
+  if (analyticsAllowed && policy === "public") root.dataset.ga4QueueEnabled = "true";
+  else root.removeAttribute("data-ga4-queue-enabled");
   if (policy === "public") {
     root.removeAttribute("data-ga4-private-commerce");
     root.removeAttribute("data-ga4-private-purchase");
@@ -284,6 +288,9 @@ export function AnalyticsRuntimeController({
       });
     };
     const prepareHistoryLocation = (url: URL) => {
+      if (classifyGa4Location(url.pathname, url.searchParams) !== "public") {
+        setReady(true);
+      }
       beginGaHistorySuppression();
       prepareLocation(url);
     };
@@ -355,12 +362,17 @@ export function AnalyticsRuntimeController({
       prepareHistoryLocation,
       settleHistoryLocation,
     );
-    queueMicrotask(() => {
-      if (active) setReady(true);
-    });
+    const location = new URL(window.location.href);
+    let cancelActivation: (() => void) | undefined;
+    if (classifyGa4Location(location.pathname, location.searchParams) === "public") {
+      cancelActivation = deferThirdPartyTransport(() => { if (active) setReady(true); });
+    } else {
+      queueMicrotask(() => { if (active) setReady(true); });
+    }
 
     return () => {
       active = false;
+      cancelActivation?.();
       stopTagReadyCheck();
       restoreDataLayer();
       const dataLayer = (window as Ga4Window & { dataLayer?: unknown[] }).dataLayer;
@@ -373,6 +385,7 @@ export function AnalyticsRuntimeController({
       }
       removeHistoryGuard();
       document.removeEventListener("load", handleScriptLoad, true);
+      document.documentElement.removeAttribute("data-ga4-queue-enabled");
       document.documentElement.removeAttribute("data-ga4-enabled");
       document.documentElement.removeAttribute("data-ga4-private-commerce");
       document.documentElement.removeAttribute("data-ga4-private-purchase");

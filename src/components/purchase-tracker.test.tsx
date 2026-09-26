@@ -181,6 +181,21 @@ describe("PurchaseTracker", () => {
     )).toHaveLength(1);
   });
 
+  it("retries both destinations when transport becomes ready after the polling budget", async () => {
+    vi.useFakeTimers();
+    resetGaTransport();
+    setPrivateOrderLocation();
+    enablePrivatePurchaseDestinations();
+    render(<PurchaseTracker event={event} />);
+    await act(async () => { vi.advanceTimersByTime(6_000); });
+    expect(sessionStorage.getItem(storageKey)).toBeNull();
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    act(() => { markGaTransportReady(); markGaTransportReady(); });
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(googleAdsCommands().filter((command) => command[1] === "conversion")).toHaveLength(1);
+    expect(sessionStorage.getItem(storageKey)).toBe("sent");
+  });
+
   it("cancels a pending readiness retry on unmount", async () => {
     vi.useFakeTimers();
     document.documentElement.dataset.ga4Enabled = "true";

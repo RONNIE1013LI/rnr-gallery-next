@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { emitAnalyticsEvent } from "@/domain/analytics/client";
+import { emitAnalyticsEvent, GA_TRANSPORT_READY_EVENT } from "@/domain/analytics/client";
 import type { PurchaseEvent } from "@/domain/analytics/events";
 
 const RETRY_DELAY_MS = 250;
@@ -28,9 +28,16 @@ export function PurchaseTracker({ event }: Readonly<{ event: PurchaseEvent | nul
       }
     };
 
+    const retryWhenReady = () => {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+      attempts = 0;
+      tryEmit();
+    };
+    window.addEventListener(GA_TRANSPORT_READY_EVENT, retryWhenReady);
     tryEmit();
     return () => {
       cancelled = true;
+      window.removeEventListener(GA_TRANSPORT_READY_EVENT, retryWhenReady);
       if (timeout !== undefined) window.clearTimeout(timeout);
     };
   }, [event]);

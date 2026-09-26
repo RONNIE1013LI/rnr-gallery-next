@@ -15,6 +15,8 @@ import {
   googleTagCommand,
 } from "./runtime";
 
+export const GA_TRANSPORT_READY_EVENT = "rnr:ga-transport-ready";
+
 const GA4_EVENT_PROCESSING_WINDOW_MS = 250;
 let collectionDisableTimer: number | undefined;
 let pendingGaFlushTimer: number | undefined;
@@ -136,8 +138,7 @@ function googleAdsAllowed() {
 
 function isPrivateCheckoutReady(event: AnalyticsEvent): boolean {
   return ["begin_checkout", "add_shipping_info", "add_payment_info"].includes(event.event)
-    && document.documentElement.dataset.ga4PrivateCommerce === "true"
-    && document.documentElement.dataset.ga4Loaded === "true";
+    && document.documentElement.dataset.ga4PrivateCommerce === "true";
 }
 
 function sendGaEventNow(
@@ -252,6 +253,7 @@ export function sendControlledGaEvent(
 export function markGaTransportReady(): void {
   gaTransportReady = true;
   flushPendingGaEvents();
+  window.dispatchEvent(new Event(GA_TRANSPORT_READY_EVENT));
 }
 
 export function beginGaHistorySuppression(): void {
@@ -374,7 +376,9 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
     const sendAdsPurchase = privatePurchase && googleAdsAllowed();
     const allowed = event.event === "purchase"
       ? metaRequired || sendGa4Purchase || sendAdsPurchase
-      : (privateCheckout && analyticsAllowed()) || document.documentElement.dataset.ga4Enabled === "true";
+      : (privateCheckout && analyticsAllowed())
+        || document.documentElement.dataset.ga4Enabled === "true"
+        || document.documentElement.dataset.ga4QueueEnabled === "true";
     if (!allowed) {
       return event.event === "purchase" ? false : metaSent;
     }

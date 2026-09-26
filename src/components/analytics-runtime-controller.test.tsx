@@ -134,7 +134,40 @@ describe("AnalyticsRuntimeController", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("retains AddToCart before the deferred transport and flushes once after handshake", async () => {
+    setLocation("/shop", "utm_source=google&gclid=private-deferred-click");
+    const view = render(<AnalyticsRuntimeController production />);
+    await act(async () => { await Promise.resolve(); });
+    expect(document.querySelector("#_next-ga")).toBeNull();
+    expect((window as unknown as { dataLayer: unknown[] }).dataLayer.length).toBeGreaterThan(0);
+    expect(emitAnalyticsEvent({ event: "add_to_cart", currency: "NZD", value: 65, items: [] })).toBe(true);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new Event("pointerdown")));
+    const script = await view.findByTestId("official-google-analytics");
+    loadGoogleTagScriptOnly(script);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    markGoogleTagReady();
+    markGoogleTagReady();
+    expect(vi.mocked(sendGAEvent).mock.calls.filter((call) => call[1] === "add_to_cart")).toHaveLength(1);
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toMatch(/utm_source|gclid|private-deferred-click/);
+  });
+
+  it("starts transport on programmatic checkout navigation before idle and retains checkout events", async () => {
+    vi.stubGlobal("requestIdleCallback", vi.fn(() => 1));
+    const view = render(<AnalyticsRuntimeController production />);
+    await act(async () => { await Promise.resolve(); });
+    expect(document.querySelector("#_next-ga")).toBeNull();
+    await act(async () => { window.history.pushState({}, "", "/checkout?client_secret=private-test"); });
+    const script = await view.findByTestId("official-google-analytics");
+    expect(emitAnalyticsEvent({ event: "add_payment_info", currency: "NZD", value: 65, items: [] })).toBe(true);
+    loadGoogleTag(script);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1_150)); });
+    expect(vi.mocked(sendGAEvent).mock.calls.filter((call) => call[1] === "add_payment_info")).toHaveLength(1);
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-test");
   });
 
   it("does not load a Google transport before a visitor has made a choice", () => {

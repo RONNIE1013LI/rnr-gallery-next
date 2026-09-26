@@ -43,6 +43,7 @@ describe("MetaPixelController", () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
 
   beforeEach(() => {
+    fetchMock.mockClear();
     navigation.pathname = "/";
     navigation.search = "";
     document.documentElement.removeAttribute("data-meta-enabled");
@@ -58,6 +59,16 @@ describe("MetaPixelController", () => {
       advertising: true,
       decidedAt: "2026-08-28T01:02:03.000Z",
     };
+  });
+
+  it("defers the external transport while queueing Meta and CAPI immediately", async () => {
+    render(<MetaPixelController production enabled />);
+    expect(screen.queryByTestId("meta-pixel-script")).not.toBeInTheDocument();
+    const fbq = (window as unknown as { fbq: { queue: unknown[][] } }).fbq;
+    expect(fbq.queue.some((command) => command[2] === "PageView")).toBe(true);
+    expect(fetchMock).toHaveBeenCalled();
+    fireEvent.pointerDown(window);
+    expect(await screen.findByTestId("meta-pixel-script")).toBeInTheDocument();
   });
 
   it("does not load Meta until advertising consent is recorded", () => {

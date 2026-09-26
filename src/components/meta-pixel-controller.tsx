@@ -2,9 +2,10 @@
 
 import Script from "next/script";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { classifyGa4Location, META_PIXEL_ID } from "@/domain/analytics/runtime";
 import { emitMetaAnalyticsEvent, emitMetaPageView } from "@/domain/analytics/meta";
+import { deferThirdPartyTransport } from "@/domain/analytics/deferred-third-party";
 import { useAdvertisingConsent } from "./consent-preferences";
 
 type MetaPixelQueue = ((...args: unknown[]) => void) & {
@@ -74,6 +75,11 @@ export function MetaPixelController({
   const search = searchParams.toString();
   const policy = classifyGa4Location(pathname, new URLSearchParams(search));
   const allowed = production && enabled && consent?.advertising === true && policy === "public";
+  const [transportActive, setTransportActive] = useState(false);
+  useEffect(() => {
+    if (!allowed || transportActive) return;
+    return deferThirdPartyTransport(() => setTransportActive(true));
+  }, [allowed, transportActive]);
   const lastPageView = useRef<string | null>(null);
 
   useEffect(() => {
@@ -108,7 +114,7 @@ export function MetaPixelController({
     };
   }, [allowed, pathname, policy, search]);
 
-  if (!allowed) return null;
+  if (!allowed || !transportActive) return null;
   return (
     <Script
       id="rnr-meta-pixel"
