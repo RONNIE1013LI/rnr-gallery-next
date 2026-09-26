@@ -109,6 +109,9 @@ function loadGoogleTagScriptOnly(script: HTMLElement) {
 describe("AnalyticsRuntimeController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Existing policy tests mount after the load-relative transport deadlines.
+    vi.spyOn(document, "readyState", "get").mockReturnValue("complete");
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([{ loadEventEnd: performance.now() - 6000 }] as PerformanceNavigationTiming[]);
     googleAnalytics.automaticPageLocations.length = 0;
     googleAnalytics.commands.length = 0;
     googleAnalytics.mounts = 0;
@@ -134,19 +137,74 @@ describe("AnalyticsRuntimeController", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
+  it("starts GA4 at load plus 1000ms without initializing Ads until 4000ms", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+    vi.stubGlobal("requestIdleCallback", vi.fn((callback: IdleRequestCallback) => { callback({ didTimeout: false, timeRemaining: () => 20 }); return 1; }));
+    const view = render(<AnalyticsRuntimeController production />);
+    const adsCommands = () => (window as unknown as { dataLayer: unknown[] }).dataLayer.filter((entry) => {
+      const command = Array.from(entry as ArrayLike<unknown>);
+      return command[0] === "config" && command[1] === GOOGLE_ADS_TAG_ID;
+    });
+    act(() => { window.dispatchEvent(new Event("load")); window.dispatchEvent(new Event("touchstart")); window.dispatchEvent(new Event("scroll")); });
+    for (const increment of [100, 400, 499]) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(increment); });
+      expect(view.queryByTestId("official-google-analytics")).toBeNull();
+      expect(adsCommands()).toHaveLength(0);
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(view.getByTestId("official-google-analytics")).toBeInTheDocument();
+    expect(adsCommands()).toHaveLength(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2999); });
+    expect(adsCommands()).toHaveLength(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(adsCommands()).toHaveLength(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(adsCommands()).toHaveLength(1);
+  });
+
+  it("activates Ads early for AddToCart and keeps its Google event queued until readiness", async () => {
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
+    const view = render(<AnalyticsRuntimeController production />);
+    const commands = () => (window as unknown as { dataLayer: unknown[] }).dataLayer.map((entry) => Array.from(entry as ArrayLike<unknown>));
+    expect(commands().some((entry) => entry[1] === GOOGLE_ADS_TAG_ID)).toBe(false);
+    act(() => { emitAnalyticsEvent({ event: "add_to_cart", currency: "NZD", value: 65, items: [] }); });
+    expect(commands().filter((entry) => entry[0] === "config" && entry[1] === GOOGLE_ADS_TAG_ID)).toHaveLength(1);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    loadGoogleTag(view.getByTestId("official-google-analytics"));
+    markGoogleTagReady();
+    expect(vi.mocked(sendGAEvent).mock.calls.filter((entry) => entry[1] === "add_to_cart")).toHaveLength(1);
+  });
+
+  it("cancels pending phases when consent is withdrawn", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+    const view = render(<AnalyticsRuntimeController production />);
+    act(() => window.dispatchEvent(new Event("load")));
+    consentState.value = { ...consentState.value!, analytics: false, advertising: false };
+    view.rerender(<AnalyticsRuntimeController production />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(view.queryByTestId("official-google-analytics")).toBeNull();
+    expect(view.queryByTestId("google-ads-script")).toBeNull();
+    expect((window as unknown as { dataLayer: unknown[] }).dataLayer.some((entry) => Array.from(entry as ArrayLike<unknown>)[1] === GOOGLE_ADS_TAG_ID)).toBe(false);
+  });
+
   it("retains AddToCart before the deferred transport and flushes once after handshake", async () => {
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
     setLocation("/shop", "utm_source=google&gclid=private-deferred-click");
     const view = render(<AnalyticsRuntimeController production />);
     await act(async () => { await Promise.resolve(); });
     expect(document.querySelector("#_next-ga")).toBeNull();
     expect((window as unknown as { dataLayer: unknown[] }).dataLayer.length).toBeGreaterThan(0);
-    expect(emitAnalyticsEvent({ event: "add_to_cart", currency: "NZD", value: 65, items: [] })).toBe(true);
+    act(() => { expect(emitAnalyticsEvent({ event: "add_to_cart", currency: "NZD", value: 65, items: [] })).toBe(true); });
     expect(sendGAEvent).not.toHaveBeenCalled();
-    act(() => window.dispatchEvent(new Event("pointerdown")));
     const script = await view.findByTestId("official-google-analytics");
     loadGoogleTagScriptOnly(script);
     expect(sendGAEvent).not.toHaveBeenCalled();
@@ -157,6 +215,7 @@ describe("AnalyticsRuntimeController", () => {
   });
 
   it("starts transport on programmatic checkout navigation before idle and retains checkout events", async () => {
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
     vi.stubGlobal("requestIdleCallback", vi.fn(() => 1));
     const view = render(<AnalyticsRuntimeController production />);
     await act(async () => { await Promise.resolve(); });

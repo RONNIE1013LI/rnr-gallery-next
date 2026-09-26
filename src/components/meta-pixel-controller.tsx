@@ -78,7 +78,7 @@ export function MetaPixelController({
   const [transportActive, setTransportActive] = useState(false);
   useEffect(() => {
     if (!allowed || transportActive) return;
-    return deferThirdPartyTransport(() => setTransportActive(true));
+    return deferThirdPartyTransport("meta", () => setTransportActive(true));
   }, [allowed, transportActive]);
   const lastPageView = useRef<string | null>(null);
 

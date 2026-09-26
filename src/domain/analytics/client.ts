@@ -1,6 +1,7 @@
 "use client";
 
 import { sendGAEvent } from "@next/third-parties/google";
+import { isMeaningfulAnalyticsAction, requestThirdPartyTransport } from "./deferred-third-party";
 import type { AnalyticsEvent, AnalyticsItem } from "./events";
 import { emitMetaAnalyticsEvent, isMetaAnalyticsRequired } from "./meta";
 import {
@@ -383,6 +384,10 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
       return event.event === "purchase" ? false : metaSent;
     }
 
+    if (isMeaningfulAnalyticsAction(event.event)) {
+      if (analyticsAllowed()) requestThirdPartyTransport("ga4");
+      if (googleAdsAllowed()) requestThirdPartyTransport("google-ads");
+    }
     if (event.event !== "purchase" && !hasReadyDataLayer()) return metaSent;
 
     const payload = allowlistedPayload(event);

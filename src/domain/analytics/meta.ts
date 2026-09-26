@@ -1,5 +1,6 @@
 "use client";
 
+import { isMeaningfulAnalyticsAction, requestThirdPartyTransport } from "./deferred-third-party";
 import type { AnalyticsEvent, AnalyticsItem } from "./events";
 import {
   buildMetaEventId,
@@ -104,6 +105,7 @@ export function emitMetaAnalyticsEvent(event: AnalyticsEvent): boolean {
     const fbq = metaPixel();
     if (!fbq) return false;
 
+    if (isMeaningfulAnalyticsAction(event.event)) requestThirdPartyTransport("meta");
     const eventId = buildMetaEventId(event);
     const browserEvent = toMetaBrowserEvent(event, eventId, window.location.pathname);
 

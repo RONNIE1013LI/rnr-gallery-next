@@ -68,9 +68,6 @@ function initializeGoogleDataLayer(analytics: boolean, advertising: boolean): ()
   if (analytics) {
     dataLayer.push(googleTagCommand("config", GA4_MEASUREMENT_ID, { send_page_view: false }));
   }
-  if (advertising) {
-    dataLayer.push(googleTagCommand("config", GOOGLE_ADS_TAG_ID, { send_page_view: false }));
-  }
 
   return () => {
     if (dataLayer.push === guardedPush) dataLayer.push = originalPush;
@@ -287,8 +284,18 @@ export function AnalyticsRuntimeController({
         ...(state.debugMode ? { debug_mode: true } : {}),
       });
     };
+    let adsInitialized = false;
+    const activateAds = () => {
+      if (!active || !advertisingAllowed || adsInitialized) return;
+      const dataLayer = (window as Ga4Window & { dataLayer?: unknown[] }).dataLayer;
+      if (!Array.isArray(dataLayer)) return;
+      dataLayer.push(googleTagCommand("config", GOOGLE_ADS_TAG_ID, { send_page_view: false }));
+      adsInitialized = true;
+      setReady(true);
+    };
     const prepareHistoryLocation = (url: URL) => {
       if (classifyGa4Location(url.pathname, url.searchParams) !== "public") {
+        activateAds();
         setReady(true);
       }
       beginGaHistorySuppression();
@@ -363,16 +370,17 @@ export function AnalyticsRuntimeController({
       settleHistoryLocation,
     );
     const location = new URL(window.location.href);
-    let cancelActivation: (() => void) | undefined;
+    const cancelActivations: Array<() => void> = [];
     if (classifyGa4Location(location.pathname, location.searchParams) === "public") {
-      cancelActivation = deferThirdPartyTransport(() => { if (active) setReady(true); });
+      if (analyticsAllowed) cancelActivations.push(deferThirdPartyTransport("ga4", () => { if (active) setReady(true); }));
+      if (advertisingAllowed) cancelActivations.push(deferThirdPartyTransport("google-ads", activateAds));
     } else {
-      queueMicrotask(() => { if (active) setReady(true); });
+      queueMicrotask(() => { if (active) { activateAds(); setReady(true); } });
     }
 
     return () => {
       active = false;
-      cancelActivation?.();
+      cancelActivations.forEach((cancel) => cancel());
       stopTagReadyCheck();
       restoreDataLayer();
       const dataLayer = (window as Ga4Window & { dataLayer?: unknown[] }).dataLayer;

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emitMetaAnalyticsEvent } from "@/domain/analytics/meta";
 import { META_PIXEL_ID } from "@/domain/analytics/runtime";
 import { MetaPixelController } from "./meta-pixel-controller";
@@ -44,6 +44,8 @@ describe("MetaPixelController", () => {
 
   beforeEach(() => {
     fetchMock.mockClear();
+    vi.spyOn(document, "readyState", "get").mockReturnValue("complete");
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([{ loadEventEnd: performance.now() - 6000 }] as PerformanceNavigationTiming[]);
     navigation.pathname = "/";
     navigation.search = "";
     document.documentElement.removeAttribute("data-meta-enabled");
@@ -61,14 +63,52 @@ describe("MetaPixelController", () => {
     };
   });
 
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
   it("defers the external transport while queueing Meta and CAPI immediately", async () => {
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
     render(<MetaPixelController production enabled />);
     expect(screen.queryByTestId("meta-pixel-script")).not.toBeInTheDocument();
     const fbq = (window as unknown as { fbq: { queue: unknown[][] } }).fbq;
     expect(fbq.queue.some((command) => command[2] === "PageView")).toBe(true);
     expect(fetchMock).toHaveBeenCalled();
     fireEvent.pointerDown(window);
+    expect(screen.queryByTestId("meta-pixel-script")).not.toBeInTheDocument();
+    act(() => { emitMetaAnalyticsEvent({ event: "add_to_cart", currency: "NZD", value: 65, items: [] }); });
     expect(await screen.findByTestId("meta-pixel-script")).toBeInTheDocument();
+    expect(fbq.queue.filter((entry) => entry[2] === "AddToCart")).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps PageView/CAPI immediate while passive browser transport waits at least 4000ms", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+    vi.stubGlobal("requestIdleCallback", vi.fn((callback: IdleRequestCallback) => { callback({ didTimeout: false, timeRemaining: () => 20 }); return 1; }));
+    render(<MetaPixelController production enabled />);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    fireEvent.load(window); fireEvent.touchStart(window); fireEvent.scroll(window);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3999); });
+    expect(screen.queryByTestId("meta-pixel-script")).toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByTestId("meta-pixel-script")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const fbq = (window as unknown as { fbq: { queue: unknown[][] } }).fbq;
+    expect(fbq.queue.filter((entry) => entry[2] === "PageView")).toHaveLength(1);
+  });
+
+  it("cancels pending browser activation when advertising consent is withdrawn", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+    const view = render(<MetaPixelController production enabled />);
+    fireEvent.load(window);
+    consentState.value = { ...consentState.value!, advertising: false };
+    view.rerender(<MetaPixelController production enabled />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(screen.queryByTestId("meta-pixel-script")).toBeNull();
+    expect(emitMetaAnalyticsEvent({ event: "add_to_cart", currency: "NZD", value: 65, items: [] })).toBe(false);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("does not load Meta until advertising consent is recorded", () => {
