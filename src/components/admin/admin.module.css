@@ -121,6 +121,7 @@
 
 .navigation a:hover,
 .navigation a:focus-visible,
+.navigation a[aria-current="page"],
 .publicLink:hover,
 .publicLink:focus-visible {
   background: #294035;
@@ -178,7 +179,8 @@
   padding: 36px clamp(20px, 3vw, 44px) 64px;
 }
 
-.mobileMenu {
+.mobileMenu,
+.mobileMenuPanel {
   display: none;
 }
 
@@ -192,7 +194,14 @@
   }
 
   .topbar {
+    min-height: 48px;
     justify-content: space-between;
+    padding-block: 2px;
+  }
+
+  .topbar .role {
+    min-width: 60px;
+    text-align: center;
   }
 
   .mobileMenu {
@@ -201,6 +210,21 @@
   }
 
   .mobileMenu > button {
+    display: flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+  }
+
+  .mobileMenuHeader button {
     min-height: 48px;
     padding: 11px 14px;
     border: 1px solid var(--admin-border);
@@ -211,43 +235,102 @@
     list-style: none;
   }
 
-  .mobileMenuPanel {
+  .mobileMenuPanel[open] {
     position: fixed;
-    inset: 64px 0 0;
-    width: auto;
-    padding: 16px max(16px, env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    border-top: 1px solid var(--admin-border);
+    inset: 0;
+    display: flex;
+    width: min(380px, calc(100vw - 32px));
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    color: var(--admin-ink);
     background: #fff;
   }
 
-  .mobileMenu .navigation a {
+  .mobileMenuPanel::backdrop {
+    background: rgb(23 37 29 / 35%);
+  }
+
+  .mobileMenuHeader {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: calc(10px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
+    border-bottom: 1px solid var(--admin-border);
+  }
+
+  .mobileMenuBody {
+    min-height: 0;
+    flex: 1 1 auto;
+    padding: 16px max(16px, env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .mobileMenuPanel .navigation a {
     display: flex;
     min-height: 44px;
     align-items: center;
     padding: 9px 10px;
   }
 
-  .mobileMenu .navigation a:hover,
-  .mobileMenu .navigation a:focus-visible {
+  .mobileMenuPanel .navigation a:hover,
+  .mobileMenuPanel .navigation a:focus-visible,
+  .mobileMenuPanel .navigation a[aria-current="page"] {
     color: #fff;
   }
 
-  .mobileMenu .navigation {
-    max-height: none;
-    gap: 10px;
-    overflow: visible;
+  .mobileMenuPanel .navigation {
+    gap: 8px;
   }
 
-  .mobileMenu .navigationGroup {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px 8px;
+  .mobileMenuPanel .navigationGroup {
+    gap: 4px;
+    border-bottom: 1px solid var(--admin-border);
   }
 
-  .mobileMenu .navigationGroup > span {
-    grid-column: 1 / -1;
-    padding: 4px 10px 2px;
+  .navigationGroupToggle {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px;
+    border: 0;
+    border-radius: 8px;
+    color: var(--admin-ink);
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 650;
+    text-align: left;
+  }
+
+  .navigationGroupToggle:hover,
+  .navigationGroupToggle[aria-expanded="true"] {
+    background: var(--admin-response);
+  }
+
+  .navigationGroupToggle:focus-visible,
+  .mobileMenu > button:focus-visible,
+  .mobileMenuHeader button:focus-visible,
+  .mobileMenuPanel .navigation a:focus-visible {
+    outline: 2px solid var(--admin-accent);
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+
+  .navigationGroupItems {
+    display: grid;
+    gap: 4px;
+    padding: 0 0 10px 12px;
   }
 }
 
