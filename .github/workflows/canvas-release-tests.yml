@@ -1,7 +1,7 @@
 name: Canvas isolated release tests
 on:
   push:
-    branches: [codex/canvas-3d-product-20260906]
+    branches: [codex/canvas-3d-product-20260906, codex/header-canvas-showcase-20260927]
 permissions:
   contents: read
 jobs:
