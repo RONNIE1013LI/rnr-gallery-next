@@ -1,7 +1,7 @@
 import { parseAdvertisingConsent, ADVERTISING_CONSENT_COOKIE } from "@/domain/consent/advertising-consent";
 import { classifyWebsiteAttribution } from "@/domain/analytics/website-attribution";
 import { normalizeCountryCode } from "@/domain/analytics/website-analytics";
-import { isTrackableWebsitePath, normalizeWebsitePathname } from "@/domain/analytics/website-path-policy";
+import { isTrackableWebsitePageviewPath, normalizeWebsitePathname } from "@/domain/analytics/website-path-policy";
 import {
   createWebsiteAnalyticsSession,
   createWebsiteAnalyticsVisitor,
@@ -121,7 +121,7 @@ export function createWebsitePageviewRoute(dependencies: Dependencies = {}) {
       }
 
       const payload = parsePayload(await parseBoundedJson(request, MAX_BODY_BYTES));
-      if (!payload || !isTrackableWebsitePath(payload.pathname)) return empty();
+      if (!payload || !isTrackableWebsitePageviewPath(payload.pathname)) return empty();
       const pathname = normalizeWebsitePathname(payload.pathname);
       if (!pathname) return empty();
 
@@ -130,7 +130,9 @@ export function createWebsitePageviewRoute(dependencies: Dependencies = {}) {
       const visitorCookie = cookieValue(cookieHeader, WEBSITE_ANALYTICS_VISITOR_COOKIE);
       const sessionCookie = cookieValue(cookieHeader, WEBSITE_ANALYTICS_SESSION_COOKIE);
       const existingVisitor = parseWebsiteAnalyticsVisitor(visitorCookie, config.cookieSecret, now);
-      const existingSession = parseWebsiteAnalyticsSession(sessionCookie, config.cookieSecret, now);
+      const existingSession = existingVisitor
+        ? parseWebsiteAnalyticsSession(sessionCookie, config.cookieSecret, now)
+        : null;
       const isInternal = parseWebsiteAnalyticsInternalDevice(
         cookieValue(cookieHeader, WEBSITE_ANALYTICS_INTERNAL_COOKIE),
         config.cookieSecret,

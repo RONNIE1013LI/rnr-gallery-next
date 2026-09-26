@@ -12,7 +12,7 @@ function parse(query = "", options: Readonly<{ allTimeFrom?: string }> = {}) {
 
 describe("website analytics V2 query", () => {
   it("defaults to a canonical Auckland Last 30 Days website query", () => {
-    expect(parse()).toEqual({
+    expect(parse()).toMatchObject({
       preset: "last_30_days",
       from: "2026-08-01",
       to: "2026-08-30",
@@ -31,6 +31,33 @@ describe("website analytics V2 query", () => {
       pageSize: 25,
       canonicalQuery: "preset=last_30_days&from=2026-08-01&to=2026-08-30&scope=website&market=all&currency=all&attribution=last_touch&granularity=auto&compare=false&includeInternal=false&sort=occurred_at_desc&page=1&pageSize=25",
     });
+  });
+
+  it("preserves independent session drill-down controls without changing order pagination", () => {
+    const visitor = "a".repeat(64);
+    const session = "00000000-0000-4000-8000-000000000001";
+    const result = parse(`path=%2Fcart&channel=google_ads&source=google&medium=cpc&campaign=Spring&q=08008&trafficSort=pageviews_desc&trafficPage=3&trafficPageSize=50&visitor=${visitor}&session=${session}&page=7&sort=ordered_amount_desc`);
+    expect(result).toMatchObject({ path: "/cart", channel: "google_ads", source: "google",
+      medium: "cpc", campaign: "Spring", q: "08008", trafficSort: "pageviews_desc",
+      trafficPage: 3, trafficPageSize: 50, visitor, session, page: 7, sort: "ordered_amount_desc" });
+    expect(result.canonicalQuery).toContain("path=%2Fcart");
+    expect(result.canonicalQuery).toContain("trafficPage=3&trafficPageSize=50");
+    expect(parse(result.canonicalQuery)).toEqual(result);
+  });
+
+  it("omits default explorer controls and empty searches from canonical URLs", () => {
+    const result = parse("q=%20%20&trafficPage=1&trafficPageSize=25&trafficSort=started_at_desc");
+    expect(result).toMatchObject({ q: null, path: null, visitor: null, session: null,
+      trafficPage: 1, trafficPageSize: 25, trafficSort: "started_at_desc" });
+    expect(result.canonicalQuery).not.toMatch(/traffic|&q=/);
+  });
+
+  it.each([
+    "path=https%3A%2F%2Fevil.example", "path=%2F%2Fevil.example", "visitor=private-email",
+    "session=not-a-uuid", "trafficSort=customer_email", "trafficPage=0", "trafficPageSize=101",
+    `q=${"x".repeat(201)}`, `path=${"/" + "x".repeat(512)}`, "q=a&q=b",
+  ])("rejects unsafe explorer query %s", (query) => {
+    expect(() => parse(query)).toThrow(WebsiteAnalyticsV2QueryError);
   });
 
   it.each([

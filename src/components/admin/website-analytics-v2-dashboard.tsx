@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { WebsiteAnalyticsV2Charts, formatAnalyticsMoney } from "./website-analytics-v2-charts";
 import { WebsiteAnalyticsV2Filters } from "./website-analytics-v2-filters";
 import { WebsiteAnalyticsV2Orders } from "./website-analytics-v2-orders";
 import { WebsiteAnalyticsInternalDevice } from "./website-analytics-internal-device";
+import { WebsiteAnalyticsV2Explorer, analyticsExplorerQuery, analyticsOverviewQuery,
+  explorerFilterKeys } from "./website-analytics-v2-explorer";
 import adminStyles from "./admin.module.css";
 import styles from "./website-analytics-v2.module.css";
 
@@ -247,14 +249,25 @@ export function WebsiteAnalyticsV2Dashboard({
   const urlQuery = searchParams.toString();
   const [data, setData] = useState(initialData);
   const [orders, setOrders] = useState(initialOrders);
+  const [currentQuery, setCurrentQuery] = useState(initialData.filters.canonicalQuery);
+  const [previousInitialData, setPreviousInitialData] = useState(initialData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const activeQueryRef = useRef<string | null>(null);
   const requestIdRef = useRef(0);
   const observedUrlRef = useRef<string | null>(null);
-  const lastRoutedQueryRef = useRef<string | null>(initialData.filters.canonicalQuery);
+  const lastRoutedQueryRef = useRef<string | null>(null);
   const retryQueryRef = useRef(initialData.filters.canonicalQuery);
+
+  if (initialData !== previousInitialData) {
+    setPreviousInitialData(initialData);
+    if (urlQuery === initialQueryString && !loading) {
+      setData(initialData);
+      setOrders(initialOrders);
+      setCurrentQuery(initialData.filters.canonicalQuery);
+    }
+  }
 
   const loadQuery = useCallback(async (query: string, updateUrl: boolean) => {
     abortRef.current?.abort();
@@ -289,8 +302,9 @@ export function WebsiteAnalyticsV2Dashboard({
 
       setData(nextData);
       setOrders(nextOrders);
+      setCurrentQuery(nextData.filters.canonicalQuery);
       retryQueryRef.current = nextData.filters.canonicalQuery;
-      if (nextData.filters.canonicalQuery !== query) {
+      if (updateUrl && nextData.filters.canonicalQuery !== query) {
         lastRoutedQueryRef.current = nextData.filters.canonicalQuery;
         router.replace(`${pathname}?${nextData.filters.canonicalQuery}`, { scroll: false });
       }
@@ -314,14 +328,26 @@ export function WebsiteAnalyticsV2Dashboard({
     queueMicrotask(() => setLoading(false));
   }, []);
 
+  const navigateExplorer = (query: string) => {
+    setCurrentQuery(query);
+    lastRoutedQueryRef.current = query;
+    router.replace(`${pathname}?${query}`, { scroll: false });
+  };
+
+  const drillDown = (values: Readonly<Record<string, string | null>>) => {
+    const reset = Object.fromEntries(explorerFilterKeys.map((key) => [key, null]));
+    navigateExplorer(analyticsExplorerQuery(currentQuery, {
+      ...reset, ...values, trafficPage: 1, visitor: null, session: null,
+    }));
+    document.getElementById("analytics-sessions")?.scrollIntoView?.({ block: "start" });
+  };
+
+  const filters = useMemo(() => ({ ...data.filters, canonicalQuery: currentQuery }), [data.filters, currentQuery]);
+
   useEffect(() => {
     if (observedUrlRef.current === null) {
       observedUrlRef.current = urlQuery;
-      if (initialQueryString !== initialData.filters.canonicalQuery
-        || urlQuery !== initialData.filters.canonicalQuery) {
-        lastRoutedQueryRef.current = initialData.filters.canonicalQuery;
-        router.replace(`${pathname}?${initialData.filters.canonicalQuery}`, { scroll: false });
-      }
+      if (urlQuery !== initialQueryString) queueMicrotask(() => { void loadQuery(urlQuery, false); });
       return;
     }
     if (observedUrlRef.current === urlQuery) return;
@@ -331,9 +357,13 @@ export function WebsiteAnalyticsV2Dashboard({
       lastRoutedQueryRef.current = null;
       return;
     }
-    if (urlQuery === data.filters.canonicalQuery) return;
+    if (urlQuery === currentQuery) return;
+    if (analyticsOverviewQuery(urlQuery) === analyticsOverviewQuery(currentQuery)) {
+      queueMicrotask(() => setCurrentQuery(urlQuery));
+      return;
+    }
     queueMicrotask(() => { void loadQuery(urlQuery, false); });
-  }, [data.filters.canonicalQuery, initialData.filters.canonicalQuery, initialQueryString,
+  }, [currentQuery, initialData.filters.canonicalQuery, initialQueryString,
     cancelActiveRequest, loadQuery, pathname, router, urlQuery]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -353,7 +383,7 @@ export function WebsiteAnalyticsV2Dashboard({
       ? <WebsiteAnalyticsInternalDevice initialInternal={initialInternal} />
       : null}
 
-    <WebsiteAnalyticsV2Filters canIncludeInternal={canIncludeInternal} filters={data.filters}
+    <WebsiteAnalyticsV2Filters canIncludeInternal={canIncludeInternal} filters={filters}
       loading={loading} onApply={(query) => {
       void loadQuery(query, true);
     }} />
@@ -388,7 +418,7 @@ export function WebsiteAnalyticsV2Dashboard({
         <li key={notice.code}>{notice.message}</li>)}</ul>
     </section> : null}
 
-    <WebsiteAnalyticsV2Charts data={data} />
+    <WebsiteAnalyticsV2Charts data={data} onDrillDown={drillDown} />
 
     <section className={`${adminStyles.panel} ${styles.pagesPanel}`}>
       <div className={styles.sectionHeading}>
@@ -410,13 +440,18 @@ export function WebsiteAnalyticsV2Dashboard({
             <thead><tr><th scope="col">Path</th><th scope="col">Visitors</th>
               <th scope="col">Page Views</th></tr></thead>
             <tbody>{data.pages.items.map((page) => <tr key={page.pathname}>
-              <th scope="row">{page.pathname}</th><td>{page.visitors}</td><td>{page.pageViews}</td>
+              <th scope="row"><button type="button" className={styles.textButton}
+                onClick={() => drillDown({ path: page.pathname })}>{page.pathname}</button></th>
+              <td><button type="button" className={styles.textButton} aria-label={`View visitors to ${page.pathname}`}
+                onClick={() => drillDown({ path: page.pathname })}>{page.visitors}</button></td><td>{page.pageViews}</td>
             </tr>)}</tbody>
           </table>
         </div>}
     </section>
 
-    <WebsiteAnalyticsV2Orders canonicalQuery={data.filters.canonicalQuery} loading={loading}
+    <WebsiteAnalyticsV2Explorer canonicalQuery={currentQuery} onNavigate={navigateExplorer} />
+
+    <WebsiteAnalyticsV2Orders canonicalQuery={currentQuery} loading={loading}
       onNavigate={(query) => { void loadQuery(query, true); }} orders={orders} />
   </section>;
 }

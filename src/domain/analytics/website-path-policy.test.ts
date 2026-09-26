@@ -40,6 +40,7 @@ describe("isTrackableWebsitePath", () => {
     "/api/analytics/page-view",
     "/account",
     "/checkout",
+    "/checkout/start",
     "/forms",
     "/notification-email/verify/token",
     "/order-system",

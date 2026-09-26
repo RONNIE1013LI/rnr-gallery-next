@@ -1,5 +1,5 @@
 import { orderAttributionDisplay } from "@/domain/analytics/order-attribution-display";
-import { and, asc, eq, gte, lte, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lte, notInArray, sql } from "drizzle-orm";
 import {
   ANALYTICS_DIMENSION_SENTINELS,
   normalizeAnalyticsDimension,
@@ -427,32 +427,51 @@ function mapAggregateRow(
 async function aggregateRows(
   transaction: Transaction,
   query: WebsiteAnalyticsV2Query,
-  today: string,
+  now: Date,
 ) {
-  const hasCurrentDay = query.from <= today && query.to >= today;
+  const today = websiteAnalyticsLocalDate(now);
+  const coverageFrom = theoreticalTrafficCoverageFrom(now);
+  const rawFrom = query.from > coverageFrom ? query.from : coverageFrom;
+  const rawTo = query.to < today ? query.to : today;
+  const unfinalized = rawFrom <= rawTo
+    ? await transaction.execute<{ localDate: string }>(sql`
+        select to_char(dates.day, 'YYYY-MM-DD') as "localDate"
+        from generate_series(${rawFrom}::timestamp, ${rawTo}::timestamp, interval '1 day') dates(day)
+        left join website_analytics_reconciliation_state state
+          on state.state_type = 'dirty_date' and state.local_date = dates.day::date
+        where dates.day::date = ${today}::date
+          or state.status is distinct from 'completed'
+          or state.started_at < ((dates.day + interval '1 day') at time zone 'Pacific/Auckland')
+        order by dates.day
+      `)
+    : null;
+  const rawDates = Object.freeze(unfinalized?.rows.map((row) => row.localDate) ?? []);
   const stored = await transaction.select(aggregateFields)
     .from(websiteAnalyticsDailyAggregates)
     .where(and(
       gte(websiteAnalyticsDailyAggregates.localDate, query.from),
       lte(websiteAnalyticsDailyAggregates.localDate, query.to),
       eq(websiteAnalyticsDailyAggregates.attributionModel, query.attribution),
-      hasCurrentDay ? ne(websiteAnalyticsDailyAggregates.localDate, today) : undefined,
+      rawDates.length > 0 ? notInArray(websiteAnalyticsDailyAggregates.localDate, [...rawDates]) : undefined,
     ))
     .orderBy(asc(websiteAnalyticsDailyAggregates.localDate));
   const prior = stored.map((row) => mapAggregateRow(
     row as typeof websiteAnalyticsDailyAggregates.$inferSelect,
     query.includeInternal,
   ));
-  if (!hasCurrentDay) return Object.freeze(prior);
   const raw = await createWebsiteAnalyticsV2Reconciliation(
     transaction as unknown as Database,
-  ).readRawDailyRows(today);
-  return Object.freeze([
-    ...prior,
-    ...raw.filter((row) => row.attributionModel === query.attribution)
-      .map((row) => visibleAggregateRow(Object.freeze({ ...row, paidOrders: 0 }),
-        query.includeInternal)),
-  ]);
+  ).readRawDailyRows(rawDates);
+  return Object.freeze({
+    rows: Object.freeze([
+      ...prior,
+      ...raw.filter((row) => row.attributionModel === query.attribution)
+        .map((row) => visibleAggregateRow(Object.freeze({ ...row, paidOrders: 0 }),
+          query.includeInternal)),
+    ]),
+    rawDates,
+    aggregateThrough: stored.at(-1)?.localDate ?? null,
+  });
 }
 
 type PaidOrderRow = Readonly<{
@@ -497,7 +516,7 @@ async function paidOrderRows(
           and financial.order_id = conversions.order_id)
         or (financial.conversion_id is null and financial.production_job_id is not null
           and financial.production_job_id = conversions.production_job_id)
-      ) and financial.occurred_at < ${query.end}
+      ) and financial.currency = conversions.currency and financial.occurred_at < ${query.end}
       where conversions.conversion_type = 'order'
         and conversions.local_date between ${query.from}::date and ${query.to}::date
         and (${query.includeInternal}::boolean or not conversions.is_internal)
@@ -804,7 +823,7 @@ async function paymentBreakdown(transaction: Transaction, query: WebsiteAnalytic
           and financial.order_id = conversions.order_id)
         or (financial.conversion_id is null and financial.production_job_id is not null
           and financial.production_job_id = conversions.production_job_id)
-      ) and financial.occurred_at < ${query.end}
+      ) and financial.currency = conversions.currency and financial.occurred_at < ${query.end}
       where conversions.conversion_type = 'order'
         and conversions.local_date between ${query.from}::date and ${query.to}::date
         and (${query.scope}::text = 'all_business' or conversions.scope = 'website')
@@ -832,12 +851,6 @@ async function paymentBreakdown(transaction: Transaction, query: WebsiteAnalytic
   }));
 }
 
-function aggregateThrough(query: WebsiteAnalyticsV2Query, today: string): string | null {
-  const lastClosed = shiftDate(today, -1);
-  if (query.from > lastClosed) return null;
-  return query.to < lastClosed ? query.to : lastClosed;
-}
-
 const orderSortSql = {
   occurred_at_desc: sql`"occurredAt" desc, "conversionId" desc`,
   occurred_at_asc: sql`"occurredAt" asc, "conversionId" asc`,
@@ -853,10 +866,10 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
   return Object.freeze({
     async load(query: WebsiteAnalyticsV2Query, now = new Date()) {
       if (Number.isNaN(now.getTime())) throw new Error("Analytics dashboard time is invalid");
-      const today = websiteAnalyticsLocalDate(now);
       return database.transaction(async (transaction) => {
+        const aggregates = await aggregateRows(transaction, query, now);
         const rows = Object.freeze([
-          ...await aggregateRows(transaction, query, today),
+          ...aggregates.rows,
           ...await paidOrderRows(transaction, query),
         ]);
         const comparisonRange = query.compare ? previousAnalyticsDateRange({
@@ -870,7 +883,7 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
           : null;
         const comparisonRows = comparisonQuery
           ? Object.freeze([
-              ...await aggregateRows(transaction, comparisonQuery, today),
+              ...(await aggregateRows(transaction, comparisonQuery, now)).rows,
               ...await paidOrderRows(transaction, comparisonQuery),
             ])
           : null;
@@ -908,11 +921,10 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
         const retainedTraffic = trafficMetricsAvailable ? support.traffic : null;
         const kpis = freezeMetrics(selected, website, retainedTraffic);
         const websiteMetrics = freezeMetrics(website, website, retainedTraffic);
-        const hasCurrentDay = query.from <= today && query.to >= today;
         const notices = [
           Object.freeze({
             code: "page_metrics_unavailable",
-            message: "Page entrances, exits and conversion assists are unavailable from the implemented facts.",
+            message: "Aggregate Top Pages entrance, exit and conversion-assist counts are unavailable. Retained session entry and exit pages are available in Visitors / Sessions below.",
           }),
           ...(query.scope === "all_business" ? [Object.freeze({
             code: "all_business_traffic_website_only",
@@ -997,8 +1009,8 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
           metadata: Object.freeze({
             timezone: "Pacific/Auckland" as const,
             trafficScope: "website" as const,
-            aggregateThrough: aggregateThrough(query, today),
-            rawDates: Object.freeze(hasCurrentDay ? [today] : []),
+            aggregateThrough: aggregates.aggregateThrough,
+            rawDates: aggregates.rawDates,
             earliestTrafficDate: support.earliestTrafficDate,
             trafficCoverageFrom: retainedTrafficFrom,
             trafficMetricsAvailable,
@@ -1074,7 +1086,7 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
                   and events.order_id = conversions.order_id)
                 or (events.conversion_id is null and events.production_job_id is not null
                   and events.production_job_id = conversions.production_job_id)
-              ) and events.occurred_at < ${query.end}
+              ) and events.currency = conversions.currency and events.occurred_at < ${query.end}
             ) financial on true
             where conversions.conversion_type = 'order'
               and conversions.local_date between ${query.from}::date and ${query.to}::date

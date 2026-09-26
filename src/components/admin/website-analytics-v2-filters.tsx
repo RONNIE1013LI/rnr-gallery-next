@@ -80,6 +80,9 @@ export function WebsiteAnalyticsV2Filters({
     query.set("compare", String(state.compare));
     query.set("includeInternal", String(canIncludeInternal && state.includeInternal));
     query.set("page", "1");
+    query.delete("trafficPage");
+    query.delete("visitor");
+    query.delete("session");
     onApply(query.toString());
   }
 

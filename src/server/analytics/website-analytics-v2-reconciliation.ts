@@ -141,9 +141,14 @@ function mapRawRow(row: RawAggregateResult): WebsiteAnalyticsV2DailyAggregateRow
 
 async function readRawDailyRowsFrom(
   executor: Database | Transaction,
-  localDate: string,
+  localDates: string | readonly string[],
 ): Promise<readonly WebsiteAnalyticsV2DailyAggregateRow[]> {
-  if (!validLocalDate(localDate)) throw new Error("Invalid analytics aggregate local date");
+  const dates = typeof localDates === "string" ? [localDates] : localDates;
+  if (dates.length > 366 || dates.some((date) => !validLocalDate(date))) {
+    throw new Error("Invalid analytics aggregate local dates");
+  }
+  if (dates.length === 0) return Object.freeze([]);
+  const dateList = sql.join(dates.map((date) => sql`${date}::date`), sql`, `);
   const result = await executor.execute<RawAggregateResult>(sql`
     with models(attribution_model) as (
       values ('first_touch'::text), ('last_touch'::text)
@@ -212,7 +217,7 @@ async function readRawDailyRowsFrom(
       from website_analytics_sessions sessions
       inner join website_analytics_pageviews pageviews on pageviews.session_id = sessions.id
       cross join models
-      where pageviews.local_date = ${localDate}::date
+      where pageviews.local_date in (${dateList})
       group by 1, 2, 3, 4, 5, 6, 7, 8, 9
     ),
     traffic_totals as (
@@ -249,7 +254,7 @@ async function readRawDailyRowsFrom(
       from website_analytics_sessions sessions
       inner join website_analytics_pageviews pageviews on pageviews.session_id = sessions.id
       cross join models
-      where pageviews.local_date = ${localDate}::date
+      where pageviews.local_date in (${dateList})
       group by 1, 2, 3, 4, 5, 6, 7, 8, 9
     ),
     traffic as (
@@ -299,7 +304,7 @@ async function readRawDailyRowsFrom(
         union all
         select 'all_business'::text where conversions.conversion_type = 'order'
       ) scopes
-      where conversions.local_date = ${localDate}::date
+      where conversions.local_date in (${dateList})
       group by 1, 2, 3, 4, 5, 6, 7, 8, 9
     ),
     linked_financial as (
@@ -308,12 +313,13 @@ async function readRawDailyRowsFrom(
         conversions.ordered_amount_incl_gst_cents,
         conversions.is_internal
       from website_analytics_financial_events financial
-      inner join website_analytics_conversions conversions on
+      inner join website_analytics_conversions conversions on (
         conversions.id = financial.conversion_id
         or (financial.conversion_id is null and financial.order_id is not null
           and conversions.order_id = financial.order_id)
         or (financial.conversion_id is null and financial.production_job_id is not null
           and conversions.production_job_id = financial.production_job_id)
+      ) and financial.currency = conversions.currency
     ),
     financial_metrics as (
       select
@@ -359,7 +365,7 @@ async function readRawDailyRowsFrom(
         select 'website'::text as scope where financial.conversion_scope = 'website'
         union all select 'all_business'::text
       ) scopes
-      where financial.local_date = ${localDate}::date
+      where financial.local_date in (${dateList})
       group by 1, 2, 3, 4, 5, 6, 7, 8, 9
     ),
     combined as (
@@ -395,7 +401,7 @@ async function readRawDailyRowsFrom(
     from combined
     group by "localDate", scope, market, currency, channel, source, medium, campaign,
       "attributionModel"
-    order by scope, market, currency, channel, source, medium, campaign, "attributionModel"
+    order by "localDate", scope, market, currency, channel, source, medium, campaign, "attributionModel"
   `);
   return Object.freeze(result.rows.map(mapRawRow));
 }
@@ -410,8 +416,8 @@ function safeLimit(value: number, maximum: number, label: string): number {
 export function createWebsiteAnalyticsV2Reconciliation(database: Database) {
   const repository = createWebsiteAnalyticsV2Repository(database);
 
-  async function readRawDailyRows(localDate: string) {
-    return readRawDailyRowsFrom(database, localDate);
+  async function readRawDailyRows(localDates: string | readonly string[]) {
+    return readRawDailyRowsFrom(database, localDates);
   }
 
   async function readAggregateDailyRows(localDate: string) {

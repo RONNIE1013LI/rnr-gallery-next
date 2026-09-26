@@ -10,6 +10,10 @@ import {
 } from "@/domain/analytics/website-analytics-v2";
 import { MARKETS } from "@/domain/markets/types";
 import {
+  WEBSITE_ANALYTICS_TRAFFIC_SORTS,
+  type WebsiteAnalyticsTrafficSort,
+} from "@/domain/analytics/website-analytics-explorer";
+import {
   analyticsDateRange,
   analyticsGranularity,
   WEBSITE_ANALYTICS_ALL_TIME_MAXIMUM_DAYS,
@@ -47,6 +51,17 @@ export type WebsiteAnalyticsV2Query = Readonly<{
   sort: WebsiteAnalyticsOrderSort;
   page: number;
   pageSize: number;
+  path: string | null;
+  channel: string | null;
+  source: string | null;
+  medium: string | null;
+  campaign: string | null;
+  q: string | null;
+  trafficSort: WebsiteAnalyticsTrafficSort;
+  trafficPage: number;
+  trafficPageSize: number;
+  visitor: string | null;
+  session: string | null;
   canonicalQuery: string;
 }>;
 
@@ -71,6 +86,18 @@ const querySchema = z.object({
   sort: z.enum(WEBSITE_ANALYTICS_ORDER_SORTS).default("occurred_at_desc"),
   page: z.string().regex(/^\d+$/).default("1"),
   pageSize: z.string().regex(/^\d+$/).default("25"),
+  path: z.string().max(512).refine((value) => value === ""
+    || (value.startsWith("/") && !value.startsWith("//") && !/[?#\\\u0000-\u001f]/.test(value))).optional(),
+  channel: z.string().trim().max(255).optional(),
+  source: z.string().trim().max(255).optional(),
+  medium: z.string().trim().max(255).optional(),
+  campaign: z.string().trim().max(255).optional(),
+  q: z.string().trim().max(200).optional(),
+  trafficSort: z.enum(WEBSITE_ANALYTICS_TRAFFIC_SORTS).default("started_at_desc"),
+  trafficPage: z.string().regex(/^\d+$/).default("1"),
+  trafficPageSize: z.string().regex(/^\d+$/).default("25"),
+  visitor: z.union([z.literal(""), z.string().regex(/^[a-f0-9]{64}$/)]).optional(),
+  session: z.union([z.literal(""), z.string().uuid()]).optional(),
 }).strict();
 
 const knownFields = new Set(Object.keys(querySchema.shape));
@@ -117,7 +144,7 @@ function boundedInteger(value: string, minimum: number, maximum: number): number
 }
 
 function canonicalQuery(input: Omit<WebsiteAnalyticsV2Query, "canonicalQuery">): string {
-  return new URLSearchParams([
+  const query = new URLSearchParams([
     ["preset", input.preset],
     ["from", input.from],
     ["to", input.to],
@@ -131,7 +158,16 @@ function canonicalQuery(input: Omit<WebsiteAnalyticsV2Query, "canonicalQuery">):
     ["sort", input.sort],
     ["page", String(input.page)],
     ["pageSize", String(input.pageSize)],
-  ]).toString();
+  ]);
+  for (const key of ["path", "channel", "source", "medium", "campaign", "q"] as const) {
+    if (input[key]) query.set(key, input[key]);
+  }
+  if (input.trafficSort !== "started_at_desc") query.set("trafficSort", input.trafficSort);
+  if (input.trafficPage !== 1) query.set("trafficPage", String(input.trafficPage));
+  if (input.trafficPageSize !== 25) query.set("trafficPageSize", String(input.trafficPageSize));
+  if (input.visitor) query.set("visitor", input.visitor);
+  if (input.session) query.set("session", input.session);
+  return query.toString();
 }
 
 export function parseWebsiteAnalyticsV2Query(
@@ -180,6 +216,17 @@ export function parseWebsiteAnalyticsV2Query(
       sort: parsed.sort,
       page,
       pageSize,
+      path: parsed.path || null,
+      channel: parsed.channel || null,
+      source: parsed.source || null,
+      medium: parsed.medium || null,
+      campaign: parsed.campaign || null,
+      q: parsed.q || null,
+      trafficSort: parsed.trafficSort,
+      trafficPage: boundedInteger(parsed.trafficPage, 1, 10_000),
+      trafficPageSize: boundedInteger(parsed.trafficPageSize, 1, 100),
+      visitor: parsed.visitor || null,
+      session: parsed.session || null,
     });
     return Object.freeze({ ...result, canonicalQuery: canonicalQuery(result) });
   } catch (error) {

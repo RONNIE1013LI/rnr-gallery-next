@@ -167,6 +167,50 @@ describe("website analytics tracker", () => {
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
   });
 
+  it("does not turn query-only changes into extra pageviews", async () => {
+    const view = render(<WebsiteAnalyticsTracker enabled />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+    state.search = "size=a4&utm_source=google&utm_medium=cpc";
+    view.rerender(<WebsiteAnalyticsTracker enabled />);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("records a return to the same public page after an excluded route", async () => {
+    state.pathname = "/cart";
+    state.search = "";
+    const view = render(<WebsiteAnalyticsTracker enabled />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+    state.pathname = "/account";
+    view.rerender(<WebsiteAnalyticsTracker enabled />);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    state.pathname = "/cart";
+    view.rerender(<WebsiteAnalyticsTracker enabled />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  });
+
+  it.each(["/checkout", "/checkout/start"])("records only the safe checkout pathname %s", async (pathname) => {
+    state.pathname = pathname;
+    state.search = "token=private-token&email=private%40example.test";
+    render(<WebsiteAnalyticsTracker enabled />);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const payload = String(vi.mocked(fetch).mock.calls[0][1]?.body);
+    expect(JSON.parse(payload).pathname).toBe(pathname);
+    expect(payload).not.toContain("private");
+  });
+
+  it.each(["/checkout/token", "/checkout/start/token", "/orders/private", "/pay/private"])(
+    "does not collect private commerce path %s",
+    (pathname) => {
+      state.pathname = pathname;
+      render(<WebsiteAnalyticsTracker enabled />);
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
   it("waits for analytics consent and includes only click-ID types after ad consent", async () => {
     state.consent = null;
     const view = render(<WebsiteAnalyticsTracker enabled />);
@@ -191,7 +235,7 @@ describe("website analytics tracker", () => {
     rejected.unmount();
 
     state.consent = { analytics: true, advertising: false };
-    state.pathname = "/checkout";
+    state.pathname = "/account";
     render(<WebsiteAnalyticsTracker enabled />);
     expect(fetch).not.toHaveBeenCalled();
   });

@@ -165,6 +165,45 @@ describe("website pageview route", () => {
     }));
   });
 
+  it.each(["missing", "invalid", "expired"])("starts a new session when the visitor cookie is %s", async (state) => {
+    const identity = createWebsiteAnalyticsIdentity(secret, now);
+    const expired = createWebsiteAnalyticsIdentity(secret, new Date("2025-08-28T10:00:00.000Z"));
+    const visitorCookie = state === "invalid" ? "invalid" : state === "expired" ? expired.visitorCookie : null;
+    const route = handler();
+
+    const response = await route.POST(request(body, {
+      cookie: [
+        `rnr-consent-v1=${consent(true, false)}`,
+        `ra_sid_v1=${identity.sessionCookie}`,
+        ...(visitorCookie ? [`ra_vid_v1=${visitorCookie}`] : []),
+      ].join("; "),
+    }));
+
+    expect(response.status).toBe(204);
+    expect(route.record).toHaveBeenCalledTimes(1);
+    expect(route.record.mock.calls[0][0].sessionId).not.toBe(identity.sessionId);
+  });
+
+  it.each(["/checkout", "/checkout/start"])("records the safe checkout entry %s", async (pathname) => {
+    const route = handler();
+    await route.POST(request({ ...body, pathname }));
+    expect(route.record).toHaveBeenCalledWith(expect.objectContaining({ pathname }));
+  });
+
+  it.each([
+    "/checkout/token",
+    "/checkout/start/token",
+    "/checkout?token=private",
+    "/checkout/start?email=private",
+    "/checkout#private",
+    "/pay/private",
+    "/orders/private",
+  ])("does not accept private commerce pathname %s", async (pathname) => {
+    const route = handler();
+    await route.POST(request({ ...body, pathname }));
+    expect(route.record).not.toHaveBeenCalled();
+  });
+
   it("writes nothing without analytics consent, on private paths, or for bots", async () => {
     const route = handler();
     const requests = [

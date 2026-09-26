@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { WEBSITE_CLICK_ID_TYPES } from "@/domain/analytics/website-analytics";
-import { isTrackableWebsitePath } from "@/domain/analytics/website-path-policy";
+import { isTrackableWebsitePageviewPath, normalizeWebsitePathname } from "@/domain/analytics/website-path-policy";
 import { useAdvertisingConsent } from "./consent-preferences";
 
 const WEBSITE_ANALYTICS_PAGEVIEW_LOCK = "rnr:website-analytics:pageview";
@@ -73,11 +73,11 @@ export function WebsiteAnalyticsTracker({ enabled }: Readonly<{ enabled: boolean
   }, []);
 
   useEffect(() => {
-    if (!enabled || !consent?.analytics || !isTrackableWebsitePath(pathname)) {
-      if (!consent?.analytics) lastLocation.current = null;
+    if (!enabled || !consent?.analytics || !isTrackableWebsitePageviewPath(pathname)) {
+      lastLocation.current = null;
       return;
     }
-    const locationKey = `${pathname}?${search}`;
+    const locationKey = normalizeWebsitePathname(pathname);
     if (lastLocation.current === locationKey) return;
     lastLocation.current = locationKey;
 

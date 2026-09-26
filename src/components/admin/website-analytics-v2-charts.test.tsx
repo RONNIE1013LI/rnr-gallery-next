@@ -143,6 +143,15 @@ const data: WebsiteAnalyticsV2DashboardData = {
 };
 
 describe("WebsiteAnalyticsV2Charts", () => {
+  it("opens the exact campaign identity rather than combining similarly named campaigns", () => {
+    const drillDown = vi.fn();
+    render(<WebsiteAnalyticsV2Charts data={data} onDrillDown={drillDown} />);
+    const table = screen.getByRole("table", { name: "Campaign performance data" });
+    fireEvent.click(within(table).getByRole("button", { name: "spring" }));
+    expect(drillDown).toHaveBeenCalledWith({ channel: "google_ads", source: "google", medium: "cpc", campaign: "spring" });
+    fireEvent.click(within(table).getByRole("button", { name: "google" }));
+    expect(drillDown).toHaveBeenLastCalledWith({ channel: "google_ads", source: "google", medium: "cpc" });
+  });
   beforeEach(() => {
     vi.stubGlobal("ResizeObserver", SizedResizeObserver);
   });

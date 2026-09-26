@@ -31,7 +31,7 @@ const prefix = `analytics-v2-task5-reconcile:${runId}:`;
 const localDates = [
   "2297-09-30", "2297-10-01", "2297-10-02", "2297-10-03",
   "2297-11-10", "2297-11-11", "2297-11-12", "2297-11-13",
-  "2297-11-30", "2297-12-01", "2297-12-02",
+  "2297-11-30", "2297-12-01", "2297-12-02", "2297-12-03",
 ];
 const sessionIds: string[] = [];
 const conversationIds: string[] = [];
@@ -196,6 +196,29 @@ function orState() {
 }
 
 describe("website analytics V2 reconciliation", () => {
+  it("does not attribute receipts whose currency differs from their linked conversion", async () => {
+    const order = await websiteOrder({
+      sourceId: `${prefix}currency-mismatch-order`,
+      occurredAt: new Date("2297-12-03T00:00:00.000Z"),
+      amountCents: 10_000, market: "NZ",
+    });
+    for (const [currency, amountCents] of [["NZD", 4_000], ["AUD", 6_000]] as const) {
+      await financial({
+        conversionId: order.factId, sourceId: `${prefix}currency-mismatch-${currency}`,
+        occurredAt: new Date("2297-12-03T00:01:00.000Z"),
+        amountCents, currency, eventType: "receipt",
+      });
+    }
+    const reconciliation = createWebsiteAnalyticsV2Reconciliation(database);
+    const raw = await reconciliation.readRawDailyRows("2297-12-03");
+    expect(raw.filter(row => row.currency === "AUD")).toEqual([]);
+    expect(raw.find(row => row.scope === "website" && row.attributionModel === "last_touch"))
+      .toMatchObject({ currency: "NZD", collectedRevenueCents: 4_000 });
+    expect(await reconciliation.rebuildDirtyDate("2297-12-03"))
+      .toMatchObject({ rebuilt: 1, busy: 0, failed: 0 });
+    expect(await reconciliation.readAggregateDailyRows("2297-12-03")).toEqual(raw);
+  });
+
   it("rebuilds raw facts idempotently with Auckland dates and separate NZD/AUD rows", async () => {
     await websiteSession();
     const nz = await websiteOrder({

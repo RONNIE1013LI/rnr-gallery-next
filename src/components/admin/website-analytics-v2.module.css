@@ -410,3 +410,307 @@
     text-align: center;
   }
 }
+
+.textButton {
+  min-height: 44px;
+  padding: 5px 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--admin-accent);
+  background: transparent;
+  font: inherit;
+  font-weight: 650;
+  text-align: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.textButton:focus-visible,
+.detailClose:focus-visible,
+.explorerControls button:focus-visible,
+.acquisitionDetails summary:focus-visible {
+  outline: 2px solid var(--admin-accent);
+  outline-offset: 3px;
+}
+
+.explorerPanel {
+  min-width: 0;
+  scroll-margin-top: 20px;
+}
+
+.explorerControls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0 10px;
+}
+
+.explorerControls label {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--admin-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.sessionSearch {
+  flex: 1 1 260px;
+}
+
+.explorerControls input,
+.explorerControls select,
+.explorerControls button,
+.detailClose {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 44px;
+  padding: 9px 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 7px;
+  background: var(--admin-surface, #fff);
+  color: var(--admin-ink);
+  font: inherit;
+}
+
+.explorerControls button,
+.detailClose {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.explorerControls button {
+  color: #fff;
+  background: var(--admin-accent);
+}
+
+.filterChips {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.filterChips > button:not(.textButton) {
+  max-width: 100%;
+  min-height: 36px;
+  padding: 5px 10px;
+  border: 1px solid var(--admin-border);
+  border-radius: 7px;
+  color: var(--admin-ink);
+  background: var(--admin-response);
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.qualityGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.qualityGrid > div {
+  padding: 12px;
+  border: 1px solid var(--admin-border);
+  border-radius: 9px;
+  background: var(--admin-response);
+}
+
+.qualityGrid dt,
+.detailFacts dt {
+  color: var(--admin-muted);
+  font-size: 12px;
+}
+
+.qualityGrid dd {
+  margin: 6px 0 0;
+  font-size: 18px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.acquisitionDetails {
+  margin: 14px 0;
+}
+
+.acquisitionDetails summary {
+  min-height: 44px;
+  align-content: center;
+  color: var(--admin-accent);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.sessionTable {
+  min-width: 1300px;
+}
+
+.cellLine {
+  display: block;
+  margin-top: 3px;
+}
+
+.visitorDialog {
+  box-sizing: border-box;
+  width: min(900px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  color: var(--admin-ink);
+  background: var(--admin-surface, #fff);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 24%);
+}
+
+.visitorDialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.detailHeader h2,
+.detailHeader p {
+  margin: 0;
+}
+
+.detailHeader p {
+  margin-top: 5px;
+  color: var(--admin-muted);
+  font-size: 12px;
+}
+
+.detailBody {
+  max-height: calc(100dvh - 138px);
+  padding: 20px 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.detailFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 12px 0 20px;
+}
+
+.detailFacts dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.fullIdentifier {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sessionDetail {
+  padding-top: 16px;
+  border-top: 1px solid var(--admin-border);
+}
+
+.sessionDetail h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.journeyTimeline {
+  margin: 14px 0 22px;
+  padding: 0;
+  list-style: none;
+}
+
+.journeyTimeline li {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--admin-border);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.journeyTimeline li:nth-child(odd) {
+  background: var(--admin-response);
+}
+
+.journeyTimeline time {
+  color: var(--admin-muted);
+  font-size: 12px;
+}
+
+.conversionCard {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 9px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.conversionCard h4 {
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .qualityGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .qualityGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .explorerControls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .explorerControls input,
+  .explorerControls select {
+    width: 100%;
+  }
+
+  .visitorDialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .detailHeader {
+    padding: 14px;
+  }
+
+  .detailBody {
+    max-height: calc(100dvh - 124px);
+    padding: 14px;
+  }
+
+  .detailFacts,
+  .journeyTimeline li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   WebsiteAnalyticsV2Dashboard,
@@ -20,6 +20,10 @@ vi.mock("next/navigation", () => ({
 vi.mock("./website-analytics-v2-charts", () => ({
   WebsiteAnalyticsV2Charts: () => <section aria-label="Analytics chart collection" />,
   formatAnalyticsMoney: (currency: string, cents: number) => `${currency}:${cents}`,
+}));
+vi.mock("./website-analytics-v2-explorer", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./website-analytics-v2-explorer")>(),
+  WebsiteAnalyticsV2Explorer: () => null,
 }));
 
 const canonicalQuery = [
@@ -200,10 +204,72 @@ describe("WebsiteAnalyticsV2Dashboard", () => {
     expect(screen.getByRole("link", { name: "RNR-001" })).toHaveAttribute("href", "/admin/orders/order-1");
     expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next orders page" })).toBeEnabled();
-    await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith(
-      `/admin/analytics?${canonicalQuery}`,
-      { scroll: false },
-    ));
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
+  it("keeps a bare Analytics URL bare on initial load", () => {
+    navigation.search = "";
+    render(<WebsiteAnalyticsV2Dashboard initialData={dashboardData()} initialOrders={orderData()}
+      initialQueryString="" />);
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
+  it("opens Top Page visitors without resetting order filters or refetching aggregates", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<WebsiteAnalyticsV2Dashboard initialData={dashboardData()} initialOrders={orderData()}
+      initialQueryString="scope=all_business" />);
+    fireEvent.click(screen.getByRole("button", { name: "View visitors to /shop" }));
+    expect(navigation.replace).toHaveBeenCalledWith(
+      `/admin/analytics?${canonicalQuery}&path=%2Fshop`, { scroll: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the current restored URL when initial server props are stale", async () => {
+    const currentQuery = canonicalQuery.replace("scope=all_business", "scope=website");
+    navigation.search = currentQuery;
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => response(dashboardData({
+        filters: { ...dashboardData().filters, scope: "website", canonicalQuery: currentQuery },
+        kpis: { ...dashboardData().kpis, sessions: 63 },
+      })))
+      .mockImplementationOnce(() => response(orderData()));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<WebsiteAnalyticsV2Dashboard initialData={dashboardData()} initialOrders={orderData()}
+      initialQueryString={canonicalQuery} />);
+    await screen.findByText("63", { selector: "strong" });
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
+  it("uses fresh server data when the current URL is refreshed", async () => {
+    navigation.search = canonicalQuery;
+    const view = render(<WebsiteAnalyticsV2Dashboard initialData={dashboardData()}
+      initialOrders={orderData()} initialQueryString={canonicalQuery} />);
+    view.rerender(<WebsiteAnalyticsV2Dashboard initialData={dashboardData({
+      kpis: { ...dashboardData().kpis, sessions: 64 },
+    })} initialOrders={orderData()} initialQueryString={canonicalQuery} />);
+    await screen.findByText("64", { selector: "strong" });
+    expect(navigation.replace).not.toHaveBeenCalled();
+  });
+
+  it("restores explorer filters through back and forward without refetching overview data", async () => {
+    navigation.search = canonicalQuery;
+    const initialData = dashboardData();
+    const initialOrders = orderData();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const view = render(<WebsiteAnalyticsV2Dashboard initialData={initialData}
+      initialOrders={initialOrders} initialQueryString={canonicalQuery} />);
+    for (const query of [`${canonicalQuery}&path=%2Fcart`, canonicalQuery, `${canonicalQuery}&path=%2Fcart`]) {
+      navigation.search = query;
+      view.rerender(<WebsiteAnalyticsV2Dashboard initialData={initialData}
+        initialOrders={initialOrders} initialQueryString={canonicalQuery} />);
+      await act(async () => { await Promise.resolve(); });
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Next orders page" }));
+    expect(navigation.replace).toHaveBeenLastCalledWith(
+      `/admin/analytics?${canonicalQuery.replace("page=1", "page=2")}&path=%2Fcart`, { scroll: false });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("distinguishes unavailable retained page traffic from a covered empty result", () => {

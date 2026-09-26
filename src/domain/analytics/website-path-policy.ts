@@ -43,3 +43,8 @@ export function isTrackableWebsitePath(input: unknown): boolean {
   if (PRIVATE_PATH_PREFIXES.some((prefix) => matchesPrefix(pathname, prefix))) return false;
   return !STATIC_PATH_PREFIXES.some((prefix) => matchesPrefix(pathname, prefix));
 }
+
+export function isTrackableWebsitePageviewPath(input: unknown): boolean {
+  // Checkout entry counts are first-party only; acquisition touches remain public-only.
+  return input === "/checkout" || input === "/checkout/start" || isTrackableWebsitePath(input);
+}

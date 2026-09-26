@@ -10,6 +10,16 @@ describe("order acquisition versus converting session", () => {
  it("never invents a Meta source for missing records", () => {
   expect(orderAttributionDisplay({})).toEqual({firstTouch:"unattributed",lastTouch:"unattributed",lastNonDirectTouch:"unattributed",acquisition:"unattributed"});
  });
+ it.each(["google_ads", "meta_ads", "google_organic", "other"])("preserves the durable %s last-non-direct snapshot after session retention", (acquisition) => {
+  expect(orderAttributionDisplay({ first: "google_ads", last: "direct", acquisition }))
+   .toEqual({ firstTouch: "google_ads", lastTouch: "direct", lastNonDirectTouch: acquisition, acquisition });
+ });
+ it.each(["direct", "manual", "unattributed", "unknown", "", null, undefined])("does not infer non-direct history from %s", (acquisition) => {
+  expect(orderAttributionDisplay({ acquisition }).lastNonDirectTouch).toBe("unattributed");
+ });
+ it("keeps an available last-non-direct session ahead of the snapshot fallback", () => {
+  expect(orderAttributionDisplay({ nonDirect: "meta_ads", acquisition: "google_ads" }).lastNonDirectTouch).toBe("meta_ads");
+ });
  it("uses a consented durable order snapshot when the session chain is incomplete", () => {
   localStorage.clear();
   captureAttributionHistory(localStorage,null,{url:"https://rnrgallery.com/?utm_source=meta&utm_medium=paid_social",referrer:"",now:new Date("2026-09-09"),consent:{analytics:true,advertising:true}});

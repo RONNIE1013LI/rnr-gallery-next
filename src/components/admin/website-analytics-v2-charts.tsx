@@ -24,6 +24,7 @@ import styles from "./website-analytics-v2.module.css";
 type CountMetric = "visitors" | "sessions" | "pageViews" | "inquiries" | "orders" | "paidOrders";
 type RevenueMetric = Exclude<keyof WebsiteAnalyticsV2Money, "currency" | "orderedAovCents">;
 type TooltipEntry = Readonly<{ name?: string; value?: string | number; dataKey?: string }>;
+type DrillDown = (filters: Readonly<Record<string, string | null>>) => void;
 
 const countLabels: Readonly<Record<CountMetric, string>> = {
   visitors: "Visitors",
@@ -319,12 +320,13 @@ function breakdownMoneyValues(row: WebsiteAnalyticsV2Breakdown, currency: "NZD" 
     : formatAnalyticsMoney(currency, money[metric]));
 }
 
-function BreakdownChart({ title, chartLabel, tableLabel, rows, kind }: Readonly<{
+function BreakdownChart({ title, chartLabel, tableLabel, rows, kind, onDrillDown }: Readonly<{
   title: string;
   chartLabel: string;
   tableLabel: string;
   rows: readonly WebsiteAnalyticsV2Breakdown[];
   kind: "channel" | "campaign" | "market";
+  onDrillDown?: DrillDown;
 }>) {
   const chartRows = rows.map((row) => ({ label: breakdownLabel(row, kind), orders: row.orders }));
   return <ChartPanel title={title} chartLabel={chartLabel} count={rows.length}
@@ -345,9 +347,21 @@ function BreakdownChart({ title, chartLabel, tableLabel, rows, kind }: Readonly<
           .map(([label]) => `${currency} ${label}`))]}
       rows={rows.map((row) => {
         const dimensions = breakdownDimensions(row, kind);
+        const channel = row.channel?.toLowerCase().replaceAll(" ", "_") ?? "unattributed";
+        const values = dimensions.values.map((value, index) => {
+          if (!onDrillDown || kind === "market") return value;
+          const filters: Record<string, string | null> = { channel };
+          if (kind === "campaign" && index > 0) {
+            filters.source = row.source ?? "(not set)";
+            filters.medium = row.medium ?? "(not set)";
+          }
+          if (kind === "campaign" && index === 3) filters.campaign = row.campaign ?? "(not set)";
+          return <button type="button" className={styles.textButton} key={index}
+            onClick={() => onDrillDown(filters)}>{value}</button>;
+        });
         return {
           key: dimensions.key,
-          values: [...dimensions.values,
+          values: [...values,
           row.visitors ?? "—", row.sessions ?? "—", row.pageViews ?? "—",
           row.inquiries, row.orders, row.paidOrders, ...breakdownMoneyValues(row, "NZD"),
           ...breakdownMoneyValues(row, "AUD")],
@@ -427,8 +441,9 @@ function titleCase(value: string) {
   return value.split("_").map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join(" ");
 }
 
-export function WebsiteAnalyticsV2Charts({ data }: Readonly<{
+export function WebsiteAnalyticsV2Charts({ data, onDrillDown }: Readonly<{
   data: WebsiteAnalyticsV2DashboardData;
+  onDrillDown?: DrillDown;
 }>) {
   const currencies = (["NZD", "AUD"] as const).filter((currency) =>
     data.kpis.money.some((entry) => entry.currency === currency)
@@ -438,9 +453,9 @@ export function WebsiteAnalyticsV2Charts({ data }: Readonly<{
     {currencies.map((currency) => <RevenueTrend currency={currency} data={data} key={currency} />)}
     <FunnelChart data={data} />
     <BreakdownChart chartLabel="Channel performance chart" kind="channel" rows={data.channels}
-      tableLabel="Channel performance data" title="Channel Performance" />
+      tableLabel="Channel performance data" title="Channel Performance" onDrillDown={onDrillDown} />
     <BreakdownChart chartLabel="Campaign performance chart" kind="campaign" rows={data.campaigns}
-      tableLabel="Campaign performance data" title="Campaign Performance" />
+      tableLabel="Campaign performance data" title="Campaign Performance" onDrillDown={onDrillDown} />
     <SimpleCountBreakdown chartLabel="Payment status chart"
       metricLabel="Orders"
       rows={data.payments.map((row) => ({ label: titleCase(row.status), value: row.orders }))}

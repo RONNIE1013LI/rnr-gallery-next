@@ -37,7 +37,8 @@ const currentDate = "2398-01-15";
 const preTrackingDate = "2397-12-01";
 const emptyDate = "2398-02-01";
 const internalDate = "2398-02-03";
-const dates = [priorDate, currentDate, emptyDate, internalDate];
+const currencyMismatchDate = "2398-04-01";
+const dates = [priorDate, currentDate, emptyDate, internalDate, currencyMismatchDate];
 const now = new Date("2398-01-15T01:00:00.000Z");
 const sessionIds: string[] = [];
 const checkoutSessionIds: string[] = [];
@@ -372,6 +373,14 @@ beforeAll(async () => {
     inArray(websiteAnalyticsReconciliationState.stateKey, dates),
   ));
   await seedPriorAggregates();
+  await database.insert(websiteAnalyticsReconciliationState).values({
+    stateType: "dirty_date",
+    stateKey: priorDate,
+    localDate: priorDate,
+    status: "completed",
+    startedAt: new Date("2398-01-14T12:00:00.000Z"),
+    completedAt: new Date("2398-01-14T12:00:01.000Z"),
+  });
   await seedRetainedPriorTraffic();
   references = await seedCurrentRawFacts();
 });
@@ -406,6 +415,108 @@ function money(result: Awaited<ReturnType<typeof dashboard.load>>, currency: "NZ
 }
 
 describe("website analytics V2 dashboard", () => {
+  it("excludes a mismatched receipt currency from order balances and attribution revenue", async () => {
+    const repository = createWebsiteAnalyticsV2Repository(database);
+    const order = await repository.recordOrder({
+      source: "website", sourceId: `${prefix}currency-mismatch-order`,
+      occurredAt: new Date("2398-04-01T00:00:00.000Z"),
+      market: "NZ", currency: "NZD", orderedAmountInclGstCents: 10_000,
+      historical: true, consentLinked: false,
+    });
+    for (const [currency, amountCents] of [["NZD", 4_000], ["AUD", 6_000]] as const) {
+      await repository.recordFinancialEvent({
+        conversionId: order.factId, sourceType: "payment_provider_event",
+        sourceId: `${prefix}currency-mismatch-${currency}`, eventType: "receipt",
+        occurredAt: new Date("2398-04-01T00:01:00.000Z"),
+        amountCents, currency, historical: true,
+      });
+    }
+    const reportNow = new Date("2398-04-01T01:00:00.000Z");
+    const reportQuery = parseWebsiteAnalyticsV2Query(new URLSearchParams(
+      `preset=custom&from=${currencyMismatchDate}&to=${currencyMismatchDate}`,
+    ), { now: reportNow });
+    const result = await dashboard.load(reportQuery, reportNow);
+    expect(result.kpis).toMatchObject({ orders: 1, paidOrders: 0 });
+    expect(result.payments).toEqual([{ status: "partial", orders: 1 }]);
+    expect(money(result, "NZD")).toMatchObject({ collectedRevenueCents: 4_000 });
+    expect(money(result, "AUD")).toBeUndefined();
+    expect((await dashboard.listOrders(reportQuery)).items).toEqual([
+      expect.objectContaining({ currency: "NZD", collectedAmountCents: 4_000, paymentStatus: "partial" }),
+    ]);
+  });
+
+  it.each(["pending", "failed", "missing", "completed_before_midnight"])(
+    "reads an unfinalized prior day from raw facts when reconciliation is %s without writing",
+    async (status) => {
+      const predicate = and(
+        eq(websiteAnalyticsReconciliationState.stateType, "dirty_date"),
+        eq(websiteAnalyticsReconciliationState.stateKey, currentDate),
+      );
+      const [original] = await database.select().from(websiteAnalyticsReconciliationState).where(predicate);
+      try {
+        if (status === "missing") {
+          await database.delete(websiteAnalyticsReconciliationState).where(predicate);
+        } else {
+          await database.update(websiteAnalyticsReconciliationState).set({
+            status: status === "completed_before_midnight" ? "completed" : status as "pending" | "failed",
+            startedAt: status === "pending" ? null : new Date("2398-01-14T13:00:00.000Z"),
+            completedAt: status === "completed_before_midnight" ? new Date("2398-01-14T13:01:00.000Z") : null,
+            lastErrorCode: status === "failed" ? "test_reconciliation_failure" : null,
+          }).where(predicate);
+        }
+        const before = await database.select().from(websiteAnalyticsReconciliationState).where(predicate);
+        const result = await dashboard.load(query(
+          `preset=custom&from=${currentDate}&to=${currentDate}&compare=true`,
+        ), new Date("2398-01-16T01:00:00.000Z"));
+
+        expect(result.kpis).toMatchObject({ sessions: 3, pageViews: 3, orders: 1, paidOrders: 0 });
+        expect(money(result, "NZD")).toMatchObject({
+          orderedRevenueCents: 12_000,
+          collectedRevenueCents: 12_000,
+          refundedRevenueCents: 2_000,
+        });
+        expect(result.comparison?.kpis).toMatchObject({ pageViews: 5, orders: 1 });
+        expect(result.metadata.rawDates).toEqual([currentDate]);
+        expect(await database.select().from(websiteAnalyticsReconciliationState).where(predicate)).toEqual(before);
+        const [stored] = await database.select({ pageViews: websiteAnalyticsDailyAggregates.pageViews })
+          .from(websiteAnalyticsDailyAggregates)
+          .where(eq(websiteAnalyticsDailyAggregates.localDate, currentDate));
+        expect(stored?.pageViews).toBe(999);
+      } finally {
+        await database.delete(websiteAnalyticsReconciliationState).where(predicate);
+        if (original) await database.insert(websiteAnalyticsReconciliationState).values(original);
+      }
+    },
+  );
+
+  it("preserves stored historical aggregates beyond retained traffic even when marked dirty", async () => {
+    const result = await dashboard.load(query(
+      `preset=custom&from=${priorDate}&to=${currentDate}`,
+    ), new Date("2398-07-01T01:00:00.000Z"));
+    expect(result.kpis.pageViews).toBe(1004);
+    expect(result.metadata.rawDates).toEqual([]);
+  });
+
+  it("replaces multiple dirty dates with raw facts without adding their stale aggregate rows", async () => {
+    const predicate = and(
+      eq(websiteAnalyticsReconciliationState.stateType, "dirty_date"),
+      eq(websiteAnalyticsReconciliationState.stateKey, priorDate),
+    );
+    const [original] = await database.select().from(websiteAnalyticsReconciliationState).where(predicate);
+    try {
+      await database.update(websiteAnalyticsReconciliationState).set({
+        status: "pending", startedAt: null, completedAt: null,
+      }).where(predicate);
+      const result = await dashboard.load(query(
+        `preset=custom&from=${priorDate}&to=${currentDate}`,
+      ), now);
+      expect(result.kpis).toMatchObject({ pageViews: 8, orders: 1 });
+      expect(result.metadata.rawDates).toEqual([priorDate, currentDate]);
+    } finally {
+      if (original) await database.update(websiteAnalyticsReconciliationState).set(original).where(predicate);
+    }
+  });
+
   it("excludes internal traffic and conversions by default and restores them for Admin queries", async () => {
     const repository = createWebsiteAnalyticsV2Repository(database);
     const reconciliation = createWebsiteAnalyticsV2Reconciliation(database);
