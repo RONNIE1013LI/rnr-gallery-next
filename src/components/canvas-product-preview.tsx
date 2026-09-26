@@ -21,11 +21,12 @@ export function CanvasProductPreview({ imageSrc, sizeKey, orientation, sizes, ch
     <button type="button" className={styles.toggle} aria-expanded={open} onClick={() => setOpen(!open)}>
       {open ? "Close 3D view" : "3D View"}
     </button>
-    {open && sizes && <label className={styles.sizeSelect}>Preview size
-      <select value={activeSize} onChange={event=>setPreviewSize(event.target.value)}>
-        {sizes.filter(key=>getCanvasProfile(key,orientation)).map(key=><option key={key} value={key}>{key.toUpperCase()}</option>)}
-      </select>
-    </label>}
-    {open && <CanvasProductScene imageSrc={imageSrc} sizeKey={activeSize} orientation={orientation} />}
+    {open && <CanvasProductScene imageSrc={imageSrc} sizeKey={activeSize} orientation={orientation}>
+      {sizes && <label className={styles.sizeSelect}>Preview size
+        <select value={activeSize} onChange={event=>setPreviewSize(event.target.value)}>
+          {sizes.filter(key=>getCanvasProfile(key,orientation)).map(key=><option key={key} value={key}>{key.toUpperCase()}</option>)}
+        </select>
+      </label>}
+    </CanvasProductScene>}
   </div>;
 }

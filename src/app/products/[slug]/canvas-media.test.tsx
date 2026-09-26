@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { getProductBySlug } from "@/domain/catalogue/products";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
@@ -16,9 +17,9 @@ vi.mock("@/components/analytics-event-tracker", () => ({
 // WebGL is not available in jsdom. Exercise the real lazy preview/toggle and
 // inspect the props delivered to the existing scene at that browser boundary.
 vi.mock("@/components/canvas-product-scene", () => ({
-  default: (props: { imageSrc: string; sizeKey: string; orientation?: string }) => (
+  default: (props: { imageSrc: string; sizeKey: string; orientation?: string; children?: ReactNode }) => (
     <div title="Interactive canvas preview" data-image={props.imageSrc}
-      data-size={props.sizeKey} data-orientation={props.orientation} />
+      data-size={props.sizeKey} data-orientation={props.orientation}>{props.children}</div>
   ),
 }));
 
@@ -43,14 +44,21 @@ describe("Digital oil painting canvas product media", () => {
     fireEvent.click(toggle);
     const scene = await screen.findByTitle("Interactive canvas preview");
     expect(scene).toHaveAttribute("data-image", "/canvas-3d/digital-oil-artwork.avif");
-    expect(scene).toHaveAttribute("data-size", "a4");
+    expect(scene).toHaveAttribute("data-size", "a0");
     expect(scene).toHaveAttribute("data-orientation", "landscape");
+    const selector = screen.getByRole("combobox", { name: "Preview size" });
+    expect(screen.getAllByRole("option").map((option) => option.textContent))
+      .toEqual(["A0", "A1", "A2", "A3", "A4"]);
+    for (const size of ["a1", "a2", "a3", "a4", "a0"]) {
+      fireEvent.change(selector, { target: { value: size } });
+      expect(scene).toHaveAttribute("data-size", size);
+    }
     fireEvent.click(screen.getByRole("button", { name: "Close 3D view" }));
     expect(screen.queryByTitle("Interactive canvas preview")).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: product.image.alt })).toBeVisible();
   });
 
-  it("keeps selected artwork, portrait proportions, size and configure link", async () => {
+  it("keeps selected artwork and configure link independent of the demo size", async () => {
     const designId = "a".repeat(64);
     const selection: GalleryDesignSelection = {
       id: designId, title: "Selected portrait", altText: "Selected portrait artwork",
@@ -68,8 +76,13 @@ describe("Digital oil painting canvas product media", () => {
     fireEvent.click(screen.getByRole("button", { name: "3D View" }));
     const scene = await screen.findByTitle("Interactive canvas preview");
     expect(scene).toHaveAttribute("data-image", selection.imageUrl);
-    expect(scene).toHaveAttribute("data-size", "a1");
-    expect(scene).toHaveAttribute("data-orientation", "portrait");
+    expect(scene).toHaveAttribute("data-size", "a0");
+    expect(scene).toHaveAttribute("data-orientation", "landscape");
+    fireEvent.change(screen.getByRole("combobox", { name: "Preview size" }), { target: { value: "a2" } });
+    expect(scene).toHaveAttribute("data-size", "a2");
+    expect(screen.getByRole("link", { name: "Start Your Design" })).toHaveAttribute(
+      "href", `/products/${product.slug}/configure?design=${designId}&size=a1`,
+    );
   });
 
   it("leaves other product media unchanged", () => {

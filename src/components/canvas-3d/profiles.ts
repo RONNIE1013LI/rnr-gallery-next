@@ -2,9 +2,10 @@ import type { Orientation } from "@/domain/configuration/types";
 
 // Customer measurements supplied 6 September 2026. Metres, width × height × depth.
 const dimensions = {
-  a0: [1.19, .84], a1: [.841, .594], a2: [.594, .42],
+  a0: [1.189, .841], a1: [.841, .594], a2: [.594, .42],
   a3: [.42, .297], a4: [.297, .21],
 } as const;
+export const canvasDemoSizeKeys = Object.keys(dimensions);
 export type CanvasProfile = {
   width: number; height: number; depth: number; railWidth: number;
   braceWidth: number; braceDepth: number; braces: "cross" | "single" | "none";

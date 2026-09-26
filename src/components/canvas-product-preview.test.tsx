@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { CanvasProductPreview } from "./canvas-product-preview";
-vi.mock("./canvas-product-scene",()=>({default:(props:{imageSrc:string;sizeKey:string;orientation:string})=><div title="Interactive canvas preview" data-image={props.imageSrc} data-size={props.sizeKey} data-orientation={props.orientation}/> }));
+vi.mock("./canvas-product-scene",()=>({default:(props:{imageSrc:string;sizeKey:string;orientation:string;children?:ReactNode})=><div title="Interactive canvas preview" data-image={props.imageSrc} data-size={props.sizeKey} data-orientation={props.orientation}>{props.children}</div> }));
 
 describe("CanvasProductPreview", () => {
   it("loads on request and follows the selected artwork, size and orientation", async () => {

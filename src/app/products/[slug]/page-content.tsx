@@ -4,6 +4,7 @@ import Link from "next/link";
 import { AnalyticsEventTracker } from "@/components/analytics-event-tracker";
 import { StructuredData } from "@/components/structured-data";
 import { CanvasProductPreview } from "@/components/canvas-product-preview";
+import { canvasDemoSizeKeys } from "@/components/canvas-3d/profiles";
 import { notFound } from "next/navigation";
 import styles from "@/components/storefront.module.css";
 import { products } from "@/domain/catalogue/products";
@@ -191,10 +192,9 @@ export function ProductPageContent({
   const media = hasCanvasPreview ? (
     <CanvasProductPreview
       imageSrc={selection?.imageUrl ?? "/canvas-3d/digital-oil-artwork.avif"}
-      sizeKey={selectedSizeKey ?? analyticsSizeKey ?? "a4"}
-      orientation={selectedArtwork
-        ? selectedArtwork.width >= selectedArtwork.height ? "landscape" : "portrait"
-        : selection ? undefined : "landscape"}
+      sizeKey="a0"
+      sizes={canvasDemoSizeKeys}
+      orientation="landscape"
     >
       {image}
     </CanvasProductPreview>

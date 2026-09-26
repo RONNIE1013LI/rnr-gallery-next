@@ -8,17 +8,18 @@ import { createCanvasModel } from "./canvas-3d/model";
 import { getCanvasProfile } from "./canvas-3d/profiles";
 import styles from "./canvas-product-preview.module.css";
 
-type Actions = { view: (name:string)=>void; zoom:(factor:number)=>void; rotate:()=>boolean };
-// A fresh mounted scene gives every selection its own lifetime and cleanup.
+type Actions = { view: (name:string)=>void; zoom:(factor:number)=>void; rotate:()=>boolean; setSize:(size:string)=>void };
+// Artwork and orientation own the WebGL lifetime; size changes replace only the model.
 export default function CanvasProductScene(props:CanvasPreviewProps) {
-  return <Scene key={`${props.imageSrc}:${props.sizeKey}:${props.orientation}`} {...props}/>;
+  return <Scene key={`${props.imageSrc}:${props.orientation}`} {...props}/>;
 }
-function Scene({imageSrc,sizeKey,orientation}:CanvasPreviewProps) {
+function Scene({imageSrc,sizeKey,orientation,children}:CanvasPreviewProps) {
   const host=useRef<HTMLDivElement>(null),panel=useRef<HTMLDivElement>(null),actions=useRef<Actions|null>(null);
+  const sizeKeyRef=useRef(sizeKey);
   const [status,setStatus]=useState("Loading 3D preview…"),[auto,setAuto]=useState(false);
   const [displayProfile,setDisplayProfile]=useState(()=>getCanvasProfile(sizeKey,orientation)!);
   useEffect(()=>{
-    let profile=getCanvasProfile(sizeKey,orientation)!;
+    let profile=getCanvasProfile(sizeKeyRef.current,orientation)!;
     const element=host.current;
     if(!element)return;
     let renderer:THREE.WebGLRenderer;
@@ -36,7 +37,11 @@ function Scene({imageSrc,sizeKey,orientation}:CanvasPreviewProps) {
     const frontLight=new THREE.DirectionalLight(0xffffff,1.3);frontLight.position.set(-2,3,4);scene.add(frontLight);
     let alive=true,visible=true,frame=0,lastTime=0,fit=2,renderCount=0;
     const textures=new Set<THREE.Texture>();
-    const geometry=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();
+    let model:ReturnType<typeof createCanvasModel>|null=null;
+    let loaded:{artwork:THREE.Texture;reference:THREE.Texture;image:HTMLImageElement}|null=null;
+    function disposeModel(){if(!model)return;scene.remove(model.root);const geometry=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();
+      model.root.traverse(object=>{if(object instanceof THREE.Mesh){geometry.add(object.geometry);for(const material of Array.isArray(object.material)?object.material:[object.material])materials.add(material);}});
+      geometry.forEach(item=>item.dispose());materials.forEach(item=>item.dispose());model.textures.forEach(item=>item.dispose());model=null;}
     function invalidate(){if(alive&&visible&&!document.hidden&&!frame)frame=requestAnimationFrame(draw);}
     function draw(time:number){frame=0;if(!alive||!visible||document.hidden)return;controls.update(Math.min((time-lastTime)/1000,.05));lastTime=time;renderer.render(scene,camera);renderCount++;
       if(process.env.NODE_ENV!=="production"){element!.dataset.camera=JSON.stringify(camera.position.toArray());element!.dataset.frames=String(renderCount);}
@@ -49,7 +54,17 @@ function Scene({imageSrc,sizeKey,orientation}:CanvasPreviewProps) {
     function resize(){const {width,height}=element!.getBoundingClientRect();if(!width||!height)return;const prev=fit;camera.aspect=width/height;camera.updateProjectionMatrix();renderer.setSize(width,height);
       fit=Math.max(profile.height/2,profile.width/2/camera.aspect)/Math.tan(THREE.MathUtils.degToRad(camera.fov/2))*1.35;
       controls.minDistance=.12;controls.maxDistance=fit*3;
-      if(camera.position.length()>0)camera.position.multiplyScalar(fit/prev);controls.update();invalidate();
+      if(camera.position.length()>0)camera.position.sub(controls.target).multiplyScalar(fit/prev).add(controls.target);controls.update();invalidate();
+    }
+    function setSize(nextSize:string){if(!loaded||!alive)return;const next=getCanvasProfile(nextSize,orientation??(loaded.image.width>=loaded.image.height?"landscape":"portrait"));if(!next)return;
+      const hadModel=!!model,oldTarget=controls.target.clone(),oldProfile=profile;
+      disposeModel();profile=next;model=createCanvasModel(profile,loaded.artwork,loaded.reference);scene.add(model.root);
+      element!.dataset.braceCount=String(model.root.userData.braceCount);
+      element!.dataset.dimensions=JSON.stringify([profile.width,profile.height,profile.depth]);
+      element!.dataset.artwork=imageSrc;setDisplayProfile(profile);
+      if(hadModel){controls.target.set(oldTarget.x*profile.width/oldProfile.width,oldTarget.y*profile.height/oldProfile.height,oldTarget.z);
+        camera.position.add(controls.target.clone().sub(oldTarget));}
+      resize();invalidate();
     }
     const observer=new ResizeObserver(resize);observer.observe(element);
     const intersection=new IntersectionObserver(([entry])=>{visible=entry.isIntersecting;invalidate();});intersection.observe(element);
@@ -65,24 +80,18 @@ function Scene({imageSrc,sizeKey,orientation}:CanvasPreviewProps) {
       const [artwork,reference]=result.map(r=>(r as PromiseFulfilledResult<THREE.Texture>).value);
       for(const t of [artwork,reference]){t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());}
       const image=artwork.image as HTMLImageElement;
-      profile=getCanvasProfile(sizeKey,orientation??(image.width>=image.height?"landscape":"portrait"))!;
-      setDisplayProfile(profile);
-      const model=createCanvasModel(profile,artwork,reference);model.textures.forEach(t=>textures.add(t));scene.add(model.root);
-      model.root.traverse(object=>{if(object instanceof THREE.Mesh){geometry.add(object.geometry);for(const m of Array.isArray(object.material)?object.material:[object.material])materials.add(m);}});
-      element.dataset.braceCount=String(model.root.userData.braceCount);
-      element.dataset.dimensions=JSON.stringify([profile.width,profile.height,profile.depth]);
-      element.dataset.artwork=imageSrc;
+      loaded={artwork,reference,image};setSize(sizeKeyRef.current);
       function view(name:string){controls.autoRotate=false;setAuto(false);controls.enableDamping=false;controls.update();const poses:Record<string,number[]>={front:[0,0,1],back:[0,0,-1],side:[1,.1,.18],reset:[.36,.12,1]};camera.position.fromArray(poses[name]??poses.reset).normalize().multiplyScalar(fit*(name==="side"?1.2:1));controls.target.set(0,0,0);if(name==="detail"||name==="rear-detail"){controls.target.set(profile.width/2-.025,profile.height/2-.025,0);camera.position.copy(controls.target).add(new THREE.Vector3(name==="rear-detail"?-.09:.09,name==="rear-detail"?-.07:.07,name==="rear-detail"?-.18:.22));}if(name==="brace-detail"){controls.target.set(profile.braces==="single"&&profile.width>=profile.height?0:profile.width/2-profile.railWidth,profile.braces==="single"&&profile.width>=profile.height?profile.height/2-profile.railWidth:0,0);camera.position.copy(controls.target).add(new THREE.Vector3(.05,.04,-.18));}controls.update();controls.enableDamping=true;invalidate();}
-      actions.current={view,zoom(factor){camera.position.sub(controls.target).multiplyScalar(factor).clampLength(controls.minDistance,controls.maxDistance).add(controls.target);controls.update();invalidate();},rotate(){controls.autoRotate=!controls.autoRotate;invalidate();return controls.autoRotate;}};
+      actions.current={view,zoom(factor){camera.position.sub(controls.target).multiplyScalar(factor).clampLength(controls.minDistance,controls.maxDistance).add(controls.target);controls.update();invalidate();},rotate(){controls.autoRotate=!controls.autoRotate;invalidate();return controls.autoRotate;},setSize};
       resize();view("reset");setStatus("");element.dataset.ready="true";
     };
     void load().catch(()=>{if(alive)setStatus("Could not display 3D. Close 3D view to return to the artwork image.");});
-    return ()=>{alive=false;actions.current=null;cancelAnimationFrame(frame);observer.disconnect();intersection.disconnect();document.removeEventListener("visibilitychange",invalidate);renderer.domElement.removeEventListener("webglcontextlost",lost);controls.dispose();geometry.forEach(g=>g.dispose());materials.forEach(m=>m.dispose());textures.forEach(t=>t.dispose());light.shadow.map?.dispose();renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();};
-  // This component is keyed to the entire selection in CanvasProductScene.
-  },[imageSrc,sizeKey,orientation]);
+    return ()=>{alive=false;actions.current=null;cancelAnimationFrame(frame);observer.disconnect();intersection.disconnect();document.removeEventListener("visibilitychange",invalidate);renderer.domElement.removeEventListener("webglcontextlost",lost);controls.dispose();disposeModel();textures.forEach(t=>t.dispose());light.shadow.map?.dispose();renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();};
+  },[imageSrc,orientation]);
+  useEffect(()=>{sizeKeyRef.current=sizeKey;actions.current?.setSize(sizeKey);},[sizeKey]);
 
   return <div ref={panel} className={styles.panel}>
-    <p className={styles.dimensions}>{sizeKey.toUpperCase()} · {Number((displayProfile.width*100).toFixed(1))} × {Number((displayProfile.height*100).toFixed(1))} × 3 cm</p>
+    <div className={styles.panelHeader}>{children}<p className={styles.dimensions}>{sizeKey.toUpperCase()} · {Number((displayProfile.width*100).toFixed(1))} × {Number((displayProfile.height*100).toFixed(1))} × {Number((displayProfile.depth*100).toFixed(1))} cm</p></div>
     <div ref={host} className={styles.stage} title="Interactive canvas preview" role="application" aria-label="Interactive canvas. Drag to rotate; scroll or pinch to zoom." tabIndex={0} onKeyDown={event=>{
       if(event.key==="+"||event.key==="="){event.preventDefault();actions.current?.zoom(.85);}
       if(event.key==="-"){event.preventDefault();actions.current?.zoom(1/.85);}
