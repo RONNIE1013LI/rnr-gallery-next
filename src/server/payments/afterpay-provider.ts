@@ -5,6 +5,7 @@ import { afterpayEligibility, type AfterpayLimits } from "./eligibility";
 import { createProviderHttp, ProviderHttpError } from "./provider-http";
 import {
   PaymentProviderRequestError,
+  PaymentCaptureNotAuthorizedError,
   PaymentProviderVerificationError,
   paymentTargetReference,
   type PaymentEligibilityContext,
@@ -557,6 +558,19 @@ export function createAfterpayProvider({
         await limits(input.order),
       );
       if (!eligibility.available) throw verificationFailure();
+      if (input.providerReference) {
+        const checkout = await providerJson({
+          method: "GET",
+          path: `/v2/checkouts/${encodeURIComponent(input.providerReference)}`,
+          validate: isCheckout,
+        });
+        assertCheckout(checkout, input.order, config.environment);
+        if (checkout.token !== input.providerReference || !checkout.amount ||
+          checkout.merchantReference !== paymentTargetReference(input.order)) throw verificationFailure();
+        return Object.freeze({ kind: "redirect" as const, provider: "afterpay" as const,
+          method: "afterpay" as const, providerReference: checkout.token,
+          providerStatus: "CREATED", redirectUrl: checkout.redirectCheckoutUrl });
+      }
       const names = contactName(input.order.customer.fullName);
       const response = await providerJson({
         method: "POST",
@@ -598,6 +612,11 @@ export function createAfterpayProvider({
         browserToken !== input.providerReference
       ) throw verificationFailure();
       if (browserStatus === "SUCCESS") {
+        if ("targetKind" in input.order && input.order.targetKind === "payment_request") {
+          const authority = await retrieveAuthority(input.order, input.providerReference);
+          if (authority.kind === "found") return authority.result;
+          if (!input.authorizeCapture || !await input.authorizeCapture()) throw new PaymentCaptureNotAuthorizedError();
+        }
         return capture(input.order, input.providerReference, input.idempotencyKey);
       }
       if (browserStatus !== "CANCELLED") throw verificationFailure();
@@ -626,6 +645,8 @@ export function createAfterpayProvider({
         input.providerReference,
       );
       if (authority.kind === "found") return authority.result;
+      if ("targetKind" in input.order && input.order.targetKind === "payment_request" &&
+        (!input.authorizeCapture || !await input.authorizeCapture())) throw new PaymentCaptureNotAuthorizedError();
       return capture(
         input.order,
         input.providerReference,

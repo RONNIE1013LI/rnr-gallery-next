@@ -5,6 +5,10 @@
   "buildCommand": "npm run build",
   "crons": [
     {
+      "path": "/api/internal/payment-requests/expire",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/internal/customer-notifications",
       "schedule": "0 */12 * * *"
     },

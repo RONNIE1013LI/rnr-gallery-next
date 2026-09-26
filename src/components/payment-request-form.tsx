@@ -5,7 +5,7 @@ import { useRef, useState, type FormEvent } from "react";
 import type { AddressInput } from "@/domain/address/types";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
-import type { PaymentMethodKey } from "@/server/db/schema/payments";
+import type { PaymentRequestStatus, PaymentMethodKey } from "@/server/db/schema/payments";
 import type { PublicPaymentMethod, PaymentStartResult } from "@/server/payments/payment-service";
 import { GoogleAddressAutocomplete } from "./google-address-autocomplete";
 import { StripePaymentForm } from "./stripe-payment-form";
@@ -46,7 +46,9 @@ export function PaymentRequestForm({
   currency,
   googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
   methods,
+  onStatusChange,
 }: Readonly<{
+  onStatusChange?: (status: PaymentRequestStatus) => void;
   amountCents: number;
   currency: MarketCurrency;
   googleMapsApiKey?: string;
@@ -107,9 +109,17 @@ export function PaymentRequestForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const payload = await response.json() as PaymentStartResult | { error?: string };
+      const payload = await response.json() as PaymentStartResult | { error?: string; status?: PaymentRequestStatus };
+      if ("status" in payload && payload.status && payload.status !== "pending") {
+        onStatusChange?.(payload.status);
+        return;
+      }
       if (!response.ok || !("payment" in payload)) {
         throw new Error("error" in payload && payload.error ? payload.error : "Payment could not be started");
+      }
+      if (payload.payment.status === "paid") {
+        onStatusChange?.("paid");
+        return;
       }
       setStarted(payload);
       if (payload.action?.kind === "redirect" || payload.action?.kind === "test") {
@@ -124,6 +134,10 @@ export function PaymentRequestForm({
     } finally {
       setPending(false);
     }
+  }
+
+  if (started && !started.action && started.payment.status === "processing") {
+    return <p className={styles.status} role="status">Payment is being confirmed. Please wait while we check the payment status.</p>;
   }
 
   if (started?.action?.kind === "elements") {

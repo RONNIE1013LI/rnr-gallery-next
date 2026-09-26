@@ -123,7 +123,9 @@ function verifiedResult(
   intent: StripePaymentIntent,
   order: ProviderPaymentTarget,
 ): VerifiedPaymentResult {
-  const status = verifiedStatus(intent.status);
+  const status = "targetKind" in order && order.targetKind === "payment_request" &&
+      intent.status === "requires_payment_method"
+    ? "processing" : verifiedStatus(intent.status);
   return Object.freeze({
     providerReference: intent.id,
     providerStatus: intent.status,
@@ -222,8 +224,9 @@ function verifiedWebhookResult(
     ...(paymentIntent.metadata.merchant_reference
       ? { merchantReference }
       : { orderNumber: merchantReference }),
-    status: mapping.status,
-    ...(mapping.status === "failed"
+    status: paymentIntent.metadata.merchant_reference && mapping.status === "failed"
+      ? "processing" : mapping.status,
+    ...(mapping.status === "failed" && !paymentIntent.metadata.merchant_reference
       ? { sanitizedFailureCode: "payment_method_required" }
       : {}),
   });

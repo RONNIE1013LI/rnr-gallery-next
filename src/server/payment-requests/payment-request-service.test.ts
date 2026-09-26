@@ -29,6 +29,11 @@ const request: PaymentRequestRecord = Object.freeze({
 
 function repository(overrides: Partial<PaymentRequestRepository> = {}) {
   return {
+    databaseNow: vi.fn(async () => new Date("2026-09-26T00:00:00Z")),
+    activateByDigest: vi.fn(async () => request),
+    authorizeAttemptPayment: vi.fn(async () => true),
+    authorizeAttemptCapture: vi.fn(async () => true),
+    expireStaleRequests: vi.fn(async () => 0),
     createRequest: vi.fn(async () => ({ outcome: "created" as const, request })),
     findPublicByDigest: vi.fn(async () => request),
     listAdminRequests: vi.fn(async () => [request]),
@@ -71,6 +76,7 @@ describe("payment request service", () => {
     expect(store.createRequest).toHaveBeenCalledWith(expect.objectContaining({
       idempotencyKey: "payment-request-create-1",
       requestNumber: "PAY-2026-ABC123",
+      expiresAt: null,
       publicTokenDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
     }));
     expect(vi.mocked(store.createRequest).mock.calls[0][0].publicTokenDigest)
@@ -101,6 +107,7 @@ describe("payment request service", () => {
     const result = await service.publicByToken("A".repeat(43));
 
     expect(result).toEqual({
+      serverNow: "2026-09-26T00:00:00.000Z",
       requestNumber: "PAY-2026-ABC123",
       kind: "standalone",
       description: "Custom design deposit",
@@ -186,5 +193,31 @@ describe("payment request service", () => {
       receivedAt: "2026-08-18T05:00:00.000Z",
       createdAt: "2026-08-18T05:01:00.000Z",
     });
+  });
+});
+
+
+describe("payment request first-open lifecycle DTO", () => {
+  it("read-only lookups never activate and return the database clock", async () => {
+    const store = repository();
+    const service = createPaymentRequestService({ repository: store });
+    const dto = await service.publicByToken("a".repeat(43));
+    expect(store.activateByDigest).not.toHaveBeenCalled();
+    expect(dto?.serverNow).toBe("2026-09-26T00:00:00.000Z");
+    expect(dto?.expiresAt).toBeUndefined();
+  });
+
+  it("only explicit activation delegates to the atomic repository operation", async () => {
+    const store = repository({ activateByDigest: vi.fn(async () => ({ ...request, expiresAt: new Date("2026-09-26T12:00:00Z") })) });
+    const dto = await createPaymentRequestService({ repository: store }).activateByToken("a".repeat(43));
+    expect(store.activateByDigest).toHaveBeenCalledOnce();
+    expect(store.preflightAndClaimAttempt).not.toHaveBeenCalled();
+    expect(dto?.expiresAt).toBe("2026-09-26T12:00:00.000Z");
+  });
+
+  it.each(["pending", "paid", "cancelled"] as const)("maps %s at expiry without masking paid", async (status) => {
+    const store = repository({ findPublicByDigest: vi.fn(async () => ({ ...request, status, statusReason: status === "cancelled" ? "payment_link_expired" : null, expiresAt: new Date("2026-09-25T12:00:00Z") })) });
+    expect((await createPaymentRequestService({ repository: store }).publicByToken("a".repeat(43)))?.status)
+      .toBe(status === "paid" ? "paid" : "expired");
   });
 });

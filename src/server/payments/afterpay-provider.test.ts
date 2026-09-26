@@ -171,6 +171,45 @@ describe("Afterpay provider", () => {
     expect(JSON.parse(String((fetchImpl.mock.calls[1]?.[1] as RequestInit).body)).merchantReference).toBe(paymentReference);
     await expect(provider.retrieve({ order: numbered, providerReference: token })).resolves.toMatchObject({ kind: "verified", result: { orderNumber: paymentReference, status: "paid" } });
   });
+  it("checks fresh request authorization after retrieval and never captures across expiry", async () => {
+    let valid = true;
+    const fetchImpl = vi.fn().mockImplementation(async () => {
+      valid = false;
+      return new Response(JSON.stringify({ errorCode: "NOT_FOUND" }), { status: 404 });
+    });
+    const authorizeCapture = vi.fn(async () => valid);
+    const base = order();
+    const target = { ...base, targetKind: "payment_request" as const,
+      targetId: base.id, merchantReference: base.orderNumber };
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+    await expect(provider.completeReturn({ ...completeInput(), order: target, authorizeCapture }))
+      .rejects.toThrow();
+    expect(authorizeCapture).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({ method: "GET" });
+  });
+
+  it("requires request authorization for retry capture even after authoritative absence", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ errorCode: "NOT_FOUND" }), { status: 404 }));
+    const base = order();
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+    await expect(provider.retryCompletion?.({ order: { ...base, targetKind: "payment_request",
+      targetId: base.id, merchantReference: base.orderNumber }, providerReference: token,
+      idempotencyKey, attemptCreatedAt: new Date(), source: "reconciliation" })).rejects.toThrow();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes the exact Afterpay checkout with GET without creating another context", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(configuration()))
+      .mockResolvedValueOnce(jsonResponse({ ...checkoutResponse(),
+        amount: { amount: "120.75", currency: "NZD" }, merchantReference: "RNR-TEST-1001" }));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+    await expect(provider.createOrReuse({ ...sessionInput(), providerReference: token }))
+      .resolves.toMatchObject({ providerReference: token, kind: "redirect" });
+    expect(fetchImpl.mock.calls[1]?.[1]).toMatchObject({ method: "GET" });
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain(`/v2/checkouts/${token}`);
+  });
+
   describe("read-only configuration diagnostic", () => {
     it("checks Australian cross-border eligibility with one GET and returns only safe statuses", async () => {
       const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(cbtConfiguration()));

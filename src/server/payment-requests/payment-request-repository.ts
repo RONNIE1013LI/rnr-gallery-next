@@ -85,6 +85,7 @@ export type RequestAttemptClaim = Readonly<{
     providerReference: string | null;
     returnStateDigest: string | null;
     returnStateConsumedAt: Date | null;
+    sanitizedFailureCode: string | null;
     idempotencyKey: string;
     expectedAmountCents: number;
     currency: MarketCurrency;
@@ -127,6 +128,11 @@ export type OrderPaymentSummary = Readonly<{
 
 export interface PaymentRequestRepository {
   createRequest(input: CreatePaymentRequestRecordInput): Promise<CreatePaymentRequestRecordResult>;
+  databaseNow(): Promise<Date>;
+  activateByDigest(digest: string): Promise<PaymentRequestRecord | null>;
+  authorizeAttemptPayment(attemptId: string): Promise<boolean>;
+  authorizeAttemptCapture(attemptId: string): Promise<boolean>;
+  expireStaleRequests(): Promise<number>;
   findPublicByDigest(digest: string): Promise<PaymentRequestRecord | null>;
   listAdminRequests(): Promise<readonly PaymentRequestRecord[]>;
   findAdminById(id: string): Promise<PaymentRequestRecord | null>;

@@ -39,6 +39,8 @@ describe("Admin PaymentRequestForm", () => {
     vi.stubGlobal("fetch", fetchSpy);
     render(<PaymentRequestForm />);
 
+    expect(screen.queryByLabelText("Expires at (optional)")).not.toBeInTheDocument();
+    expect(screen.getByText(/12 hours from the customer/)).toBeInTheDocument();
     expect(screen.getByLabelText("Customer name (optional)")).not.toBeRequired();
     expect(screen.getByLabelText("Customer email (optional)")).not.toBeRequired();
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Custom balance" } });
@@ -46,6 +48,7 @@ describe("Admin PaymentRequestForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create payment request" }));
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).not.toHaveProperty("expiresAt");
     expect(await screen.findByText("https://rrgallery.co.nz/pay/safe-token")).toBeInTheDocument();
     expect(screen.getByText(/shown only once/i)).toBeInTheDocument();
   });

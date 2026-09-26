@@ -22,23 +22,25 @@ function defaultRequestNumber() {
   return `PAY-${year}-${suffix}`;
 }
 
-function publicDto(request: PaymentRequestRecord): PublicPaymentRequestDTO {
+function publicDto(request: PaymentRequestRecord, now: Date): PublicPaymentRequestDTO {
   return Object.freeze({
+    serverNow: now.toISOString(),
     requestNumber: request.requestNumber,
     kind: request.kind,
     ...(request.orderNumber ? { orderNumber: request.orderNumber } : {}),
     description: request.description,
     amountCents: request.amountCents,
     currency: request.currency,
-    status: request.status,
+    status: request.status !== "paid" && (request.status === "expired" || request.statusReason === "payment_link_expired" || (request.status === "pending" && request.expiresAt && request.expiresAt <= now)) ? "expired" : request.status,
     methods: Object.freeze([...request.enabledPaymentMethods]),
     ...(request.expiresAt ? { expiresAt: request.expiresAt.toISOString() } : {}),
   });
 }
 
-function adminDto(request: PaymentRequestRecord): AdminPaymentRequestDTO {
+function adminDto(request: PaymentRequestRecord, now: Date): AdminPaymentRequestDTO {
   return Object.freeze({
-    ...publicDto(request),
+    ...publicDto(request, now),
+    status: request.status,
     id: request.id,
     ...(request.orderId ? { orderId: request.orderId } : {}),
     ...(request.customerName ? { customerName: request.customerName } : {}),
@@ -88,12 +90,14 @@ export function createPaymentRequestService({
 }>) {
   return Object.freeze({
     async listAdmin(): Promise<readonly AdminPaymentRequestDTO[]> {
-      return Object.freeze((await repository.listAdminRequests()).map(adminDto));
+      const requests = await repository.listAdminRequests();
+      const now = await repository.databaseNow();
+      return Object.freeze(requests.map((request) => adminDto(request, now)));
     },
 
     async adminById(requestId: string): Promise<AdminPaymentRequestDTO | null> {
       const request = await repository.findAdminById(requestId);
-      return request ? adminDto(request) : null;
+      return request ? adminDto(request, await repository.databaseNow()) : null;
     },
 
     async orderSummary(orderId: string): Promise<AdminOrderPaymentSummaryDTO> {
@@ -115,13 +119,13 @@ export function createPaymentRequestService({
         currency: parsed.currency,
         amountCents: parsed.amountCents,
         enabledPaymentMethods: parsed.enabledPaymentMethods,
-        expiresAt: parsed.expiresAt ? new Date(parsed.expiresAt) : null,
+        expiresAt: null,
         internalNote: parsed.internalNote ?? null,
         createdBy: actorId,
         idempotencyKey: parsed.idempotencyKey,
       });
       return Object.freeze({
-        request: adminDto(created.request),
+        request: adminDto(created.request, await repository.databaseNow()),
         ...(created.outcome === "created" ? { rawToken: token.rawToken } : {}),
       });
     },
@@ -134,7 +138,14 @@ export function createPaymentRequestService({
         return null;
       }
       const request = await repository.findPublicByDigest(digest);
-      return request ? publicDto(request) : null;
+      return request ? publicDto(request, await repository.databaseNow()) : null;
+    },
+
+    async activateByToken(rawToken: string): Promise<PublicPaymentRequestDTO | null> {
+      let digest: string;
+      try { digest = digestPaymentRequestToken(rawToken); } catch { return null; }
+      const request = await repository.activateByDigest(digest);
+      return request ? publicDto(request, await repository.databaseNow()) : null;
     },
 
     async rotate(actorId: string, requestId: string): Promise<PaymentRequestCreateResult> {
@@ -145,12 +156,12 @@ export function createPaymentRequestService({
         publicTokenDigest: token.digest,
         actorId,
       });
-      return Object.freeze({ request: adminDto(request), rawToken: token.rawToken });
+      return Object.freeze({ request: adminDto(request, await repository.databaseNow()), rawToken: token.rawToken });
     },
 
     async cancel(actorId: string, requestId: string): Promise<AdminPaymentRequestDTO> {
       if (!actorId.trim()) throw new Error("Payment administrator is required");
-      return adminDto(await repository.cancel({ requestId, actorId }));
+      return adminDto(await repository.cancel({ requestId, actorId }), await repository.databaseNow());
     },
 
     async recordBankTransfer(actorId: string, input: unknown) {

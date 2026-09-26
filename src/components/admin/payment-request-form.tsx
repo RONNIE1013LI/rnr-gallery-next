@@ -43,7 +43,6 @@ export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentReq
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [internalNote, setInternalNote] = useState("");
-  const [expiresAt, setExpiresAt] = useState("");
   const [methods, setMethods] = useState<PaymentMethodKey[]>(() => computeInitialMethods(preferredMethods));
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
@@ -87,7 +86,6 @@ export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentReq
         currency: linkedOrder.currency,
         description,
         enabledPaymentMethods: methods,
-        ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
         ...(internalNote.trim() ? { internalNote } : {}),
       } : {
         kind: "standalone" as const,
@@ -98,7 +96,6 @@ export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentReq
         enabledPaymentMethods: methods,
         ...(customerName.trim() ? { customerName } : {}),
         ...(customerEmail.trim() ? { customerEmail } : {}),
-        ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
         ...(internalNote.trim() ? { internalNote } : {}),
       };
       const response = await fetch("/api/admin/payment-requests", {
@@ -158,7 +155,7 @@ export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentReq
         <label><span>Customer name (optional)</span><input aria-label="Customer name (optional)" maxLength={120} value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
         <label><span>Customer email (optional)</span><input aria-label="Customer email (optional)" maxLength={320} type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} /></label>
       </> : null}
-      <label><span>Expires at (optional)</span><input aria-label="Expires at (optional)" type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /></label>
+      <p>Link validity: 12 hours from the customer’s first open.</p>
       <label className={styles.paymentRequestWideField}><span>Internal note (optional)</span><textarea aria-label="Internal note (optional)" maxLength={2000} value={internalNote} onChange={(event) => setInternalNote(event.target.value)} /></label>
     </div>
     <fieldset className={styles.paymentRequestMethods}>

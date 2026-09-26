@@ -17,6 +17,7 @@ import type {
 } from "./types";
 import {
   PaymentProviderRequestError,
+  PaymentCaptureNotAuthorizedError,
   PaymentProviderVerificationError,
 } from "./types";
 
@@ -132,6 +133,7 @@ const paymentRequest = Object.freeze({
   statusReason: null,
   expiresAt: null,
   internalNote: null,
+  createdByName: null,
   createdAt: new Date("2026-08-18T00:00:00.000Z"),
   updatedAt: new Date("2026-08-18T00:00:00.000Z"),
 });
@@ -140,6 +142,11 @@ function paymentRequestRepository(
   overrides: Partial<PaymentRequestRepository> = {},
 ): PaymentRequestRepository {
   return {
+    databaseNow: vi.fn().mockResolvedValue(new Date()),
+    activateByDigest: vi.fn(),
+    expireStaleRequests: vi.fn().mockResolvedValue(0),
+    authorizeAttemptPayment: vi.fn().mockResolvedValue(true),
+    authorizeAttemptCapture: vi.fn().mockResolvedValue(true),
     createRequest: vi.fn(),
     findPublicByDigest: vi.fn().mockResolvedValue(paymentRequest),
     listAdminRequests: vi.fn().mockResolvedValue([]),
@@ -348,6 +355,151 @@ describe("payment service", () => {
       payloadSha256: createHash("sha256").update(rawBody).digest("hex"),
     });
     expect(orderRepo.applyVerifiedWebhookEventAtomically).not.toHaveBeenCalled();
+  });
+
+  it.each([null, new Date()])("shares the original context even when an uncaptured return was consumed at %s", async (consumedAt) => {
+    const card = provider();
+    vi.mocked(card.retrieve).mockResolvedValue({ kind: "authoritative_not_found" });
+    const payer = { fullName: "Original Payer", email: "original@example.test", phone: "" };
+    const requests = paymentRequestRepository();
+    const paymentService = service({ providers: [registration(card)], paymentRequestRepository: requests });
+    const access = { rawToken: "A".repeat(43), tokenDigest: paymentRequest.publicTokenDigest, payerSnapshot: payer };
+    await paymentService.startPaymentRequest(access, "card");
+    const original = vi.mocked(card.createOrReuse).mock.calls[0]![0];
+    const binding = vi.mocked(requests.bindProviderSession).mock.calls[0]![0];
+    vi.mocked(requests.preflightAndClaimAttempt).mockResolvedValue({ outcome: "existing", request: paymentRequest,
+      claimId: null, attempt: { ...attempt, currency: "NZD", id: original.attemptId,
+        idempotencyKey: original.idempotencyKey, expectedAmountCents: paymentRequest.amountCents,
+        status: "requires_action", providerReference: binding.providerReference,
+        returnStateDigest: binding.returnStateDigest, returnStateConsumedAt: consumedAt, payerSnapshot: payer } });
+    await expect(paymentService.startPaymentRequest({ ...access,
+      payerSnapshot: { ...payer, fullName: "Second Payer" } }, "card")).resolves.toMatchObject({ action: { kind: "test" } });
+    const resumed = vi.mocked(card.createOrReuse).mock.calls[1]![0];
+    expect(resumed).toMatchObject({ providerReference: binding.providerReference,
+      idempotencyKey: original.idempotencyKey, returnState: original.returnState,
+      order: { customer: payer } });
+  });
+
+  it.each(["paid", "failed", "cancelled"] as const)("reconciles existing request %s before deciding whether to retry", async (status) => {
+    const card = provider();
+    vi.mocked(card.retrieve).mockResolvedValue({ kind: "verified", result: {
+      providerReference: "reference", providerStatus: status, status,
+      amountCents: paymentRequest.amountCents, currency: "NZD", merchantReference: paymentRequest.requestNumber,
+    } });
+    const requests = paymentRequestRepository();
+    const claimed = await requests.preflightAndClaimAttempt({ publicTokenDigest: paymentRequest.publicTokenDigest,
+      provider: "local-test", method: "card", payerSnapshot: order.customer });
+    vi.mocked(requests.preflightAndClaimAttempt).mockClear().mockResolvedValueOnce({
+      outcome: "existing", request: paymentRequest, claimId: null, attempt: {
+        ...attempt, currency: "NZD", providerReference: "reference", payerSnapshot: order.customer,
+      },
+    }).mockResolvedValueOnce(claimed);
+    const paymentService = service({ providers: [registration(card)], paymentRequestRepository: requests });
+    const result = await paymentService.startPaymentRequest({ rawToken: "A".repeat(43),
+      tokenDigest: paymentRequest.publicTokenDigest, payerSnapshot: order.customer }, "card");
+    expect(requests.applyVerifiedResult).toHaveBeenCalledWith(expect.objectContaining({ result: expect.objectContaining({ status }) }));
+    if (status === "paid") {
+      expect(result).toMatchObject({ payment: { status: "paid" }, action: null });
+      expect(card.createOrReuse).not.toHaveBeenCalled();
+    } else {
+      expect(requests.preflightAndClaimAttempt).toHaveBeenCalledTimes(2);
+      expect(card.createOrReuse).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("keeps missing-reference attempts processing without a second provider creation", async () => {
+    const card = provider();
+    const requests = paymentRequestRepository({ preflightAndClaimAttempt: vi.fn().mockResolvedValue({
+      outcome: "existing", request: paymentRequest, claimId: null,
+      attempt: { ...attempt, payerSnapshot: null },
+    }) });
+    const paymentService = service({ providers: [registration(card)], paymentRequestRepository: requests });
+    await expect(paymentService.startPaymentRequest({ rawToken: "A".repeat(43),
+      tokenDigest: paymentRequest.publicTokenDigest, payerSnapshot: order.customer }, "card"))
+      .resolves.toMatchObject({ payment: { status: "processing" }, action: null });
+    expect(card.createOrReuse).not.toHaveBeenCalled();
+  });
+
+  it("skips order providers entirely for the request expiry worker", async () => {
+    const orderRepo = repository();
+    const requests = paymentRequestRepository();
+    await service({ repository: orderRepo, paymentRequestRepository: requests })
+      .reconcilePendingPayments({ paymentRequestsOnly: true });
+    expect(orderRepo.claimReconciliationCandidates).not.toHaveBeenCalled();
+    expect(requests.claimReconciliationCandidates).toHaveBeenCalledOnce();
+  });
+
+  it("gives requests an independent reconciliation budget despite fifty queued orders", async () => {
+    const orderRepo = repository({ claimReconciliationCandidates: vi.fn().mockResolvedValue([{
+      claimId: "order-claim", attempt: { ...attempt, providerReference: null },
+      order: { ...order, paymentStatus: "processing" },
+    }]) });
+    const requests = paymentRequestRepository();
+    const paymentService = service({ repository: orderRepo, paymentRequestRepository: requests });
+    await paymentService.reconcilePendingPayments();
+    expect(orderRepo.claimReconciliationCandidates).toHaveBeenCalledTimes(50);
+    expect(requests.claimReconciliationCandidates).toHaveBeenCalledOnce();
+  });
+
+  it("retains expired uncertain capture on provider absence after the capture lease elapsed", async () => {
+    const card = { ...provider(), retryCompletion: vi.fn() };
+    vi.mocked(card.retrieve).mockResolvedValue({ kind: "authoritative_not_found" });
+    const requests = paymentRequestRepository({
+      authorizeAttemptPayment: vi.fn().mockResolvedValue(false),
+      claimReconciliationCandidates: vi.fn().mockResolvedValueOnce([{ request: paymentRequest,
+        claimId: "reconciliation-after-capture-timeout", attempt: { ...attempt,
+          providerReference: "reference", payerSnapshot: order.customer,
+          returnStateConsumedAt: new Date(), sanitizedFailureCode: "capture_outcome_unknown" } }]).mockResolvedValue([]),
+    });
+    const paymentService = service({ providers: [registration(card)], paymentRequestRepository: requests });
+    await expect(paymentService.reconcilePendingPayments()).resolves.toMatchObject({ pending: 1, applied: 0 });
+    expect(card.retryCompletion).not.toHaveBeenCalled();
+    expect(requests.applyReconciliationResult).not.toHaveBeenCalled();
+    expect(requests.recordReconciliationOutcome).toHaveBeenCalledWith(expect.objectContaining({ code: "capture_outcome_unknown" }));
+  });
+
+  it("uses the atomic capture lease instead of read-only payment authorization on request return", async () => {
+    const state = "c".repeat(64);
+    const reference = "afterpay_persisted_123";
+    const afterpay: PaymentProvider = { ...provider("afterpay"), key: "afterpay",
+      completeReturn: vi.fn(async (input) => {
+        if (!await input.authorizeCapture?.()) throw new PaymentCaptureNotAuthorizedError();
+        throw new Error("capture must not happen while reconciliation owns the lease");
+      }),
+    };
+    const requests = paymentRequestRepository({
+      authorizeAttemptCapture: vi.fn().mockResolvedValue(false),
+      consumeReturnState: vi.fn().mockResolvedValue({ outcome: "consumed", request: paymentRequest,
+        attempt: { ...attempt, provider: "afterpay", method: "afterpay", providerReference: reference,
+          returnStateDigest: createHash("sha256").update(state).digest("hex"),
+          expectedAmountCents: paymentRequest.amountCents, payerSnapshot: order.customer } }),
+    });
+    const paymentService = service({ providers: [{ ...registration(afterpay), isTest: false }], paymentRequestRepository: requests });
+    const paymentToken = "A".repeat(43);
+    await expect(paymentService.handleReturn({ provider: "afterpay", method: "afterpay",
+      orderNumber: paymentRequest.requestNumber, returnState: state, providerReference: reference,
+      paymentToken, returnUrl: new URL("https://trusted.example.test/api/payments/returns/afterpay") }))
+      .resolves.toEqual({ paymentToken });
+    expect(requests.authorizeAttemptCapture).toHaveBeenCalledWith(attempt.id);
+    expect(requests.authorizeAttemptPayment).not.toHaveBeenCalled();
+    expect(requests.applyVerifiedResult).not.toHaveBeenCalled();
+  });
+
+  it.each(["authoritative_not_found", "authoritative_not_received"] as const)("passive expired request reconciliation never captures after %s", async (kind) => {
+    const card = { ...provider(), retryCompletion: vi.fn() };
+    vi.mocked(card.retrieve).mockResolvedValue({ kind });
+    const requests = paymentRequestRepository({
+      authorizeAttemptPayment: vi.fn().mockResolvedValue(false),
+      claimReconciliationCandidates: vi.fn().mockResolvedValueOnce([{ request: paymentRequest,
+        claimId: "claim", attempt: { ...attempt, providerReference: "reference",
+          payerSnapshot: order.customer } }]).mockResolvedValue([]),
+    });
+    const paymentService = service({ providers: [registration(card)], paymentRequestRepository: requests });
+    await paymentService.reconcilePendingPayments();
+    expect(card.retryCompletion).not.toHaveBeenCalled();
+    expect(requests.applyReconciliationResult).toHaveBeenCalledWith(expect.objectContaining({
+      result: expect.objectContaining({ status: "cancelled" }),
+    }));
   });
 
   it("starts a fixed standalone Payment Request through the shared provider", async () => {

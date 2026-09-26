@@ -52,6 +52,23 @@ describe("payment request start", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  it.each(["paid", "expired"])("returns the latest %s lifecycle without starting payment", async (status) => {
+    const start = vi.fn();
+    const route = createPaymentRequestPaymentRoute({ publicByToken: vi.fn().mockResolvedValue({ status }), start, origin });
+    const response = await route.POST(request({}), { params: Promise.resolve({ token }) });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ status });
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it("returns explicit expiry when the DB deadline crosses after public precheck", async () => {
+    const route = createPaymentRequestPaymentRoute({ publicByToken: vi.fn().mockResolvedValue({ status: "pending" }),
+      start: vi.fn().mockRejectedValue(new PaymentRequestConflictError("This payment link has expired")), origin });
+    const response = await route.POST(request({ method: "card", fullName: "Customer", email: "payer@example.test", idempotencyKey: "public-payment-expired" }), { params: Promise.resolve({ token }) });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ status: "expired" });
+  });
+
   it("returns 409 when a fresh server balance check invalidates the request", async () => {
     const route = createPaymentRequestPaymentRoute({
       publicByToken: vi.fn().mockResolvedValue({ status: "pending" }),

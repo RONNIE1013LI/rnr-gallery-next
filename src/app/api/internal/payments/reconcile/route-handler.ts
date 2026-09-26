@@ -79,20 +79,24 @@ function defaults(): Dependencies {
       paymentService: null,
     });
   }
-  const database = getDatabase();
-  const providers = selectPaymentProviders(config);
   return Object.freeze({
     reconciliationSecret: config.operations.reconciliationSecret,
-    paymentService: createPaymentService({
-      repository: createDrizzlePaymentRepository(database),
-      paymentRequestRepository: createDrizzlePaymentRequestRepository(database),
-      checkoutAuthority: createDrizzleCheckoutRepository(database),
-      providers,
-      returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
-      onVerifiedPaidOrder: createMetaPaidOrderObserver((task) => after(task)),
-      onNotificationOutboxAvailable: createImmediateNotificationDeliveryObserver({
-        scheduleAfter: (task) => after(task),
-      }),
+    paymentService: createInternalPaymentReconciliationService(),
+  });
+}
+
+export function createInternalPaymentReconciliationService() {
+  const config = parsePaymentConfig();
+  const database = getDatabase();
+  return createPaymentService({
+    repository: createDrizzlePaymentRepository(database),
+    paymentRequestRepository: createDrizzlePaymentRequestRepository(database),
+    checkoutAuthority: createDrizzleCheckoutRepository(database),
+    providers: selectPaymentProviders(config),
+    returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
+    onVerifiedPaidOrder: createMetaPaidOrderObserver((task) => after(task)),
+    onNotificationOutboxAvailable: createImmediateNotificationDeliveryObserver({
+      scheduleAfter: (task) => after(task),
     }),
   });
 }

@@ -81,6 +81,18 @@ function client(
 }
 
 describe("Stripe payment provider", () => {
+  it("keeps an unconfirmed request intent reusable on retrieval and failure webhook", async () => {
+    const target: PaymentTargetSnapshot = { ...order, targetKind: "payment_request", targetId: "request",
+      merchantReference: "PAY-TEST" };
+    const intent = { ...baseIntent, status: "requires_payment_method", metadata: { merchant_reference: "PAY-TEST" } };
+    const stripe = client(intent, webhookEvent("payment_intent.payment_failed", intent));
+    const provider = createStripeProvider({ config, client: stripe });
+    await expect(provider.retrieve({ order: target, providerReference: intent.id }))
+      .resolves.toMatchObject({ kind: "verified", result: { status: "processing" } });
+    await expect(provider.verifyWebhook?.(new Uint8Array(), new Headers({ "stripe-signature": "signature" })))
+      .resolves.toMatchObject({ result: { status: "processing" } });
+  });
+
   it("preserves opaque metadata for a paid numbered order and provider retrieval", async () => {
     const paymentReference = "RNR-PENDING-OPAQUE";
     const numbered = { ...order, orderNumber: "07327", paymentReference };

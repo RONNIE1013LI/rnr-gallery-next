@@ -8,6 +8,7 @@ import type {
 } from "@/server/db/schema/payments";
 
 export type PublicPaymentRequestDTO = Readonly<{
+  serverNow: string;
   requestNumber: string;
   kind: PaymentRequestKind;
   orderNumber?: string;

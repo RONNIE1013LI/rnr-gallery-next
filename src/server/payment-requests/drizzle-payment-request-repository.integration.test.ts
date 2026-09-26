@@ -197,6 +197,7 @@ async function remember(
 ) {
   const { request: record } = await promise;
   requestIds.push(record.id);
+  await repository.activateByDigest(record.publicTokenDigest);
   return record;
 }
 
@@ -897,5 +898,128 @@ describe("payment request balance transactions", () => {
       item.eventKey === `admin-payment-request-received:${paidRequest.id}:${actorId}`
     )).toHaveLength(0);
     expect(notificationsAfterSecondRepair).toHaveLength(notifications.length);
+  });
+
+  it("starts unopened, activates concurrently once for exactly 12 DB-clock hours, and never creates an attempt", async () => {
+    const input = { ...orderRequest("unused", 2000), kind: "standalone" as const, orderId: null };
+    const { request } = await repository.createRequest(input);
+    requestIds.push(request.id);
+    expect(request.expiresAt).toBeNull();
+    expect((await repository.findPublicByDigest(input.publicTokenDigest))?.expiresAt).toBeNull();
+    await expect(repository.preflightAndClaimAttempt({ publicTokenDigest: input.publicTokenDigest, provider: "stripe", method: "card", payerSnapshot: null })).rejects.toThrow("not payable");
+    const before = await repository.databaseNow();
+    const opened = await Promise.all(Array.from({ length: 8 }, () => repository.activateByDigest(input.publicTokenDigest)));
+    const after = await repository.databaseNow();
+    const expiries = opened.map((row) => row!.expiresAt!.getTime());
+    expect(new Set(expiries).size).toBe(1);
+    expect(expiries[0]).toBeGreaterThanOrEqual(before.getTime() + 12 * 60 * 60 * 1000);
+    expect(expiries[0]).toBeLessThanOrEqual(after.getTime() + 12 * 60 * 60 * 1000);
+    expect((await repository.activateByDigest(input.publicTokenDigest))?.expiresAt?.getTime()).toBe(expiries[0]);
+    expect(await database.select().from(paymentAttempts).where(eq(paymentAttempts.paymentRequestId, request.id))).toHaveLength(0);
+  });
+
+  it("serializes concurrent payer starts onto one active provider context", async () => {
+    const request = await remember(repository.createRequest({ ...orderRequest("unused", 2000), kind: "standalone", orderId: null }));
+    const claims = await Promise.all(Array.from({ length: 6 }, () => repository.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "stripe", method: "card", payerSnapshot: null })));
+    expect(new Set(claims.map((claim) => claim.attempt.id)).size).toBe(1);
+    expect(claims.filter((claim) => claim.outcome === "claimed")).toHaveLength(1);
+    expect(await database.select().from(paymentAttempts).where(eq(paymentAttempts.paymentRequestId, request.id))).toHaveLength(1);
+    const differentMethod = await repository.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "afterpay", method: "afterpay", payerSnapshot: null });
+    expect(differentMethod).toMatchObject({ outcome: "existing", attempt: { id: claims[0].attempt.id, provider: "stripe" } });
+  });
+
+  it("preserves the original payer when reclaiming an expired session lease", async () => {
+    const request = await remember(repository.createRequest({ ...orderRequest("unused", 2000), kind: "standalone", orderId: null }));
+    const originalPayer = { fullName: "Original Payer", email: "original@example.test", phone: "" };
+    const claim = await repository.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "stripe", method: "card", payerSnapshot: originalPayer });
+    await database.update(paymentAttempts).set({ providerSessionLeaseExpiresAt: new Date(Date.now() - 1000) }).where(eq(paymentAttempts.id, claim.attempt.id));
+    const retry = await repository.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "stripe", method: "card", payerSnapshot: { fullName: "Other Payer", email: "other@example.test", phone: "" } });
+    expect(retry.outcome).toBe("claimed");
+    expect(retry.attempt.id).toBe(claim.attempt.id);
+    expect(retry.attempt.idempotencyKey).toBe(claim.attempt.idempotencyKey);
+    expect(retry.attempt.payerSnapshot).toEqual(originalPayer);
+  });
+
+  it("serializes capture authorization against passive reconciliation", async () => {
+    const request = await remember(repository.createRequest({ ...orderRequest("unused", 2000), kind: "standalone", orderId: null }));
+    const claim = await repository.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "afterpay", method: "afterpay", payerSnapshot: null });
+    await repository.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference: `ap_lease_${randomUUID()}`, returnStateDigest: "7".repeat(64), status: "requires_action" });
+    expect(await repository.authorizeAttemptCapture(claim.attempt.id)).toBe(true);
+    expect(await repository.authorizeAttemptCapture(claim.attempt.id)).toBe(false);
+    const [capturing] = await database.select().from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
+    expect(capturing.sanitizedFailureCode).toBe("capture_outcome_unknown");
+    const cancelledCallback = await repository.applyVerifiedResult({ attemptId: claim.attempt.id, source: "browser_return", result: {
+      providerReference: capturing.providerReference!, providerStatus: "CANCELLED:NOT_FOUND", amountCents: 2000,
+      currency: "NZD", merchantReference: request.requestNumber, status: "cancelled",
+    } });
+    expect(cancelledCallback.attempt.status).toBe("processing");
+    expect(cancelledCallback.attempt.sanitizedFailureCode).toBe("capture_outcome_unknown");
+    const resumed = await repository.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "afterpay", method: "afterpay", payerSnapshot: null });
+    expect(resumed).toMatchObject({ outcome: "existing", attempt: { id: claim.attempt.id } });
+    expect(await database.select().from(paymentAttempts).where(eq(paymentAttempts.paymentRequestId, request.id))).toHaveLength(1);
+    await repository.applyVerifiedResult({ attemptId: claim.attempt.id, source: "reconciliation", result: {
+      providerReference: capturing.providerReference!, providerStatus: "unknown", amountCents: 2000,
+      currency: "NZD", merchantReference: request.requestNumber, status: "processing", sanitizedFailureCode: "RETURN_STATUS_UNKNOWN",
+    } });
+    const [uncertain] = await database.select().from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
+    expect(uncertain.sanitizedFailureCode).toBe("capture_outcome_unknown");
+    expect(uncertain.providerSessionLeaseId).toBe(capturing.providerSessionLeaseId);
+    await database.update(paymentRequests).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(paymentRequests.id, request.id));
+    const candidates = await repository.claimReconciliationCandidates(50);
+    expect(candidates.some((candidate) => candidate.attempt.id === claim.attempt.id)).toBe(false);
+    await repository.expireStaleRequests();
+    expect((await repository.findPublicByDigest(request.publicTokenDigest))?.status).toBe("pending");
+    await repository.applyVerifiedResult({ attemptId: claim.attempt.id, source: "reconciliation", result: {
+      providerReference: capturing.providerReference!, providerStatus: "EXPIRED_AUTHORITATIVE_ABSENCE", amountCents: 2000,
+      currency: "NZD", merchantReference: request.requestNumber, status: "cancelled", sanitizedFailureCode: "expired_authoritative_absence",
+    } });
+    expect((await repository.findPublicByDigest(request.publicTokenDigest))?.status).toBe("pending");
+  });
+
+  it("denies capture while cron owns the lease and lets an unsubmitted return retry after release", async () => {
+    const request = await remember(repository.createRequest({ ...orderRequest("unused", 2000), kind: "standalone", orderId: null }));
+    const claim = await repository.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "afterpay", method: "afterpay", payerSnapshot: null });
+    const providerReference = `ap_retry_${randomUUID()}`;
+    const digest = "8".repeat(64);
+    await repository.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference, returnStateDigest: digest, status: "requires_action" });
+    await database.update(paymentAttempts).set({ updatedAt: new Date(Date.now() - 120000) }).where(eq(paymentAttempts.id, claim.attempt.id));
+    const candidate = (await repository.claimReconciliationCandidates(50)).find((item) => item.attempt.id === claim.attempt.id)!;
+    expect(candidate).toBeDefined();
+    const returnInput = { provider: "afterpay" as const, method: "afterpay" as const, digest, publicTokenDigest: request.publicTokenDigest, merchantReference: request.requestNumber, providerReference };
+    expect((await repository.consumeReturnState(returnInput))?.outcome).toBe("consumed");
+    expect(await repository.authorizeAttemptCapture(claim.attempt.id)).toBe(false);
+    await repository.recordReconciliationOutcome({ attemptId: claim.attempt.id, claimId: candidate.claimId, code: "reconciliation_pending" });
+    expect((await repository.consumeReturnState(returnInput))?.outcome).toBe("consumed");
+    expect(await repository.authorizeAttemptCapture(claim.attempt.id)).toBe(true);
+    expect((await repository.consumeReturnState(returnInput))?.outcome).toBe("already_consumed");
+    await database.update(paymentRequests).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(paymentRequests.id, request.id));
+    expect(await repository.authorizeAttemptCapture(claim.attempt.id)).toBe(false);
+  });
+
+  it("cancels expired requests without attempts and permanently rejects activation, rotate, and payment", async () => {
+    const request = await remember(repository.createRequest({ ...orderRequest("unused", 2000), kind: "standalone", orderId: null }));
+    const deadline = new Date(Date.now() - 1000);
+    await database.update(paymentRequests).set({ expiresAt: deadline }).where(eq(paymentRequests.id, request.id));
+    await repository.expireStaleRequests();
+    const opened = await repository.activateByDigest(request.publicTokenDigest);
+    expect(opened).toMatchObject({ status: "cancelled", statusReason: "payment_link_expired", expiresAt: deadline });
+    await expect(repository.rotateToken({ requestId: request.id, actorId, publicTokenDigest: "z".repeat(64) })).rejects.toThrow();
+    await expect(repository.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "stripe", method: "card", payerSnapshot: null })).rejects.toThrow("expired");
+  });
+
+  it.each(["failed", "paid"] as const)("keeps active expired payments for reconciliation and safely converges provider %s", async (status) => {
+    const request = await remember(repository.createRequest({ ...orderRequest("unused", 2000), kind: "standalone", orderId: null }));
+    const claim = await repository.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "stripe", method: "card", payerSnapshot: null });
+    expect(await repository.authorizeAttemptPayment(claim.attempt.id)).toBe(true);
+    await repository.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference: `pi_expiry_${randomUUID()}`, returnStateDigest: null, status: "processing" });
+    await database.update(paymentRequests).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(paymentRequests.id, request.id));
+    await repository.expireStaleRequests();
+    expect((await repository.findPublicByDigest(request.publicTokenDigest))?.status).toBe("pending");
+    expect(await repository.authorizeAttemptPayment(claim.attempt.id)).toBe(false);
+    const [attempt] = await database.select().from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
+    await repository.applyVerifiedResult({ attemptId: attempt.id, source: "reconciliation", result: { providerStatus: status, providerReference: attempt.providerReference!, status, amountCents: 2000, currency: "NZD", merchantReference: request.requestNumber } });
+    const final = await repository.findPublicByDigest(request.publicTokenDigest);
+    expect(final?.status).toBe(status === "paid" ? "paid" : "cancelled");
+    expect(final?.statusReason).toBe(status === "paid" ? null : "payment_link_expired");
   });
 });

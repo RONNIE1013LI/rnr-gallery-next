@@ -18,7 +18,6 @@ const requestFields = {
   currency: currencySchema,
   description: z.string().trim().min(1).max(500),
   enabledPaymentMethods: enabledPaymentMethodsSchema,
-  expiresAt: z.string().datetime().optional(),
   internalNote: optionalText(2_000),
 };
 

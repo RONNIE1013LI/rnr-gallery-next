@@ -114,7 +114,6 @@ function sameRequestInput(row: RequestRow, input: CreatePaymentRequestRecordInpu
     row.currency === input.currency &&
     row.amountCents === input.amountCents &&
     JSON.stringify(row.enabledPaymentMethods) === JSON.stringify(input.enabledPaymentMethods) &&
-    row.expiresAt?.getTime() === input.expiresAt?.getTime() &&
     row.internalNote === input.internalNote;
 }
 
@@ -160,19 +159,29 @@ async function expireStaleRequests(
   now: Date,
   orderId?: string,
 ) {
-  await transaction.execute(sql`
+  const result = await transaction.execute(sql`
+    with candidates as materialized (
+      select id from ${paymentRequests}
+      where status = 'pending' and expires_at is not null and expires_at <= ${now}
+        ${orderId ? sql`and order_id = ${orderId}` : sql``}
+      for update skip locked
+    )
     update ${paymentRequests} as request
-    set status = 'expired', status_reason = 'expired', updated_at = ${now}
-    where request.status = 'pending'
+    set status = 'cancelled', status_reason = 'payment_link_expired',
+        cancelled_at = ${now}, cancelled_by = null, updated_at = ${now}
+    where request.id in (select id from candidates)
+      and request.status = 'pending'
       and request.expires_at is not null
       and request.expires_at <= ${now}
       ${orderId ? sql`and request.order_id = ${orderId}` : sql``}
       and not exists (
         select 1 from ${paymentAttempts} as attempt
         where attempt.payment_request_id = request.id
-          and attempt.status in ('created', 'requires_action', 'processing')
+          and attempt.status in ('created', 'requires_action', 'processing', 'paid')
       )
+    returning request.id
   `);
+  return result.rows.length;
 }
 
 async function ledgerRowsForOrder(transaction: Transaction, orderId: string) {
@@ -292,6 +301,7 @@ function attemptClaimRecord(
       providerReference: attempt.providerReference,
       returnStateDigest: attempt.returnStateDigest,
       returnStateConsumedAt: attempt.returnStateConsumedAt,
+      sanitizedFailureCode: attempt.sanitizedFailureCode,
       idempotencyKey: attempt.idempotencyKey,
       expectedAmountCents: attempt.expectedAmountCents,
       currency: attempt.currency,
@@ -355,12 +365,20 @@ async function applyRequestVerifiedResult(
   const now = await databaseNow(transaction);
   const nextStatus: PaymentAttemptStatus = attempt.status === "paid"
     ? "paid"
-    : input.result.status;
+    : attempt.sanitizedFailureCode === "capture_outcome_unknown"
+      && (input.result.sanitizedFailureCode === "expired_authoritative_absence"
+        || input.result.providerStatus === "CANCELLED:NOT_FOUND")
+      ? "processing"
+      : input.result.status;
   const [updatedAttempt] = await transaction.update(paymentAttempts).set({
     status: nextStatus,
-    sanitizedFailureCode: input.result.sanitizedFailureCode ?? null,
-    providerSessionLeaseId: null,
-    providerSessionLeaseExpiresAt: null,
+    sanitizedFailureCode: nextStatus === "processing" && attempt.sanitizedFailureCode === "capture_outcome_unknown"
+      ? "capture_outcome_unknown"
+      : input.result.sanitizedFailureCode ?? null,
+    // Keep the bounded capture lease after an uncertain/processing result.
+    // A timed-out HTTP response is not proof that provider work has stopped.
+    providerSessionLeaseId: nextStatus === "processing" ? attempt.providerSessionLeaseId : null,
+    providerSessionLeaseExpiresAt: nextStatus === "processing" ? attempt.providerSessionLeaseExpiresAt : null,
     updatedAt: now,
   }).where(eq(paymentAttempts.id, attempt.id)).returning(paymentAttemptCoreColumns);
 
@@ -420,6 +438,11 @@ async function applyRequestVerifiedResult(
       await updateOrderPaymentStatus(transaction, order, now, newInvoiceJobs);
       await reconcileOrderRequests(transaction, order, now);
     }
+  }
+  if (nextStatus !== "paid" && !nonterminalAttempts.includes(nextStatus)) {
+    await expireStaleRequests(transaction, now, request.orderId ?? undefined);
+    [updatedRequest] = await transaction.select().from(paymentRequests)
+      .where(eq(paymentRequests.id, request.id)).limit(1);
   }
   return requestAttemptResult(
     requestRecord(updatedRequest, order?.orderNumber ?? null),
@@ -514,7 +537,7 @@ export function createDrizzlePaymentRequestRepository(
           currency: input.currency,
           amountCents: input.amountCents,
           enabledPaymentMethods: input.enabledPaymentMethods,
-          expiresAt: input.expiresAt,
+          expiresAt: null,
           internalNote: input.internalNote,
           createdBy: input.createdBy,
         }).onConflictDoNothing({
@@ -540,27 +563,73 @@ export function createDrizzlePaymentRequestRepository(
       });
     },
 
+    async databaseNow() {
+      return database.transaction(databaseNow);
+    },
+
+    async activateByDigest(digest) {
+      await database.update(paymentRequests).set({
+        expiresAt: sql`clock_timestamp() + interval '12 hours'`,
+        updatedAt: sql`clock_timestamp()`,
+      }).where(and(
+        eq(paymentRequests.publicTokenDigest, digest),
+        eq(paymentRequests.status, "pending"),
+        isNull(paymentRequests.expiresAt),
+      ));
+      return repository.findPublicByDigest(digest);
+    },
+
+    async authorizeAttemptPayment(attemptId) {
+      const [row] = await database.select({ id: paymentAttempts.id })
+        .from(paymentAttempts)
+        .innerJoin(paymentRequests, eq(paymentRequests.id, paymentAttempts.paymentRequestId))
+        .where(and(
+          eq(paymentAttempts.id, attemptId),
+          inArray(paymentAttempts.status, nonterminalAttempts),
+          eq(paymentRequests.status, "pending"),
+          isNotNull(paymentRequests.expiresAt),
+          sql`${paymentRequests.expiresAt} > clock_timestamp()`,
+        )).limit(1);
+      return Boolean(row);
+    },
+
+    async authorizeAttemptCapture(attemptId) {
+      // The capture and reconciliation paths share one lease. A passive not-found
+      // observation must never close an attempt while its capture is in flight.
+      const result = await database.execute(sql`
+        update ${paymentAttempts} as attempt
+        set provider_session_lease_id = ${randomUUID()},
+            sanitized_failure_code = 'capture_outcome_unknown',
+            provider_session_lease_expires_at = clock_timestamp() + (${Math.max(60_000, leaseDurationMs)} * interval '1 millisecond'),
+            updated_at = clock_timestamp()
+        where attempt.id = ${attemptId}
+          and attempt.status in ('created', 'requires_action', 'processing')
+          and (attempt.provider_session_lease_id is null
+            or attempt.provider_session_lease_expires_at <= clock_timestamp())
+          and exists (
+            select 1 from ${paymentRequests} as request
+            where request.id = attempt.payment_request_id
+              and request.status = 'pending'
+              and request.expires_at > clock_timestamp()
+          )
+        returning attempt.id
+      `);
+      return result.rows.length === 1;
+    },
+
+    async expireStaleRequests() {
+      return database.transaction(async (transaction) =>
+        expireStaleRequests(transaction, await databaseNow(transaction)));
+    },
+
     async findPublicByDigest(digest) {
-      return database.transaction(async (transaction) => {
-        const [candidate] = await transaction.select({
-          request: paymentRequests,
-          orderNumber: orders.orderNumber,
-        }).from(paymentRequests)
-          .leftJoin(orders, eq(orders.id, paymentRequests.orderId))
-          .where(eq(paymentRequests.publicTokenDigest, digest))
-          .limit(1);
-        if (!candidate) return null;
-        const now = await databaseNow(transaction);
-        await expireStaleRequests(transaction, now, candidate.request.orderId ?? undefined);
-        const [current] = await transaction.select({
-          request: paymentRequests,
-          orderNumber: orders.orderNumber,
-        }).from(paymentRequests)
-          .leftJoin(orders, eq(orders.id, paymentRequests.orderId))
-          .where(eq(paymentRequests.id, candidate.request.id))
-          .limit(1);
-        return current ? requestRecord(current.request, current.orderNumber) : null;
-      });
+      const [row] = await database.select({
+        request: paymentRequests,
+        orderNumber: orders.orderNumber,
+      }).from(paymentRequests)
+        .leftJoin(orders, eq(orders.id, paymentRequests.orderId))
+        .where(eq(paymentRequests.publicTokenDigest, digest)).limit(1);
+      return row ? requestRecord(row.request, row.orderNumber) : null;
     },
 
     async listAdminRequests() {
@@ -620,7 +689,7 @@ export function createDrizzlePaymentRequestRepository(
           )).limit(1);
         const [current] = await transaction.select().from(paymentRequests)
           .where(eq(paymentRequests.id, request.id)).for("update").limit(1);
-        if (!current || current.status !== "pending" || activeAttempt) {
+        if (!current || current.status !== "pending" || activeAttempt || (current.expiresAt && current.expiresAt <= now)) {
           throw new PaymentRequestConflictError("Payment token cannot be rotated");
         }
         const [updated] = await transaction.update(paymentRequests).set({
@@ -835,7 +904,10 @@ export function createDrizzlePaymentRequestRepository(
         await expireStaleRequests(transaction, now, request.orderId ?? undefined);
         const [current] = await transaction.select().from(paymentRequests)
           .where(eq(paymentRequests.id, request.id)).for("update").limit(1);
-        if (!current || current.status !== "pending") return null;
+        if (current?.expiresAt && current.expiresAt <= now) {
+          throw new PaymentRequestConflictError("This payment link has expired");
+        }
+        if (!current || current.status !== "pending" || !current.expiresAt) return null;
         if (!current.enabledPaymentMethods.includes(input.method)) {
           throw new PaymentRequestConflictError("Payment method is unavailable");
         }
@@ -857,7 +929,7 @@ export function createDrizzlePaymentRequestRepository(
         const record = requestRecord(current, orderNumber);
         if (existing) {
           if (existing.provider !== input.provider || existing.method !== input.method) {
-            throw new PaymentRequestConflictError("Another payment method is in progress");
+            return attemptClaimRecord("existing", record, existing, null);
           }
           const activeLease = existing.providerSessionLeaseExpiresAt
             && existing.providerSessionLeaseExpiresAt > now;
@@ -868,7 +940,6 @@ export function createDrizzlePaymentRequestRepository(
           const [reclaimed] = await transaction.update(paymentAttempts).set({
             providerSessionLeaseId: claimId,
             providerSessionLeaseExpiresAt: new Date(now.getTime() + leaseDurationMs),
-            payerSnapshot: input.payerSnapshot,
             updatedAt: now,
           }).where(eq(paymentAttempts.id, existing.id)).returning(paymentAttemptCoreColumns);
           return attemptClaimRecord("claimed", record, reclaimed, claimId);
@@ -976,13 +1047,25 @@ export function createDrizzlePaymentRequestRepository(
           request.requestNumber !== input.merchantReference ||
           request.publicTokenDigest !== input.publicTokenDigest
         ) return null;
+        const now = await databaseNow(transaction);
         if (attempt.returnStateConsumedAt) {
+          // A busy reconciliation lease may have prevented the first callback
+          // from capturing. Permit retry only when no capture was dispatched.
+          if (request.status === "pending" && request.expiresAt && request.expiresAt > now
+            && nonterminalAttempts.includes(attempt.status)
+            && attempt.sanitizedFailureCode !== "capture_outcome_unknown") {
+            const record = requestRecord(request, order?.orderNumber ?? null);
+            return Object.freeze({
+              outcome: "consumed" as const,
+              request: record,
+              attempt: attemptClaimRecord("existing", record, attempt, null).attempt,
+            });
+          }
           return Object.freeze({
             outcome: "already_consumed" as const,
             requestNumber: request.requestNumber,
           });
         }
-        const now = await databaseNow(transaction);
         if (attempt.createdAt.getTime() + 24 * 60 * 60 * 1000 <= now.getTime()) return null;
         const [updated] = await transaction.update(paymentAttempts).set({
           returnStateConsumedAt: now,
@@ -1082,8 +1165,7 @@ export function createDrizzlePaymentRequestRepository(
           from ${paymentAttempts} as attempts
           inner join ${paymentRequests} as requests
             on requests.id = attempts.payment_request_id
-          where attempts.status in ('requires_action', 'processing')
-            and attempts.provider_reference is not null
+          where attempts.status in ('created', 'requires_action', 'processing')
             and requests.status = 'pending'
             and (
               attempts.provider_session_lease_id is null
@@ -1143,7 +1225,7 @@ export function createDrizzlePaymentRequestRepository(
       await database.update(paymentAttempts).set({
         providerSessionLeaseId: null,
         providerSessionLeaseExpiresAt: null,
-        sanitizedFailureCode: input.code.slice(0, 120),
+        sanitizedFailureCode: sql`case when ${paymentAttempts.sanitizedFailureCode} = 'capture_outcome_unknown' then 'capture_outcome_unknown' else ${input.code.slice(0, 120)} end`,
         updatedAt: new Date(),
       }).where(and(
         eq(paymentAttempts.id, input.attemptId),

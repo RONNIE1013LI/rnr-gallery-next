@@ -2,16 +2,17 @@ import { randomBytes } from "node:crypto";
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 
-const { notFound, publicByToken, methods } = vi.hoisted(() => ({
+const { notFound, publicByToken, methods, activate } = vi.hoisted(() => ({
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
   publicByToken: vi.fn(),
+  activate: vi.fn(),
   methods: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/server/payment-requests/public-payment-request-runtime", () => ({
   getPublicPaymentRequestRuntime: () => ({
-    requests: { publicByToken },
+    requests: { publicByToken, activate },
     payments: { availableMethodsForPaymentRequest: methods },
   }),
 }));
@@ -84,6 +85,7 @@ describe("Payment Request page", () => {
     });
     expect(publicByToken).not.toHaveBeenCalled();
     expect(methods).not.toHaveBeenCalled();
+    expect(activate).not.toHaveBeenCalled();
   });
 
   it("serves a baseline 1200 by 630 JPEG social asset", async () => {
@@ -102,5 +104,6 @@ describe("Payment Request page", () => {
     expect(publicByToken).toHaveBeenCalledWith(token);
     expect(methods).toHaveBeenCalledWith(token, expect.stringMatching(/^[0-9a-f]{64}$/));
     expect(output).toBeTruthy();
+    expect(activate).not.toHaveBeenCalled();
   });
 });

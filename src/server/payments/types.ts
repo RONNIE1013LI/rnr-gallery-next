@@ -9,6 +9,8 @@ export type PaymentCurrency = "NZD" | "AUD" | "USD" | "CAD";
 
 export class PaymentProviderRequestError extends Error {}
 
+export class PaymentCaptureNotAuthorizedError extends Error {}
+
 export class PaymentProviderVerificationError extends Error {}
 
 export type PaymentEligibilityContext = Readonly<{
@@ -68,6 +70,7 @@ export type CompleteProviderReturnInput = Readonly<{
   providerReference: string;
   idempotencyKey: string;
   attemptCreatedAt: Date;
+  authorizeCapture?: () => Promise<boolean>;
   returnState: string;
   returnUrl: URL;
 }>;
@@ -82,6 +85,7 @@ export type RetryProviderCompletionInput = Readonly<{
   providerReference: string;
   idempotencyKey: string;
   attemptCreatedAt: Date;
+  authorizeCapture?: () => Promise<boolean>;
   source: "reconciliation";
 }>;
 

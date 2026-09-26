@@ -367,3 +367,56 @@
     margin-top: 0.2rem;
   }
 }
+
+.deadline {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.deadline h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.countdown {
+  color: var(--gallery-green);
+  font-size: 1.25rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.deadlineWarning {
+  border-color: var(--aged-gold-text);
+}
+
+.deadlineSoon {
+  border-color: var(--aged-gold-text);
+  background: color-mix(in srgb, var(--aged-gold-text) 10%, var(--paper));
+}
+
+.deadlineUrgent {
+  border-color: var(--aged-gold-text);
+  border-left-width: 4px;
+  background: color-mix(in srgb, var(--aged-gold-text) 14%, var(--paper));
+}
+
+.success {
+  color: var(--gallery-green);
+  border-color: var(--gallery-green);
+  background: color-mix(in srgb, var(--gallery-green) 7%, var(--paper));
+}
+
+.status .payButton {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.75rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.payButton:focus-visible {
+  outline: 2px solid var(--gallery-green);
+  outline-offset: 3px;
+}

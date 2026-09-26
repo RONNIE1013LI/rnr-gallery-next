@@ -29,7 +29,10 @@ function errorResponse(error: unknown) {
     return Response.json({ error: "Payment details are invalid" }, { status: 400, headers: privateNoStore });
   }
   if (error instanceof PaymentRequestConflictError) {
-    return Response.json({ error: "Payment request is no longer payable" }, { status: 409, headers: privateNoStore });
+    const expired = error.message === "This payment link has expired";
+    return Response.json({ ...(expired ? { status: "expired" } : {}),
+      error: expired ? "This payment link has expired. Please contact R&R Gallery for a new payment link." : "Payment request is no longer payable" },
+    { status: 409, headers: privateNoStore });
   }
   if (error instanceof PaymentServiceError) {
     const status = error.code === "PAYMENT_ATTEMPT_IN_PROGRESS" ? 409 : 503;
@@ -67,11 +70,19 @@ export function createPaymentRequestPaymentRoute(dependencies?: Dependencies) {
           return Response.json({ error: "Payment request is unavailable" }, { status: 404, headers: privateNoStore });
         }
         if (stored.status !== "pending") {
-          return Response.json({ error: "Payment request is no longer payable" }, { status: 409, headers: privateNoStore });
+          return Response.json({ status: stored.status, error: "Payment request is no longer payable" }, { status: 409, headers: privateNoStore });
         }
         const input = standalonePayerInputSchema.parse(await parseBoundedJson(request));
         return Response.json(await deps.start(token, input), { headers: privateNoStore });
       } catch (error) {
+        if (error instanceof PaymentRequestConflictError || error instanceof PaymentServiceError) {
+          const { token } = await context.params;
+          const latest = await deps.publicByToken(token);
+          if (latest && latest.status !== "pending") {
+            return Response.json({ status: latest.status, error: "Payment request is no longer payable" },
+              { status: 409, headers: privateNoStore });
+          }
+        }
         return errorResponse(error);
       }
     },
