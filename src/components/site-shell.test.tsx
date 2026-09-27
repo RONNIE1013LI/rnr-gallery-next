@@ -477,7 +477,7 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/returns-refunds");
   });
 
-  it("keeps the footer navigation compact and only abbreviates email on narrow screens", () => {
+  it("keeps footer title and link rows consistent and only abbreviates email on narrow screens", () => {
     const stylesheet = readFileSync("src/app/globals.css", "utf8");
     const mobileRules = stylesheet.match(/@media \(max-width: 560px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
     const narrowEmailRules = stylesheet.match(/@media \(max-width: 519px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
@@ -486,17 +486,20 @@ describe("site shell", () => {
       /\.site-footer__column\s*\{[^}]*font-size:\s*calc\(1rem - 2px\)[^}]*line-height:\s*1\.45/,
     );
     expect(stylesheet).toMatch(
-      /\.site-footer__title\s*\{[^}]*margin-bottom:\s*0\.5rem[^}]*font-size:\s*calc\(0\.9rem - 2px\)/,
+      /\.site-footer__title\s*\{[^}]*min-height:\s*36px[^}]*margin-bottom:\s*0;[^}]*display:\s*flex[^}]*align-items:\s*center[^}]*font-size:\s*calc\(0\.9rem - 2px\)/,
     );
     expect(stylesheet).toMatch(
-      /\.site-footer li \+ li\s*\{[^}]*margin-top:\s*0\.25rem/,
+      /\.site-footer li \+ li\s*\{[^}]*margin-top:\s*0;/,
     );
     expect(stylesheet).toMatch(
-      /\.site-footer a\s*\{[^}]*min-height:\s*30px/,
+      /\.site-footer a\s*\{[^}]*min-height:\s*36px[^}]*display:\s*inline-flex[^}]*align-items:\s*center/,
     );
-    expect(mobileRules).toMatch(
-      /\.site-footer a,[\s\S]*?\.site-footer__cookie-trigger[\s\S]*?min-height:\s*30px/,
+    expect(stylesheet).toMatch(
+      /\.site-footer__cookie-trigger\s*\{[^}]*min-height:\s*36px[^}]*display:\s*inline-flex[^}]*align-items:\s*center/,
     );
+    expect(stylesheet).toMatch(/\.site-footer__contact\s*\{[^}]*margin-top:\s*0;/);
+    expect(stylesheet).toMatch(/\.site-footer__contact a \+ a\s*\{[^}]*margin-top:\s*0;/);
+    expect(mobileRules).not.toMatch(/\.site-footer(?: a| li \+ li|__title|__cookie-trigger|__contact(?: a \+ a)?)\s*[,\{]/);
     expect(mobileRules).not.toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
     expect(narrowEmailRules).toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
     expect(narrowEmailRules).toMatch(/\.site-footer__email-mobile\s*\{[^}]*display:\s*inline/);
