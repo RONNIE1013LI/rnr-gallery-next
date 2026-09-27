@@ -6,8 +6,8 @@
   --forms-ink: #2f3a45;
   --forms-muted: #67706b;
   --forms-focus: #9b7a3f;
-  --forms-control-height-desktop: 32px;
-  --forms-control-height-mobile: 48px;
+  --forms-control-height-desktop: var(--control-small-height);
+  --forms-control-height-mobile: var(--field-height-mobile);
   --forms-button-height-mobile: 40px;
   min-height: 100vh;
   color: var(--forms-ink);

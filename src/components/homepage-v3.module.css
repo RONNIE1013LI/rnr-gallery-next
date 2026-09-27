@@ -489,8 +489,9 @@
 .gallerySection { padding: var(--v3-section-standard) 0; position: relative; z-index: 1; background: var(--v3-warm); }
 .galleryHeading { max-width: 50rem; }
 .galleryHeading > p:last-child { max-width: none; }
-.filterRow { margin: 2.75rem 0 3rem; display: flex; gap: 0.625rem; flex-wrap: wrap; }
-.filter { min-height: 2.75rem; padding-inline: 1rem; display: inline-flex; align-items: center; border: 1px solid var(--v3-line); border-radius: var(--radius-button); color: var(--v3-forest); background: var(--v3-paper); font-size: 0.75rem; font-weight: 700; text-decoration: none; }
+.filterRow { margin: 2.75rem 0 3rem; display: flex; gap: 0.875rem 0.625rem; flex-wrap: wrap; }
+.filter { min-height: var(--control-compact-height); padding-block: 0; padding-inline: 1rem; position: relative; display: inline-flex; align-items: center; border: 1px solid var(--v3-line); border-radius: var(--radius-button); color: var(--v3-forest); background: var(--v3-paper); font-size: 0.75rem; font-weight: 700; text-decoration: none; }
+.filter::after { content: ""; position: absolute; inset: -7px 0; }
 .filterActive { color: white; background: var(--v3-forest); border-color: var(--v3-forest); }
 .galleryMosaic { width: 100%; margin-inline: auto; display: grid; grid-template-columns: minmax(0, 2.087fr) minmax(0, 1.031fr) minmax(0, 0.868fr); gap: clamp(1rem, 1.25vw, 1.5rem); align-items: start; }
 .galleryLeftColumn { min-width: 0; display: grid; gap: clamp(1rem, 1.25vw, 1.5rem); }
@@ -640,8 +641,8 @@
   .proofConversation { height: auto; aspect-ratio: 4 / 3; }
   .approvedBox { margin-top: 1.5rem; }
   .proofSteps { margin-top: 2.25rem; }
-  .filterRow { margin: 2.125rem 0 2.375rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
-  .filter { min-height: 3rem; padding-inline: 0.75rem; justify-content: center; text-align: center; }
+  .filterRow { margin: 2.125rem 0 2.375rem; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.875rem 0.5rem; }
+  .filter { padding-inline: 0.75rem; justify-content: center; text-align: center; }
   .galleryMosaic { grid-template-columns: minmax(0, 1fr) minmax(0, 0.842fr); }
   .galleryLeftColumn { grid-column: 1 / -1; }
   .galleryProductLabel { min-height: 1.5rem; padding: 0.3125rem 0.5625rem; top: 0.5rem; left: 0.5rem; font-size: 0.625rem; }
@@ -663,6 +664,8 @@
 }
 
 @media (max-width: 375px) {
+  .filter { padding-inline: 0.5rem; }
+
   .heroCopy > h1 {
     max-width: 20.5rem;
     margin-top: 0.75rem;

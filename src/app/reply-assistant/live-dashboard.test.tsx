@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildAucklandOverrideExpiry,
@@ -142,6 +143,13 @@ async function advance(ms: number) {
 }
 
 describe("ReplyAssistantLiveDashboard", () => {
+  it("keeps metric filter buttons compact on desktop and mobile", () => {
+    const stylesheet = readFileSync("src/app/reply-assistant/reply-assistant.module.css", "utf8");
+    expect(stylesheet).toMatch(/\.metricFilters button\s*\{[^}]*min-height:\s*var\(--control-compact-height\)/);
+    expect(stylesheet).toMatch(/\.metricFilters button::after\s*\{[^}]*inset:\s*-7px 0/);
+    const mobile = stylesheet.match(/@media \(max-width: 700px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+    expect(mobile).not.toMatch(/\.metricFilters button\s*\{[^}]*min-height:/);
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/reply-assistant");

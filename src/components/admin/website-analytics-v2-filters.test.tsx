@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { WebsiteAnalyticsV2Filters } from "./website-analytics-v2-filters";
 
@@ -34,6 +35,12 @@ const filters = {
 };
 
 describe("WebsiteAnalyticsV2Filters", () => {
+  it("uses compact filter chips with room for a 44px touch target", () => {
+    const stylesheet = readFileSync("src/components/admin/website-analytics-v2.module.css", "utf8");
+    expect(stylesheet).toMatch(/\.filterChips\s*\{[^}]*gap:\s*14px 8px/);
+    expect(stylesheet).toMatch(/\.filterChips > button:not\(\.textButton\)\s*\{[^}]*min-height:\s*var\(--control-compact-height\)/);
+    expect(stylesheet).toMatch(/\.filterChips > button:not\(\.textButton\)::after\s*\{[^}]*inset:\s*-7px 0/);
+  });
   it("builds the complete canonical query for a same-day custom All Business filter", () => {
     const onApply = vi.fn();
     render(<WebsiteAnalyticsV2Filters canIncludeInternal filters={filters} loading={false}

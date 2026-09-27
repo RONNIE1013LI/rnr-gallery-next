@@ -16,7 +16,8 @@ describe("Admin form visual refinements", () => {
     const statsMobile = formsCss.slice(formsCss.indexOf("@media (max-width: 600px)"));
     const workbenchMobile = formsCss.slice(formsCss.indexOf("@media (max-width: 720px)"));
 
-    expect(shell).toContain("--forms-control-height-mobile: 48px;");
+    expect(shell).toContain("--forms-control-height-desktop: var(--control-small-height);");
+    expect(shell).toContain("--forms-control-height-mobile: var(--field-height-mobile);");
     expect(shell).toContain("--forms-button-height-mobile: 40px;");
     expect(statsMobile).toMatch(/\.statsPageToolbar button\s*\{[\s\S]*?min-height:\s*var\(--forms-button-height-mobile\);/);
     expect(statsMobile).toMatch(/\.statsReportActions button\s*\{[\s\S]*?min-height:\s*var\(--forms-button-height-mobile\);/);

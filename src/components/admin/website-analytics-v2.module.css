@@ -491,14 +491,17 @@
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 14px 8px;
   margin: 10px 0;
 }
 
 .filterChips > button:not(.textButton) {
   max-width: 100%;
-  min-height: 36px;
-  padding: 5px 10px;
+  min-height: var(--control-compact-height);
+  padding: 0 10px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--admin-border);
   border-radius: 7px;
   color: var(--admin-ink);
@@ -507,6 +510,12 @@
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+}
+
+.filterChips > button:not(.textButton)::after {
+  content: "";
+  position: absolute;
+  inset: -7px 0;
 }
 
 .qualityGrid {

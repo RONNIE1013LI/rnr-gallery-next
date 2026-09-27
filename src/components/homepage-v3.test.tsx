@@ -296,6 +296,18 @@ describe("HomepageV3", () => {
     expect(narrow).toMatch(/margin-top:\s*0\.75rem;/);
   });
 
+  it("keeps gallery filter chrome compact with separate touch space on narrow phones", () => {
+    const stylesheet = readFileSync("src/components/homepage-v3.module.css", "utf8");
+    const mobile = stylesheet.match(/@media \(max-width: 760px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+    const narrow = stylesheet.match(/@media \(max-width: 375px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+
+    expect(stylesheet).toMatch(/\.filter\s*\{[^}]*min-height:\s*var\(--control-compact-height\)/);
+    expect(stylesheet).toMatch(/\.filter::after\s*\{[^}]*inset:\s*-7px 0/);
+    expect(mobile).not.toMatch(/\.filter\s*\{[^}]*min-height:/);
+    expect(mobile).toMatch(/\.filterRow\s*\{[^}]*gap:\s*0\.875rem 0\.5rem/);
+    expect(narrow).toMatch(/\.filter\s*\{[^}]*padding-inline:\s*0\.5rem/);
+  });
+
   it("scales the mobile hero headline and spacing without shrinking the wide-phone ceiling", () => {
     const stylesheet = readFileSync(
       "src/components/homepage-v3.module.css",

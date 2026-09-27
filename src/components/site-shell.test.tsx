@@ -276,24 +276,37 @@ describe("site shell", () => {
       .toHaveValue("NZ");
   });
 
-  it("keeps the mobile header logo visible from 340px upward with a readable market selector", () => {
+  it("keeps the logo, compact market chrome and separate 44px targets at 320px", () => {
     const stylesheet = readFileSync("src/app/globals.css", "utf8");
+    const compactBrandRules = stylesheet.match(/@media \(max-width: 600px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
     const mobileRules = stylesheet.match(/@media \(max-width: 560px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
     const narrowRules = stylesheet.match(/@media \(max-width: 374px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
     const extremeRules = stylesheet.match(/@media \(max-width: 339px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
 
     expect(mobileRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.625rem/);
-    expect(mobileRules).toMatch(/\.site-header__market\s*\{[^}]*padding-block:\s*0\.25rem/);
-    expect(mobileRules).toMatch(/\.site-header__market select\s*\{[^}]*height:\s*2\.25rem[^}]*font-size:\s*0\.72rem/);
+    expect(stylesheet).toMatch(/--control-compact-height:\s*30px/);
+    expect(stylesheet).toMatch(/--control-small-height:\s*32px/);
+    expect(stylesheet).toMatch(/--control-standard-height:\s*36px/);
+    expect(stylesheet).toMatch(/--action-primary-height:\s*44px/);
+    expect(stylesheet).toMatch(/--field-height:\s*44px/);
+    expect(stylesheet).toMatch(/--field-height-mobile:\s*48px/);
+    expect(stylesheet).toMatch(/--action-transaction-height:\s*52px/);
+    expect(stylesheet).toMatch(/--touch-target-min:\s*44px/);
+    expect(compactBrandRules).toMatch(/\.site-header__brand \.brand-mark__name\s*\{[^}]*font-size:\s*0\.85rem/);
+    expect(stylesheet).toMatch(/\.site-header__market select\s*\{[^}]*height:\s*var\(--touch-target-min\)/);
+    expect(stylesheet).toMatch(/\.site-header__market::before\s*\{[^}]*height:\s*var\(--control-standard-height\)/);
+    expect(mobileRules).toMatch(/\.site-header__market::before\s*\{[^}]*height:\s*var\(--control-compact-height\)/);
+    expect(mobileRules).toMatch(/\.site-header__market select\s*\{[^}]*font-size:\s*0\.72rem/);
     expect(narrowRules).toMatch(/\.site-header__market select\s*\{[^}]*width:\s*6\.375rem[^}]*padding-inline:\s*0\.5rem 1\.55rem/);
-    expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.25rem/);
-    expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__name\s*\{[^}]*font-size:\s*0\.9rem/);
+    expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2rem/);
     expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__line\s*\{[^}]*letter-spacing:\s*0\.11em/);
     expect(narrowRules).not.toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
-    expect(extremeRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
-    expect(stylesheet).not.toMatch(/@media \(max-width: 420px\) \{[\s\S]*?\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
+    expect(extremeRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*1\.75rem/);
+    expect(extremeRules).not.toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
+    expect(extremeRules).toMatch(/\.site-header__market select\s*\{[^}]*width:\s*6\.125rem/);
+    expect(narrowRules).toMatch(/\.mobile-menu\s*\{[^}]*margin-left:\s*0/);
+    expect(narrowRules).toMatch(/\.site-header__actions > \.site-header__cart,[\s\S]*?\.mobile-menu > button\s*\{[^}]*min-height:\s*var\(--touch-target-min\)/);
     expect(stylesheet).toMatch(/\.site-header__market select\s*\{[^}]*appearance:\s*none/);
-    expect(mobileRules).toMatch(/\.mobile-menu\s*\{[^}]*margin-left:\s*-0\.25rem/);
     expect(mobileRules).toMatch(/\.mobile-menu > button,[\s\S]*?\.site-header__cart\s*\{[^}]*min-height:\s*48px/);
   });
 

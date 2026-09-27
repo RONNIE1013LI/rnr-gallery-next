@@ -295,7 +295,7 @@
 
 .payButton {
   width: 100%;
-  min-height: 52px;
+  min-height: var(--action-transaction-height);
   margin-top: 1.45rem;
   border: 1px solid var(--gallery-green);
   border-radius: var(--radius-button);

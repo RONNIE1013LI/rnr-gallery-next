@@ -300,8 +300,12 @@
 }
 
 .metricFilters button {
-  min-height: 34px;
-  padding: 5px 11px;
+  min-height: var(--control-compact-height);
+  padding: 0 11px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -311,6 +315,8 @@
   font-weight: 720;
   cursor: pointer;
 }
+
+.metricFilters button::after { content: ""; position: absolute; inset: -7px 0; }
 
 .metricFilters button:hover { color: var(--reply-ink); background: rgb(255 255 255 / 55%); }
 .metricFilters button:focus-visible,
@@ -513,7 +519,7 @@
   .dashboardToolbar { align-items: flex-start; }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metrics div { min-height: 68px; padding: 10px 12px; }
-  .metricFilters button { min-height: 44px; padding-inline: 10px; }
+  .metricFilters button { padding-inline: 10px; }
   .metricDisclosure { min-height: 44px; }
   .learning { padding: 14px; }
   .learningControls button { flex: 1 1 120px; }
