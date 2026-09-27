@@ -477,8 +477,9 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/returns-refunds");
   });
 
-  it("keeps footer title and link rows consistent and only abbreviates email on narrow screens", () => {
+  it("keeps footer titles at 36px and links at 30px without extra spacing or mobile overrides", () => {
     const stylesheet = readFileSync("src/app/globals.css", "utf8");
+    const responsiveRules = stylesheet.match(/@media[\s\S]*/)?.[0] ?? "";
     const mobileRules = stylesheet.match(/@media \(max-width: 560px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
     const narrowEmailRules = stylesheet.match(/@media \(max-width: 519px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
 
@@ -492,14 +493,14 @@ describe("site shell", () => {
       /\.site-footer li \+ li\s*\{[^}]*margin-top:\s*0;/,
     );
     expect(stylesheet).toMatch(
-      /\.site-footer a\s*\{[^}]*min-height:\s*36px[^}]*display:\s*inline-flex[^}]*align-items:\s*center/,
+      /\.site-footer a\s*\{[^}]*min-height:\s*30px[^}]*display:\s*inline-flex[^}]*align-items:\s*center/,
     );
     expect(stylesheet).toMatch(
-      /\.site-footer__cookie-trigger\s*\{[^}]*min-height:\s*36px[^}]*display:\s*inline-flex[^}]*align-items:\s*center/,
+      /\.site-footer__cookie-trigger\s*\{[^}]*min-height:\s*30px[^}]*display:\s*inline-flex[^}]*align-items:\s*center/,
     );
     expect(stylesheet).toMatch(/\.site-footer__contact\s*\{[^}]*margin-top:\s*0;/);
     expect(stylesheet).toMatch(/\.site-footer__contact a \+ a\s*\{[^}]*margin-top:\s*0;/);
-    expect(mobileRules).not.toMatch(/\.site-footer(?: a| li \+ li|__title|__cookie-trigger|__contact(?: a \+ a)?)\s*[,\{]/);
+    expect(responsiveRules).not.toMatch(/\.site-footer(?: a| li \+ li|__title|__cookie-trigger|__contact(?: a \+ a)?)\s*[,\{]/);
     expect(mobileRules).not.toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
     expect(narrowEmailRules).toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
     expect(narrowEmailRules).toMatch(/\.site-footer__email-mobile\s*\{[^}]*display:\s*inline/);
