@@ -788,6 +788,7 @@ a:active {
 .site-footer__tagline {
   max-width: 28rem;
   color: var(--text-on-dark-muted);
+  line-height: 1;
 }
 
 .site-footer__email-mobile {
@@ -832,7 +833,7 @@ a:active {
 
 .site-footer__payments {
   width: 100%;
-  margin-top: 1.5rem;
+  margin-top: 30px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -1218,7 +1219,6 @@ a:active {
 
   .site-footer__tagline {
     max-width: 22rem;
-    line-height: 1.55;
   }
 
   .site-footer__help {
