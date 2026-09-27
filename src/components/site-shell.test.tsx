@@ -495,7 +495,7 @@ describe("site shell", () => {
       /\.site-footer a\s*\{[^}]*min-height:\s*30px/,
     );
     expect(mobileRules).toMatch(
-      /\.site-footer a,[\s\S]*?\.site-footer__cookie-trigger[\s\S]*?min-height:\s*36px/,
+      /\.site-footer a,[\s\S]*?\.site-footer__cookie-trigger[\s\S]*?min-height:\s*30px/,
     );
     expect(mobileRules).not.toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
     expect(narrowEmailRules).toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
