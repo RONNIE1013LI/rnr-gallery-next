@@ -1290,6 +1290,22 @@ a:active {
 
 }
 
+@media (min-width: 390px) and (max-width: 560px) {
+  .site-header__inner {
+    gap: 0.5rem;
+  }
+
+  .site-header__actions {
+    gap: 0;
+  }
+
+  .site-header__brand .brand-mark__line {
+    display: block;
+    white-space: nowrap;
+    letter-spacing: 0.08em;
+  }
+}
+
 @media (max-width: 519px) {
   .site-footer__email {
     font-size: 1.0625rem;
