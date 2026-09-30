@@ -924,6 +924,9 @@ export function createDrizzleProductionJobRepository(
               id: orders.id,
               status: orders.fulfilmentStatus,
               customerEmail: orders.customerEmail,
+              trackingCarrier: orders.trackingCarrier,
+              trackingNumber: orders.trackingNumber,
+              trackingUrl: orders.trackingUrl,
             }).from(orders).where(eq(orders.id, current.orderId)).limit(1)
           : [];
         if (current.source === "web" && (
@@ -1085,7 +1088,12 @@ export function createDrizzleProductionJobRepository(
           })));
         }
 
-        if (current.source === "manual" && current.deliveredAt === null && input.deliveredAt !== undefined && input.deliveredAt !== null) {
+        // Use the final saved fields, including tracking added or cleared in this update.
+        const shipping = { ...(current.source === "web" ? linkedOrder : current), ...values };
+        const hasShipping = [shipping.trackingCarrier, shipping.trackingNumber, shipping.trackingUrl]
+          .some((value) => Boolean(value?.trim()));
+
+        if (hasShipping && current.source === "manual" && current.deliveredAt === null && input.deliveredAt !== undefined && input.deliveredAt !== null) {
           await transaction.insert(manualOrderNotificationOutbox).values({
             eventKey: `manual-order-shipped:${current.id}`,
             jobId: current.id,
@@ -1120,15 +1128,17 @@ export function createDrizzleProductionJobRepository(
               idempotencyKey: input.idempotencyKey,
               createdAt: input.updatedAt,
             }).onConflictDoNothing({ target: [orderStatusHistory.orderId, orderStatusHistory.idempotencyKey] });
-            await transaction.insert(orderNotificationOutbox).values({
-              eventKey: `order-shipped:${current.orderId}`,
-              kind: "order_shipped",
-              orderId: current.orderId,
-              recipientEmail: linkedOrder.customerEmail,
-              availableAt: input.updatedAt,
-              createdAt: input.updatedAt,
-              updatedAt: input.updatedAt,
-            }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
+            if (hasShipping) {
+              await transaction.insert(orderNotificationOutbox).values({
+                eventKey: `order-shipped:${current.orderId}`,
+                kind: "order_shipped",
+                orderId: current.orderId,
+                recipientEmail: linkedOrder.customerEmail,
+                availableAt: input.updatedAt,
+                createdAt: input.updatedAt,
+                updatedAt: input.updatedAt,
+              }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
+            }
           }
         }
 

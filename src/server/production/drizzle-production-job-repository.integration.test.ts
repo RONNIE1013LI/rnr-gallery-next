@@ -102,7 +102,7 @@ describe("drizzle production job repository", () => {
     await pool.end();
   });
 
-  it("pins, audits and atomically unpins NO/HOLD orders when shipped without duplicate notifications", async () => {
+  it("pins, audits and atomically unpins NO/HOLD orders when shipped without emailing empty tracking", async () => {
     const ids = [randomUUID(), randomUUID(), randomUUID()];
     jobIds.push(...ids);
     await database.insert(productionJobs).values(ids.map((id, index) => ({
@@ -155,7 +155,7 @@ describe("drizzle production job repository", () => {
       await expect(update(id, { milestones: { delivered: true } })).resolves.toBe("updated");
       const outbox = await database.select().from(manualOrderNotificationOutbox)
         .where(eq(manualOrderNotificationOutbox.jobId, id));
-      expect(outbox).toHaveLength(1);
+      expect(outbox).toHaveLength(0);
       const audit = await database.select().from(adminAuditLogs)
         .where(eq(adminAuditLogs.resourceId, id));
       expect(JSON.stringify(audit)).toContain("Normal (shipped)");
