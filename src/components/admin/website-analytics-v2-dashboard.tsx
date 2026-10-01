@@ -179,15 +179,19 @@ function KpiGrid({
   label: string;
   metrics: WebsiteAnalyticsV2Metrics;
 }>) {
-  return <div className={adminStyles.metricGrid} aria-label={label} role="region">
-    {countKpis.map(([itemLabel, key]) => <div key={key}>
-      <span>{itemLabel}</span>
-      <strong>{metrics[key] ?? "—"}</strong>
-    </div>)}
-    {rateKpis.map(([itemLabel, key]) => <div key={key}>
-      <span>{itemLabel}</span>
-      <strong>{formatRate(metrics[key])}</strong>
-    </div>)}
+  return <div className={styles.kpis} aria-label={label} role="region">
+    <div className={`${adminStyles.metricGrid} ${styles.countGrid}`}>
+      {countKpis.map(([itemLabel, key]) => <div key={key}>
+        <span>{itemLabel}</span>
+        <strong>{metrics[key] ?? "—"}</strong>
+      </div>)}
+    </div>
+    <div className={styles.rateGrid}>
+      {rateKpis.map(([itemLabel, key]) => <div key={key}>
+        <span>{itemLabel}</span>
+        <strong>{formatRate(metrics[key])}</strong>
+      </div>)}
+    </div>
   </div>;
 }
 
@@ -197,7 +201,7 @@ function MoneyGroups({ money }: Readonly<{ money: readonly WebsiteAnalyticsV2Mon
     <div className={styles.currencyGrid}>
       {money.map((entry) => <section className={`${adminStyles.panel} ${styles.currencyPanel}`}
         key={entry.currency}>
-        <h2>{entry.currency}</h2>
+        <h2>{entry.currency} revenue</h2>
         <div className={styles.financeGrid}>
           {moneyKpis.map(([label, key]) => <div key={key}>
             <span>{label}</span>
@@ -413,7 +417,7 @@ export function WebsiteAnalyticsV2Dashboard({
 
     {data.notices.length > 0 ? <section className={`${adminStyles.panel} ${styles.notices}`}
       aria-label="Analytics notices">
-      <h2>Notices</h2>
+      <h2>Data notes</h2>
       <ul className={styles.noticeList}>{data.notices.map((notice) =>
         <li key={notice.code}>{notice.message}</li>)}</ul>
     </section> : null}

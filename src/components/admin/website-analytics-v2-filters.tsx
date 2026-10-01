@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import type { WebsiteAnalyticsV2DashboardData } from "./website-analytics-v2-dashboard";
 import adminStyles from "./admin.module.css";
+import styles from "./website-analytics-v2.module.css";
 
 const presets = [
   ["today", "Today"],
@@ -88,98 +89,108 @@ export function WebsiteAnalyticsV2Filters({
 
   const custom = state.preset === "custom";
 
-  return <form className={adminStyles.filterPanel} onSubmit={submit}>
-    <label>
-      Date range
-      <select value={state.preset} onChange={(event) => field("preset", event.target.value)}>
-        {presets.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select>
-    </label>
-    <label>
-      From
-      <input
-        disabled={!custom}
-        required={custom}
-        type="date"
-        value={state.from}
-        onChange={(event) => field("from", event.target.value)}
-      />
-    </label>
-    <label>
-      To
-      <input
-        disabled={!custom}
-        required={custom}
-        type="date"
-        value={state.to}
-        onChange={(event) => field("to", event.target.value)}
-      />
-    </label>
-    <label>
-      Business scope
-      <select value={state.scope} onChange={(event) => field("scope", event.target.value)}>
-        <option value="website">Website</option>
-        <option value="all_business">All Business</option>
-      </select>
-    </label>
-    <label>
-      Market
-      <select value={state.market} onChange={(event) => field("market", event.target.value)}>
-        <option value="all">All markets</option>
-        <option value="NZ">New Zealand</option>
-        <option value="AU">Australia</option>
-      </select>
-    </label>
-    <label>
-      Currency
-      <select value={state.currency} onChange={(event) => field("currency", event.target.value)}>
-        <option value="all">All currencies</option>
-        <option value="NZD">NZD</option>
-        <option value="AUD">AUD</option>
-      </select>
-    </label>
-    <label>
-      Attribution model
-      <select
-        aria-label="Attribution model"
-        aria-describedby="analytics-attribution-help"
-        value={state.attribution}
-        onChange={(event) => field("attribution", event.target.value)}
-      >
-        <option value="last_touch">Last non-direct touch</option>
-        <option value="first_touch">First touch</option>
-      </select>
-      <small id="analytics-attribution-help">
-        Last non-direct touch uses the latest non-direct visit, then the converting session as fallback. The Orders table shows the actual last session separately.
-      </small>
-    </label>
-    <label>
-      Granularity
-      <select value={state.granularity} onChange={(event) => field("granularity", event.target.value)}>
-        <option value="auto">Auto</option>
-        <option value="day">Day</option>
-        <option value="week">Week</option>
-        <option value="month">Month</option>
-      </select>
-    </label>
-    <label className={adminStyles.checkboxField}>
-      <input
-        checked={state.compare}
-        type="checkbox"
-        onChange={(event) => field("compare", event.target.checked)}
-      />
-      Compare with previous period
-    </label>
-    {canIncludeInternal ? <label className={adminStyles.checkboxField}>
-      <input
-        checked={state.includeInternal}
-        type="checkbox"
-        onChange={(event) => field("includeInternal", event.target.checked)}
-      />
-      Include internal traffic
-    </label> : null}
-    <div className={adminStyles.filterActions}>
-      <button disabled={loading} type="submit">Apply filters</button>
+  return <form className={`${adminStyles.filterPanel} ${styles.filters}`} onSubmit={submit}>
+    <div className={`${styles.primaryFilters} ${custom ? styles.customFilters : ""}`}>
+      <label>
+        Date range
+        <select value={state.preset} onChange={(event) => field("preset", event.target.value)}>
+          {presets.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label>
+      {custom ? <><label>
+        From
+        <input
+          required
+          type="date"
+          value={state.from}
+          onChange={(event) => field("from", event.target.value)}
+        />
+      </label>
+      <label>
+        To
+        <input
+          required
+          type="date"
+          value={state.to}
+          onChange={(event) => field("to", event.target.value)}
+        />
+      </label></> : null}
+      <label>
+        Business scope
+        <select value={state.scope} onChange={(event) => field("scope", event.target.value)}>
+          <option value="website">Website</option>
+          <option value="all_business">All Business</option>
+        </select>
+      </label>
+      <label>
+        Market
+        <select value={state.market} onChange={(event) => field("market", event.target.value)}>
+          <option value="all">All markets</option>
+          <option value="NZ">New Zealand</option>
+          <option value="AU">Australia</option>
+        </select>
+      </label>
+      <label>
+        Currency
+        <select value={state.currency} onChange={(event) => field("currency", event.target.value)}>
+          <option value="all">All currencies</option>
+          <option value="NZD">NZD</option>
+          <option value="AUD">AUD</option>
+        </select>
+      </label>
+    </div>
+    <details className={styles.advancedFilters}>
+      <summary>More filters · Attribution &amp; granularity</summary>
+      <div className={styles.secondaryFilters}>
+        <label>
+          Attribution model
+          <select
+            aria-label="Attribution model"
+            aria-describedby="analytics-attribution-help"
+            value={state.attribution}
+            onChange={(event) => field("attribution", event.target.value)}
+          >
+            <option value="last_touch">Last non-direct touch</option>
+            <option value="first_touch">First touch</option>
+          </select>
+        </label>
+        <label>
+          Granularity
+          <select value={state.granularity} onChange={(event) => field("granularity", event.target.value)}>
+            <option value="auto">Auto</option>
+            <option value="day">Day</option>
+            <option value="week">Week</option>
+            <option value="month">Month</option>
+          </select>
+        </label>
+      </div>
+      <p className={styles.filterHelp} id="analytics-attribution-help">
+        {state.attribution === "last_touch"
+          ? "Last non-direct touch uses the latest non-direct visit, then the converting session as fallback."
+          : "First touch uses the earliest eligible visit within the attribution window."}
+        {" The Orders table shows the actual last session separately."}
+      </p>
+    </details>
+    <div className={styles.filterFooter}>
+      <label className={styles.filterCheckbox}>
+        <input
+          checked={state.compare}
+          type="checkbox"
+          onChange={(event) => field("compare", event.target.checked)}
+        />
+        Compare with previous period
+      </label>
+      {canIncludeInternal ? <label className={styles.filterCheckbox}>
+        <input
+          checked={state.includeInternal}
+          type="checkbox"
+          onChange={(event) => field("includeInternal", event.target.checked)}
+        />
+        Include internal traffic
+      </label> : null}
+      <div className={`${adminStyles.filterActions} ${styles.applyFilters}`}>
+        <button disabled={loading} type="submit">Apply filters</button>
+      </div>
     </div>
   </form>;
 }

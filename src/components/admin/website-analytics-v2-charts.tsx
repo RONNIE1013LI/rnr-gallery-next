@@ -102,7 +102,7 @@ function ChartPanel({
   title,
   chartLabel,
   count,
-  minWidth = 560,
+  minWidth = 0,
   controls,
   notice,
   chart,
@@ -160,12 +160,10 @@ function AnalyticsTable({
 
 function TrafficTrend({ data }: Readonly<{ data: WebsiteAnalyticsV2DashboardData }>) {
   const [metric, setMetric] = useState<CountMetric>("sessions");
-  const minimumWidth = Math.max(560, data.timeseries.length * 72);
   return <ChartPanel
     title="Traffic Trend"
     chartLabel="Traffic trend chart"
     count={data.timeseries.length}
-    minWidth={minimumWidth}
     controls={<label className={styles.chartControl}>
       Traffic metric
       <select value={metric} onChange={(event) => setMetric(event.target.value as CountMetric)}>
@@ -179,11 +177,12 @@ function TrafficTrend({ data }: Readonly<{ data: WebsiteAnalyticsV2DashboardData
       data={data.timeseries}
     >
       <CartesianGrid stroke="#d8d7d2" strokeDasharray="3 3" />
-      <XAxis dataKey="bucket" />
+      <XAxis dataKey="bucket" minTickGap={32} tickMargin={8}
+        tickFormatter={(value: string) => value.slice(5)} />
       <YAxis allowDecimals={false} width={56} />
       <Tooltip content={<CountTooltip />} />
       <Legend />
-      <Line dataKey={metric} dot isAnimationActive={false} name={countLabels[metric]}
+      <Line dataKey={metric} dot={data.timeseries.length <= 14} isAnimationActive={false} name={countLabels[metric]}
         stroke="#345c45" strokeWidth={2} type="monotone" />
     </LineChart>}
     table={<AnalyticsTable
@@ -211,16 +210,15 @@ function RevenueTrend({ data, currency }: Readonly<{
       netCollectedRevenueCents: 0,
     }),
   }));
-  const minimumWidth = Math.max(560, rows.length * 72);
   return <ChartPanel
     title={`${currency} Revenue Trend`}
     chartLabel={`${currency} revenue trend chart`}
     count={rows.length}
-    minWidth={minimumWidth}
     chart={(summaryId) => <LineChart accessibilityLayer aria-describedby={summaryId}
       aria-label={`${currency} revenue trend chart`} data={rows}>
       <CartesianGrid stroke="#d8d7d2" strokeDasharray="3 3" />
-      <XAxis dataKey="bucket" />
+      <XAxis dataKey="bucket" minTickGap={32} tickMargin={8}
+        tickFormatter={(value: string) => value.slice(5)} />
       <YAxis tickFormatter={(value) => formatAnalyticsMoney(currency, Number(value))} width={92} />
       <Tooltip content={<MoneyTooltip currency={currency} />} />
       <Legend />

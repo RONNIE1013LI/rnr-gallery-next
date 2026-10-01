@@ -35,6 +35,16 @@ const filters = {
 };
 
 describe("WebsiteAnalyticsV2Filters", () => {
+  it("only shows editable dates for a custom range", () => {
+    render(<WebsiteAnalyticsV2Filters filters={filters} loading={false} onApply={vi.fn()} />);
+    expect(screen.queryByLabelText("From")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("To")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Date range" }), {
+      target: { value: "custom" },
+    });
+    expect(screen.getByLabelText("From")).toBeEnabled();
+    expect(screen.getByLabelText("To")).toBeEnabled();
+  });
   it("uses compact filter chips with room for a 44px touch target", () => {
     const stylesheet = readFileSync("src/components/admin/website-analytics-v2.module.css", "utf8");
     expect(stylesheet).toMatch(/\.filterChips\s*\{[^}]*gap:\s*14px 8px/);
@@ -60,6 +70,7 @@ describe("WebsiteAnalyticsV2Filters", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Currency" }), {
       target: { value: "AUD" },
     });
+    fireEvent.click(screen.getByText("More filters · Attribution & granularity"));
     fireEvent.change(screen.getByRole("combobox", { name: "Attribution model" }), {
       target: { value: "first_touch" },
     });

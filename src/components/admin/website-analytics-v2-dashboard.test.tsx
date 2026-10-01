@@ -185,14 +185,15 @@ describe("WebsiteAnalyticsV2Dashboard", () => {
 
     const kpis = screen.getByLabelText("Key performance indicators");
     expect(kpis.querySelector("article")).toBeNull();
-    expect(kpis.children).toHaveLength(9);
+    expect(kpis.firstElementChild?.children).toHaveLength(6);
+    expect(kpis.lastElementChild?.children).toHaveLength(3);
     for (const label of [
       "Visitors", "Sessions", "Page Views", "Inquiries", "Orders", "Paid Orders",
       "Inquiry Conversion", "Order Conversion", "Paid Order Conversion",
     ]) expect(within(kpis).getByText(label)).toBeInTheDocument();
     expect(within(kpis).getByText("—")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "NZD" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "AUD" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "NZD revenue" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AUD revenue" })).toBeInTheDocument();
     expect(screen.getByText("NZD:24000")).toBeInTheDocument();
     expect(screen.getByText("AUD:50000")).toBeInTheDocument();
     expect(screen.getByText("Traffic and funnel metrics remain Website-only in All Business scope."))

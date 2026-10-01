@@ -143,6 +143,18 @@ const data: WebsiteAnalyticsV2DashboardData = {
 };
 
 describe("WebsiteAnalyticsV2Charts", () => {
+  it("fits a full month of traffic and revenue into the available chart width", () => {
+    const timeseries = Array.from({ length: 30 }, (_, index) => ({
+      ...data.timeseries[0]!, bucket: `2026-08-${String(index + 1).padStart(2, "0")}`,
+    }));
+    render(<WebsiteAnalyticsV2Charts data={{ ...data, timeseries }} />);
+    for (const title of ["Traffic Trend", "NZD Revenue Trend", "AUD Revenue Trend"]) {
+      const canvas = screen.getByLabelText(`${title} visualisation`).firstElementChild;
+      expect(canvas).toHaveStyle({ minWidth: "0px" });
+    }
+    expect(within(screen.getByRole("table", { name: "Traffic trend data" }))
+      .getAllByRole("row")).toHaveLength(31);
+  });
   it("opens the exact campaign identity rather than combining similarly named campaigns", () => {
     const drillDown = vi.fn();
     render(<WebsiteAnalyticsV2Charts data={data} onDrillDown={drillDown} />);

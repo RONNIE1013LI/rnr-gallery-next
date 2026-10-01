@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import styles from "./admin.module.css";
+import analyticsStyles from "./website-analytics-v2.module.css";
 
 export function WebsiteAnalyticsInternalDevice({
   initialInternal,
@@ -34,7 +35,7 @@ export function WebsiteAnalyticsInternalDevice({
     }
   }
 
-  return <aside className={styles.panel} aria-label="Internal traffic device setting">
+  return <aside className={analyticsStyles.internalDevice} aria-label="Internal traffic device setting">
     <p>{internal
       ? "This device is marked internal."
       : "This device is not marked internal."}</p>
