@@ -26,7 +26,7 @@ export function createFlikWebhookRoute(dependencies?: Dependencies) {
   return async function POST(request: Request) {
     let deps = dependencies;
     if (!deps) {
-      const runtime = createFlikRuntime();
+      const runtime = await createFlikRuntime();
       if (!runtime) return json({ error: "Flik is unavailable" }, 404);
       deps = { secret: runtime.config.webhookSecret, receive: runtime.repository.receiveWebhook };
     }

@@ -14,7 +14,7 @@ import {
   type PaymentReturnInput,
   type PaymentReturnResult,
 } from "@/server/payments/payment-service";
-import { selectPaymentProviders } from "@/server/payments/provider-registry";
+import { selectCheckoutPaymentProviders } from "@/server/payments/provider-registry";
 import { createMetaPaidOrderObserver } from "@/server/analytics/meta-purchase";
 import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 
@@ -216,7 +216,7 @@ function defaults(): Dependencies {
     process.env.NODE_ENV,
   );
   if (!trustedOrigin) throw new Error("Payment return origin is invalid");
-  const selectedProviders = selectPaymentProviders(config);
+  const selectedProviders = selectCheckoutPaymentProviders(config);
   return {
     trustedOrigin,
     paymentService: createPaymentService({

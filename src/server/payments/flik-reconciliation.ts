@@ -3,17 +3,20 @@ import type { createFlikSessionService } from "./flik-session-service";
 import { flikPaymentResult } from "./flik-session-service";
 import type { VerifiedPaymentResult } from "./types";
 
-export function createFlikReconciliation({ repository, sessions, testMode, applyLiveResult, deadlineMs = Date.now() + 45_000, now = Date.now }: {
+export function createFlikReconciliation({ repository, sessions, testMode, applyLiveResult, canRecoverCreation = async () => false, deadlineMs = Date.now() + 45_000, now = Date.now }: {
   repository: FlikRepository;
   sessions: ReturnType<typeof createFlikSessionService>;
   testMode: boolean;
   deadlineMs?: number;
   now?: () => number;
   applyLiveResult: (attemptId: string, result: VerifiedPaymentResult) => Promise<void>;
+  canRecoverCreation?: () => Promise<boolean>;
 }) {
   async function reconcile(row: FlikSessionRecord) {
     if (row.testMode !== testMode) throw new Error("Flik mode mismatch");
     if (!row.providerReference) {
+      // Disabled and administrator-only verification must not create payments from a cron job.
+      if (!await canRecoverCreation()) return false;
       // Recover an uncertain creation with the original key and body within the provider's window.
       row = await sessions.start(row);
       if (!row.providerReference) return false;

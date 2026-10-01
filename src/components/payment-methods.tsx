@@ -68,9 +68,7 @@ export function PaymentMethods({
           disabled={disabled}
           onChange={() => onChange(option.method)}
         />
-        <span className={option.method === "flik" ? styles.paymentBankLabel : undefined}>{option.label}{option.method === "flik" ? <small className={styles.paymentMethodDescription}>
-          Pay securely using your New Zealand bank account.
-        </small> : null}</span>
+        <span>{option.label}</span>
         {option.method === "card" ? <span
           aria-label="Accepted cards: Visa, Mastercard and American Express"
           className={styles.paymentCardBrands}
@@ -82,7 +80,7 @@ export function PaymentMethods({
         </span> : null}
         {option.method === "afterpay" ? <span
           aria-label="Afterpay"
-          className={styles.paymentAfterpayBrand}
+          className={styles.paymentProviderBrand}
           data-payment-brand="afterpay"
           role="img"
         >
@@ -96,6 +94,22 @@ export function PaymentMethods({
             width={1171}
           />
         </span> : null}
+        {option.method === "flik" ? <span
+          aria-label="Flik"
+          className={styles.paymentProviderBrand}
+          data-payment-brand="flik"
+          role="img"
+        >
+          <Image
+            alt=""
+            aria-hidden="true"
+            className={styles.paymentProviderLogo}
+            height={341}
+            src="/media/payments/flik-logo-black.png"
+            unoptimized
+            width={829}
+          />
+        </span> : null}
       </label>)}
     </div>
     {value === "card" ? <>
@@ -107,6 +121,7 @@ export function PaymentMethods({
         Card, Apple Pay and Google Pay are supported. Wallets appear only on eligible devices.
       </p>
     </> : null}
+    {value === "flik" ? <p className={styles.checkoutMessage}>Pay securely using your New Zealand bank account.</p> : null}
     {methods.some((option) => option.isTest) ? <p className={styles.paymentTestNotice}>No real payment will be taken.</p> : null}
   </fieldset>;
 }

@@ -22,7 +22,7 @@ import {
   type PublicPaymentMethod,
   type PaymentStartResult,
 } from "@/server/payments/payment-service";
-import { selectPaymentProviders } from "@/server/payments/provider-registry";
+import { selectCheckoutPaymentProviders } from "@/server/payments/provider-registry";
 import type { PaymentActionDTO, PublicPaymentDTO } from "@/server/payments/public-dto";
 import { createMetaPaidOrderObserver } from "@/server/analytics/meta-purchase";
 import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
@@ -81,7 +81,7 @@ function defaultPaymentService() {
   return createPaymentService({
     repository: createDrizzlePaymentRepository(database),
     checkoutAuthority: checkoutRepository,
-    providers: selectPaymentProviders(config),
+    providers: selectCheckoutPaymentProviders(config),
     returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
     onVerifiedPaidOrder: createMetaPaidOrderObserver((task) => after(task)),
     onNotificationOutboxAvailable: createImmediateNotificationDeliveryObserver({

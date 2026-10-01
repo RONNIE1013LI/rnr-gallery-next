@@ -23,7 +23,7 @@ import {
   type PublicPaymentMethod,
   type ReviewedPaymentAccess,
 } from "@/server/payments/payment-service";
-import { selectPaymentProviders } from "@/server/payments/provider-registry";
+import { selectCheckoutPaymentProviders } from "@/server/payments/provider-registry";
 
 export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
@@ -58,7 +58,7 @@ function defaults(): Dependencies {
     paymentService: createPaymentService({
       repository: createDrizzlePaymentRepository(database),
       checkoutAuthority: checkoutRepository,
-      providers: selectPaymentProviders(config),
+      providers: selectCheckoutPaymentProviders(config),
       returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
     }),
     getOptionalSession,

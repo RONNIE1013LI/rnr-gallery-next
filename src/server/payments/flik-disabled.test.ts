@@ -53,9 +53,9 @@ describe.each(["default-off", "explicit-off-with-credentials"])("unmigrated Flik
     }
   });
 
-  it("parses actual production config as disabled and never initializes Flik persistence", () => {
+  it("parses actual production config as disabled and never initializes Flik persistence", async () => {
     expect(parsePaymentConfig().flik).toEqual({ enabled: false });
-    expect(createFlikRuntime()).toBeNull();
+    expect(await createFlikRuntime()).toBeNull();
   });
 
   it("retains the actual Stripe and Afterpay adapters without registering Flik in Checkout", () => {

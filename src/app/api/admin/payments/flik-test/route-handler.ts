@@ -23,7 +23,7 @@ function defaults(): Dependencies {
       const paymentConfig = parsePaymentConfig();
       if (!paymentConfig.flik?.enabled || !paymentConfig.flik.testMode || paymentConfig.flik.deployment !== "development" || !paymentConfig.operations.returnBaseUrl) return null;
       const { createFlikRuntime } = await import("@/server/payments/flik-runtime");
-      const runtime = createFlikRuntime();
+      const runtime = await createFlikRuntime();
       if (!runtime) return null;
       return createFlikTestService({ config: runtime.config, repository: runtime.repository, sessionService: runtime.sessions, returnOrigin: paymentConfig.operations.returnBaseUrl });
     },

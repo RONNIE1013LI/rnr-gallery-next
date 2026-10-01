@@ -65,9 +65,13 @@ describe("PaymentMethods", () => {
     const bank = { method: "flik" as const, label: "Pay by Bank", isTest: false };
     expect(parsePaymentMethodsResponse({ methods: [bank] })).toEqual([bank]);
     const onChange = vi.fn();
-    render(<PaymentMethods methods={[...methods, bank]} value="card" onChange={onChange} />);
+    const view = render(<PaymentMethods methods={[...methods, bank]} value="card" onChange={onChange} />);
     fireEvent.click(screen.getByRole("radio", { name: "Pay by Bank" }));
     expect(onChange).toHaveBeenCalledWith("flik");
+    const logo = screen.getByRole("img", { name: "Flik" });
+    expect(logo.querySelector("img")).toHaveAttribute("src", "/media/payments/flik-logo-black.png");
+    expect(logo.className).toBe(screen.getByRole("img", { name: "Afterpay" }).className);
+    view.rerender(<PaymentMethods methods={[...methods, bank]} value="flik" onChange={onChange} />);
     expect(screen.getByText("Pay securely using your New Zealand bank account.")).toBeInTheDocument();
   });
 

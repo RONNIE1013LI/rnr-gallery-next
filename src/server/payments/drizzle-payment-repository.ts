@@ -1281,6 +1281,8 @@ export function createDrizzlePaymentRepository(
             inner join ${orders} as candidate_orders
               on candidate_orders.id = attempts.order_id
             where attempts.status in ('requires_action', 'processing')
+              -- Flik's durable inbox/session worker owns its reconciliation.
+              and attempts.provider <> 'flik'
               and attempts.provider_reference is not null
               and candidate_orders.payment_status not in ('paid', 'refunded', 'failed', 'cancelled')
               and (

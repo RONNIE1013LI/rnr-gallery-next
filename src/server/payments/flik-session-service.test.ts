@@ -38,6 +38,13 @@ function fixture(overrides: Partial<FlikSessionRecord> = {}) {
 }
 
 describe("Flik session and completion integration", () => {
+  it("does not create an unbound payment from the worker without current creation permission", async () => {
+    const { repository, sessions, client } = fixture({ providerReference: null, hostedUrl: null });
+    const applyLiveResult = vi.fn();
+    expect(await createFlikReconciliation({ repository, sessions, testMode: false, applyLiveResult }).run()).toMatchObject({ pending: 1 });
+    expect(client.createSession).not.toHaveBeenCalled();
+    expect(applyLiveResult).not.toHaveBeenCalled();
+  });
   it("leaves queued work untouched when the reconciliation budget is exhausted", async () => {
     const { repository, sessions, client } = fixture();
     repository.listPendingWebhooks.mockResolvedValue([{ transactionId: "txn", foreignTransactionId: id, checkoutSessionId: "cs_fixture" }]);

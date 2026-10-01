@@ -5,12 +5,18 @@ import type { EnabledFlikConfig } from "./flik-config";
 import { createDrizzleFlikRepository, type FlikRepository } from "./flik-repository";
 import { createFlikSessionService, flikPaymentResult } from "./flik-session-service";
 import { PaymentProviderRequestError, PaymentProviderVerificationError, paymentTargetReference,
-  type PaymentProvider, type ProviderPaymentTarget } from "./types";
+  type PaymentProvider, type PaymentEligibilityContext, type ProviderPaymentTarget } from "./types";
 
-export function createFlikProvider({ config, repository, sessionService }: {
+export type FlikProviderAuthorization = Readonly<{
+  canCreate: (context: PaymentEligibilityContext) => Promise<boolean>;
+  canReconcile: () => Promise<boolean>;
+}>;
+
+export function createFlikProvider({ config, repository, sessionService, authorization }: {
   config: EnabledFlikConfig;
   repository?: FlikRepository;
   sessionService?: ReturnType<typeof createFlikSessionService>;
+  authorization?: FlikProviderAuthorization;
 }): PaymentProvider {
   const store = () => repository ??= createDrizzleFlikRepository(getDatabase());
   const service = () => sessionService ??= createFlikSessionService({ config, repository: store() });
@@ -21,6 +27,7 @@ export function createFlikProvider({ config, repository, sessionService }: {
   }
   async function retrieve(order: ProviderPaymentTarget, reference: string) {
     live();
+    if (!authorization || !await authorization.canReconcile()) throw new PaymentProviderVerificationError();
     const row = await store().findSessionByProviderReference(reference);
     if (!row || row.testMode || !("id" in order) || row.orderId !== order.id ||
       row.expectedAmountCents !== order.amountCents || row.currency !== order.currency ||
@@ -35,9 +42,14 @@ export function createFlikProvider({ config, repository, sessionService }: {
   return {
     key: "flik", method: "flik", refundCapability: "unsupported",
     async availability(context) {
-      return flikEligibility({ market: context.market, currency: context.currency, amountCents: context.amountCents,
+      const eligible = flikEligibility({ market: context.market, currency: context.currency, amountCents: context.amountCents,
         billingCountry: context.billingAddress?.country, deliveryCountry: context.deliveryAddress?.country },
       { enabled: config.mode === "live" && !config.testMode && config.deployment === "production", configured: config.enabled });
+      if (!eligible.available) return eligible;
+      try {
+        return authorization && await authorization.canCreate(context)
+          ? { available: true } : { available: false, reason: "Pay by Bank is unavailable" };
+      } catch { return { available: false, reason: "Pay by Bank is unavailable" }; }
     },
     async createOrReuse(input) {
       live();

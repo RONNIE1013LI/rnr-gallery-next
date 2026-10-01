@@ -19,11 +19,17 @@ export function createFlikReconciliationRoute(dependencies?: {
     try {
       if (dependencies) return Response.json(await dependencies.run(), { headers });
       const deadlineMs = Date.now() + 45_000;
-      const runtime = createFlikRuntime({ deadlineMs });
+      const runtime = await createFlikRuntime({ deadlineMs });
       if (!runtime) return Response.json({ disabled: true }, { headers });
       const paidObserver = createMetaPaidOrderObserver((task) => after(task));
       const notificationObserver = createImmediateNotificationDeliveryObserver({ scheduleAfter: (task) => after(task) });
       const worker = createFlikReconciliation({ ...runtime, testMode: runtime.config.testMode, deadlineMs,
+        async canRecoverCreation() {
+          if (runtime.config.testMode) return true;
+          const { getFlikFeatureSnapshot } = await import("@/server/payments/flik-feature");
+          const feature = await getFlikFeatureSnapshot();
+          return feature.ready && feature.status === "live";
+        },
         async applyLiveResult(attemptId, result) {
           // Test runtime never instantiates or invokes the commerce completion repository.
           if (runtime.config.testMode || result.testMode !== false) throw new Error("Live payment required");

@@ -1,4 +1,4 @@
-import { createFlikProvider } from "./flik-provider";
+import { createFlikProvider, type FlikProviderAuthorization } from "./flik-provider";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import { createAfterpayProvider } from "./afterpay-provider";
 import type { PaymentConfig } from "./config";
@@ -25,6 +25,7 @@ export type PaymentProviderRegistryOptions = Readonly<{
   nodeEnv?: string;
   realFactories?: Partial<Record<PaymentMethodKey, ProviderFactory>>;
   localFactory?: LocalProviderFactory;
+  flikAuthorization?: FlikProviderAuthorization;
 }>;
 
 const methods = ["card", "afterpay"] as const;
@@ -106,8 +107,23 @@ export function selectPaymentProviders(
   }
 
   // Test-mode Flik is available only through the isolated, permission-protected test entry.
-  if (config.flik?.enabled && config.flik.mode === "live") {
-    selected.push(registration("flik", createFlikProvider({ config: config.flik }), false));
+  if (config.flik?.enabled && config.flik.mode === "live" && options.flikAuthorization) {
+    selected.push(registration("flik", createFlikProvider({ config: config.flik, authorization: options.flikAuthorization }), false));
   }
   return Object.freeze(selected);
+}
+
+// Only ordinary Checkout and its return path opt into this server authorization.
+// Payment links keep their existing provider selection and business rules.
+export function selectCheckoutPaymentProviders(config: PaymentConfig) {
+  return selectPaymentProviders(config, { flikAuthorization: {
+    async canCreate(context) {
+      const { canCreateFlikCheckoutPayment } = await import("./flik-checkout-access");
+      return canCreateFlikCheckoutPayment(context);
+    },
+    async canReconcile() {
+      const { canReconcileFlikPayments } = await import("./flik-checkout-access");
+      return canReconcileFlikPayments();
+    },
+  } });
 }

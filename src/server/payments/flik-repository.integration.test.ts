@@ -165,6 +165,25 @@ describe("Flik repository against disposable PostgreSQL", () => {
       await expect(payments.createOrClaimNonterminalAttempt({ orderId: order.orderId, provider: "flik", method: "flik", expectedAmountCents: 100, currency: currency as "NZD" | "AUD" })).rejects.toThrow();
     },
   );
+  it("leaves Flik to its dedicated worker while generic reconciliation still claims Stripe and Afterpay", async () => {
+    const ids = new Map<string, string>();
+    for (const [provider, method] of [["flik", "flik"], ["stripe", "card"], ["afterpay", "afterpay"]] as const) {
+      const order = await orderFixture();
+      const claim = await payments.createOrClaimNonterminalAttempt({ orderId: order.orderId, provider, method, expectedAmountCents: 100, currency: "NZD" });
+      await payments.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!,
+        providerReference: `${provider}_${randomUUID()}`, returnStateDigest: randomBytes(32).toString("hex"), status: "requires_action" });
+      ids.set(provider, claim.attempt.id);
+    }
+    await pool.query("UPDATE payment_attempts SET updated_at=now()-interval '2 minutes' WHERE id=ANY($1::uuid[])", [[...ids.values()]]);
+    const candidates = await payments.claimReconciliationCandidates(50);
+    const claimed = candidates.map((candidate) => candidate.attempt.id);
+    expect(claimed).toContain(ids.get("stripe"));
+    expect(claimed).toContain(ids.get("afterpay"));
+    expect(claimed).not.toContain(ids.get("flik"));
+    expect(candidates.every((candidate) => candidate.attempt.provider !== "flik")).toBe(true);
+    const { rows } = await pool.query("SELECT status,sanitized_failure_code,provider_session_lease_id FROM payment_attempts WHERE id=$1", [ids.get("flik")]);
+    expect(rows[0]).toEqual({ status: "requires_action", sanitized_failure_code: null, provider_session_lease_id: null });
+  });
   it("database refuses AU Flik attempts independently of service validation", async () => {
     const order = await orderFixture("AU", "AUD", "AU");
     await expect(pool.query(`INSERT INTO payment_attempts (order_id,provider,method,idempotency_key,expected_amount_cents,currency,country,status)

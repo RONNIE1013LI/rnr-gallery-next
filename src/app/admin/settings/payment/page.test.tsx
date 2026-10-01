@@ -17,6 +17,10 @@ vi.mock("@/server/payments/afterpay-diagnostic", () => ({
   runAfterpayConfigurationDiagnostic: mocks.runAfterpayConfigurationDiagnostic,
 }));
 
+vi.mock("@/components/admin/flik-feature-panel", () => ({
+  FlikFeaturePanel: () => <section aria-label="Flik availability controls">Pay by Bank availability</section>,
+}));
+
 import AdminPaymentSettingsPage from "./page";
 
 describe("Admin payment settings Afterpay diagnostic", () => {
@@ -27,7 +31,8 @@ describe("Admin payment settings Afterpay diagnostic", () => {
       returnOrigin: "https://shop.example.test",
       reconciliationConfigured: true,
       localTestEnabled: false,
-      providers: [{ key: "afterpay", label: "Afterpay", enabled: true, environment: "production", market: "NZ · NZD" }],
+      providers: [{ key: "afterpay", label: "Afterpay", enabled: true, environment: "production", market: "NZ · NZD" },
+        { key: "flik", label: "Flik provider configuration", enabled: false, environment: "unavailable", market: "NZ · NZD" }],
     });
     mocks.runAfterpayConfigurationDiagnostic.mockResolvedValue({
       connection: "PASS",
@@ -43,6 +48,9 @@ describe("Admin payment settings Afterpay diagnostic", () => {
 
     expect(mocks.requireAdminPage).toHaveBeenCalledWith("/admin/settings/payment", "manage_payment");
     expect(mocks.runAfterpayConfigurationDiagnostic).not.toHaveBeenCalled();
+    expect(screen.getByRole("region", { name: "Flik availability controls" })).toBeInTheDocument();
+    expect(screen.queryByText("Flik provider configuration")).not.toBeInTheDocument();
+    expect(screen.getByText(/Flik availability can be changed below after setup/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run read-only Afterpay diagnostic" })).toBeInTheDocument();
   });
 
