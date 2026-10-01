@@ -16,6 +16,8 @@ export class PaymentProviderVerificationError extends Error {}
 export type PaymentEligibilityContext = Readonly<{
   amountCents: number;
   currency: PaymentCurrency;
+  /** Authoritative stored market; absent values fail closed for Flik. */
+  market?: string | null;
   customer: Readonly<{
     fullName: string;
     email: string;
@@ -130,6 +132,9 @@ export type VerifiedPaymentResult = Readonly<{
   orderNumber?: string;
   status: VerifiedPaymentStatus;
   sanitizedFailureCode?: string;
+  /** Required for Flik before any order or ledger mutation. */
+  testMode?: boolean;
+  foreignTransactionId?: string;
 }>;
 
 export type ProviderRetrievalAuthority =

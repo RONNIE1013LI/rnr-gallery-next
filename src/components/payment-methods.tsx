@@ -29,7 +29,7 @@ export function parsePaymentMethodsResponse(payload: unknown): readonly PaymentM
   const methods = response.methods.map((raw) => {
     const method = record(raw);
     if (!method || !exactKeys(method, ["method", "label", "isTest"]) ||
-      (method.method !== "card" && method.method !== "afterpay") ||
+      (method.method !== "card" && method.method !== "afterpay" && method.method !== "flik") ||
       seen.has(method.method) || typeof method.label !== "string" || method.label.trim() !== method.label ||
       method.label.length < 1 || method.label.length > 120 || typeof method.isTest !== "boolean") {
       throw new Error("Payment methods response is invalid");
@@ -68,7 +68,9 @@ export function PaymentMethods({
           disabled={disabled}
           onChange={() => onChange(option.method)}
         />
-        <span>{option.label}</span>
+        <span className={option.method === "flik" ? styles.paymentBankLabel : undefined}>{option.label}{option.method === "flik" ? <small className={styles.paymentMethodDescription}>
+          Pay securely using your New Zealand bank account.
+        </small> : null}</span>
         {option.method === "card" ? <span
           aria-label="Accepted cards: Visa, Mastercard and American Express"
           className={styles.paymentCardBrands}

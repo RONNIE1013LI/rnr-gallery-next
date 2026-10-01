@@ -30,7 +30,7 @@ import { createImmediateNotificationDeliveryObserver } from "@/server/notificati
 export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
 const startInputSchema = z.object({
-  method: z.enum(["card", "afterpay"]),
+  method: z.enum(["card", "afterpay", "flik"]),
   idempotencyKey: z.uuid(),
 }).strict();
 const inputSchema = z.union([
@@ -41,7 +41,7 @@ const inputSchema = z.union([
 type PaymentStarter = {
   start(
     access: PaymentOrderAccess,
-    method: "card" | "afterpay",
+    method: "card" | "afterpay" | "flik",
     idempotencyKey: string,
   ): Promise<PaymentStartResult>;
   confirmPayment(

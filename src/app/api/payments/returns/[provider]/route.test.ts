@@ -7,7 +7,7 @@ const orderNumber = "RNR-2026-PAY1001";
 const state = "a".repeat(64);
 
 function request(
-  provider: "stripe" | "afterpay" | "zip" | "local-test",
+  provider: "stripe" | "afterpay" | "zip" | "local-test" | "flik",
   params: Readonly<Record<string, string>>,
   origin = trustedOrigin,
 ) {
@@ -26,6 +26,26 @@ function handler(handleReturn = vi.fn().mockResolvedValue({ orderNumber })) {
 const common = { flow: "return", orderNumber, state };
 
 describe("GET /api/payments/returns/[provider]", () => {
+  it("passes a Flik return to server verification without trusting its transaction ID", async () => {
+    const { route, handleReturn } = handler();
+    const response = await route(request("flik", { ...common, method: "flik", checkoutSessionId: "cs_fixture", transactionId: "untrusted" }), { params: Promise.resolve({ provider: "flik" }) });
+    expect(response.status).toBe(303);
+    expect(handleReturn).toHaveBeenCalledWith(expect.objectContaining({ provider: "flik", method: "flik", providerReference: "cs_fixture", returnState: state, orderNumber }));
+    expect(handleReturn.mock.calls[0][0]).not.toHaveProperty("transactionId");
+  });
+  it.each<Record<string, string>>([
+    { paymentToken: "A".repeat(43) },
+    { method: "card" },
+    { checkoutSessionId: "" },
+    { state: "forged" },
+    { redirectUrl: "https://untrusted.example" },
+    { flow: "cancel" },
+  ])("rejects invalid or payment-link Flik return parameters %j", async (invalid) => {
+    const { route, handleReturn } = handler();
+    const response = await route(request("flik", { ...common, method: "flik", checkoutSessionId: "cs_fixture", ...invalid }), { params: Promise.resolve({ provider: "flik" }) });
+    expect(response.status).toBe(404);
+    expect(handleReturn).not.toHaveBeenCalled();
+  });
   it("returns a Payment Request callback to the same public token page", async () => {
     const paymentToken = "A".repeat(43);
     const handleReturn = vi.fn().mockResolvedValue({ paymentToken });

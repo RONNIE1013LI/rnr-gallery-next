@@ -284,6 +284,7 @@ describe("Drizzle checkout repository", () => {
     })).resolves.toEqual({
       amountCents: cartSnapshot.totalInclGstCents + quote!.amountInclGstCents,
       currency: "NZD",
+      market: "NZ",
       customer: { fullName: address.fullName, email: address.email, phone: address.phone },
       billingAddress: address,
       deliveryAddress: address,

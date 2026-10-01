@@ -63,6 +63,80 @@ describe("CheckoutView", () => {
     analytics.emitAnalyticsEvent.mockReturnValue(true);
   });
 
+  it.each([
+    { market: "NZ", currency: "NZD", visible: true },
+    { market: "AU", currency: "AUD", visible: false },
+    { market: "AU", currency: "NZD", visible: false },
+    { market: "NZ", currency: "AUD", visible: false },
+    { market: undefined, currency: "NZD", visible: false },
+  ])("filters Pay by Bank using reviewed $market / $currency", async ({ market, currency, visible }) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: { ...repriced, market, currency } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency, isTest: false } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ methods: [
+        { method: "card", label: "Card", isTest: false },
+        { method: "afterpay", label: "Afterpay", isTest: false },
+        { method: "flik", label: "Pay by Bank", isTest: false },
+      ] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView market={market === "AU" ? "AU" : "NZ"} savedAddresses={[address, australianSavedAddress]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByRole("radio", { name: "Card" });
+    expect(screen.getByRole("radio", { name: "Afterpay" })).toBeInTheDocument();
+    expect(Boolean(screen.queryByRole("radio", { name: "Pay by Bank" }))).toBe(visible);
+  });
+
+  it("clears the selected Flik method when the market switches to AU", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", isTest: false } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ methods: [{ method: "flik", label: "Pay by Bank", isTest: false }] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const view = render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByRole("radio", { name: "Pay by Bank" });
+    expect(screen.getByRole("button", { name: "Continue to Pay by Bank" })).toBeEnabled();
+    view.rerender(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Continue to Pay by Bank" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("radio", { name: "Pay by Bank" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue to payment" })).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not start Flik after a market change while the order request is in flight", async () => {
+    let finishOrder!: (value: unknown) => void;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", isTest: false } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ methods: [{ method: "flik", label: "Pay by Bank", isTest: false }] }) })
+      .mockImplementationOnce(() => new Promise((resolve) => { finishOrder = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    const view = render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Continue to Pay by Bank" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    view.rerender(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
+    finishOrder({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-BANK" } }) });
+    expect(await screen.findByRole("link", { name: "Check payment status" })).toHaveAttribute("href", "/orders/RNR-2026-BANK#payment");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!)).toMatchObject({ method: "flik", phase: "starting_payment", orderNumber: "RNR-2026-BANK" });
+  });
+
+  it.each(["placing_order", "starting_payment"])("does not replay a stored Flik %s request in AU", async (phase) => {
+    const intent = { ...placementIntent(), method: "flik", phase, ...(phase === "starting_payment" ? { orderNumber: "RNR-2026-BANK" } : {}) };
+    sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(intent));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
+    await screen.findByText(/Your New Zealand bank payment is still awaiting confirmation/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!)).toEqual(intent);
+    if (phase === "starting_payment") expect(screen.getByRole("link", { name: "Check payment status" })).toHaveAttribute("href", "/orders/RNR-2026-BANK#payment");
+  });
+
   it("tracks begin_checkout once for the mounted identity-scoped cart", async () => {
     const view = render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();

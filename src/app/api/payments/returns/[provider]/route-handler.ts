@@ -31,7 +31,7 @@ type Dependencies = Readonly<{
 type RouteContext = Readonly<{ params: Promise<{ provider: string }> }>;
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
-const providers = new Set<ReturnProvider>(["stripe", "afterpay", "local-test"]);
+const providers = new Set<ReturnProvider>(["stripe", "afterpay", "local-test", "flik"]);
 const paymentMethods = new Set<PaymentReturnInput["method"]>(["card", "afterpay"]);
 const orderNumberPattern = /^(?:\d{5,}|RNR-[A-Z0-9]+(?:-[A-Z0-9]+)+|PAY-[A-Z0-9]+(?:-[A-Z0-9]+)*)$/;
 const statePattern = /^[a-f0-9]{64}$/;
@@ -141,6 +141,16 @@ function parseReturnInput(
       providerReference,
       ...(paymentToken ? { paymentToken } : {}),
     };
+  }
+
+  if (provider === "flik") {
+    if (paymentToken || !hasExactKeys(url, new Set([...commonKeys, "checkoutSessionId", "transactionId"]))) return null;
+    const common = commonReturnValues(url, "flik");
+    const providerReference = url.searchParams.get("checkoutSessionId");
+    if (!common || common.flow !== "return" || !providerReference ||
+      !/^cs_[A-Za-z0-9_-]{1,200}$/.test(providerReference)) return null;
+    return { provider, method: "flik", orderNumber: common.orderNumber,
+      returnState: common.returnState, providerReference };
   }
 
   if (provider === "afterpay") {

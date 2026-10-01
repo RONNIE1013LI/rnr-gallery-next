@@ -21,6 +21,7 @@ import {
 } from "@/domain/cart/browser-cart-scope";
 import { type Cart } from "@/domain/cart/types";
 import { cartToCheckoutInput } from "@/domain/cart/checkout-input";
+import { flikEligibility } from "@/domain/checkout/flik-eligibility";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import { formatMarketMoney } from "@/domain/money";
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
@@ -31,7 +32,7 @@ import { AddressForm, type AddressFieldErrors } from "./address-form";
 import { AnalyticsEventTracker } from "./analytics-event-tracker";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { followPaymentAction, PaymentStartError, startOrderPayment } from "./order-payment-panel";
-import { PaymentMethods, type PaymentMethodOption } from "./payment-methods";
+import { parsePaymentMethodsResponse, PaymentMethods, type PaymentMethodOption } from "./payment-methods";
 import { StripePaymentForm } from "./stripe-payment-form";
 import {
   readPaymentRecoveryIntent,
@@ -216,6 +217,13 @@ export function CheckoutView({
   savedAddresses?: CheckoutSavedAddress[];
 }) {
   const { push } = useRouter();
+  const marketRef = useRef(market);
+  const checkoutActive = useRef(true);
+  useEffect(() => {
+    checkoutActive.current = true;
+    return () => { checkoutActive.current = false; };
+  }, []);
+  useEffect(() => { marketRef.current = market; }, [market]);
   const snapshot = useSyncExternalStore(subscribeToCart, getCartSnapshot, () => EMPTY_CART_JSON);
   const cart = parseStoredCart(snapshot);
   const marketAddresses = savedAddresses.filter((address) => address.country === market);
@@ -250,6 +258,15 @@ export function CheckoutView({
   const currentKey = JSON.stringify({ snapshot, market, billing, delivery: different ? delivery : billing, different, method });
   const isReviewed = Boolean(reviewKey === currentKey && reviewedCart && reviewedVersion !== null && shipping);
   const hasPaymentAuthority = Boolean(isReviewed && paymentReviewKey === currentKey);
+  const flikAvailable = market === "NZ" && Boolean(reviewedCart && shipping && shipping.currency === reviewedCart.currency && flikEligibility({
+    market: reviewedCart.market,
+    currency: reviewedCart.currency,
+    amountCents: reviewedCart.totalInclGstCents + shipping.amountInclGstCents,
+    billingCountry: billing.country,
+    deliveryCountry: (different ? delivery : billing).country,
+  }, { enabled: paymentMethods.some((option) => option.method === "flik" && !option.isTest), configured: true }).available);
+  const visiblePaymentMethods = paymentMethods.filter((option) => option.method !== "flik" || flikAvailable);
+  const flikRecoveryBlocked = paymentIntent?.method === "flik" && market !== "NZ";
   const checkoutLocked = Boolean(!recoveryChecked || !draftChecked || pending || paymentIntent);
   const hasPersistedPaymentIntent = typeof window !== "undefined"
     ? window.sessionStorage.getItem(getActivePaymentIntentStorageKey()) !== null
@@ -330,6 +347,11 @@ export function CheckoutView({
   }, [invalidatePlacement, restoreCartIfEmpty]);
 
   useEffect(() => {
+    if (flikAvailable || selectedPaymentMethod !== "flik") return;
+    void Promise.resolve().then(() => setSelectedPaymentMethod(null));
+  }, [flikAvailable, selectedPaymentMethod]);
+
+  useEffect(() => {
     let active = true;
     void Promise.resolve().then(async () => {
       if (!active) return;
@@ -342,6 +364,12 @@ export function CheckoutView({
       }
       if (!intent) {
         if (durablePending) clearPendingCheckout(window.localStorage);
+        setRecoveryChecked(true);
+        return;
+      }
+      if (intent.method === "flik" && marketRef.current !== "NZ") {
+        setPaymentIntent(intent);
+        setPending(null);
         setRecoveryChecked(true);
         return;
       }
@@ -383,6 +411,10 @@ export function CheckoutView({
           window.sessionStorage.setItem(getActivePaymentIntentStorageKey(), JSON.stringify(starting));
           if (active) setPaymentIntent(starting);
         } else starting = intent;
+        if (starting.method === "flik" && (!checkoutActive.current || marketRef.current !== "NZ")) {
+          if (active) setPending(null);
+          return;
+        }
         const payment = await recoverRequest(`payment:${JSON.stringify(starting)}`, () => startOrderPayment(starting.orderNumber, starting.method, starting.paymentIdempotencyKey));
         if (active) await finishPaymentStart(starting.orderNumber, payment);
       } catch (error) {
@@ -475,6 +507,16 @@ export function CheckoutView({
     </section>;
   }
 
+  if (flikRecoveryBlocked) {
+    return <section className={styles.orderPaymentPanel}>
+      <h2>Payment status</h2>
+      <p className={styles.checkoutMessage}>Your New Zealand bank payment is still awaiting confirmation. It cannot be continued from the Australian checkout.</p>
+      {paymentIntent?.phase === "starting_payment"
+        ? <Link className={styles.secondaryButton} href={`/orders/${paymentIntent.orderNumber}#payment`}>Check payment status</Link>
+        : <p className={styles.checkoutMessage}>Switch back to New Zealand to check your existing checkout before starting another payment.</p>}
+    </section>;
+  }
+
   if (cart.items.length === 0) {
     if (isReturningToOrder) {
       return <section className={styles.cartEmpty}>
@@ -532,7 +574,7 @@ export function CheckoutView({
       const quote = await postJson("/api/checkout/shipping", {});
       const payment = await postJson("/api/checkout/payment-methods", { checkoutVersion: session.checkout.version, cartDigest: session.checkout.cart.cartDigest }) as { methods: readonly PaymentMethodOption[] };
       setReviewedCart(session.checkout.cart); setReviewedVersion(session.checkout.version); setShipping(quote.shipping.option); setShippingOptions(quote.shipping.options ?? [quote.shipping.option]); setReviewKey(currentKey);
-      setPaymentMethods(payment.methods);
+      setPaymentMethods(parsePaymentMethodsResponse(payment));
       setSelectedPaymentMethod(payment.methods.find((option) => option.method === "card")?.method ?? payment.methods[0]?.method ?? null);
       setPaymentReviewKey(currentKey);
       setMessage("Delivery and totals reviewed.");
@@ -566,7 +608,7 @@ export function CheckoutView({
       }) as { methods: readonly PaymentMethodOption[] };
       setShipping(quote.shipping.option);
       setShippingOptions(quote.shipping.options);
-      setPaymentMethods(payment.methods);
+      setPaymentMethods(parsePaymentMethodsResponse(payment));
       setSelectedPaymentMethod((current) =>
         payment.methods.some((option) => option.method === current)
           ? current
@@ -591,6 +633,8 @@ export function CheckoutView({
 
   async function placeOrder() {
     if ((!paymentIntent && (!isReviewed || !selectedPaymentMethod || !hasPaymentAuthority)) || pending || placing.current) return;
+    if ((paymentIntent?.method ?? selectedPaymentMethod) === "flik" &&
+      (marketRef.current !== "NZ" || (!paymentIntent && !flikAvailable))) return;
     placing.current = true;
     setPending("order"); setMessage("");
     let starting: CheckoutStartingPaymentIntent | PlacingOrderIntent | null = null;
@@ -627,6 +671,11 @@ export function CheckoutView({
         setPaymentIntent(starting);
       } else starting = intent;
       if (intent.phase !== "placing_order") rememberPlacedCart(starting, orderedCart);
+      if (starting.method === "flik" && (!checkoutActive.current || marketRef.current !== "NZ")) {
+        placing.current = false;
+        setPending(null);
+        return;
+      }
       const payment = await startOrderPayment(starting.orderNumber, starting.method, starting.paymentIdempotencyKey);
       if (starting.method !== "card" && payment.action && reviewedCart) {
         trackCheckoutEvent("add_payment_info", reviewedCart, {
@@ -655,7 +704,7 @@ export function CheckoutView({
       <button className={`${styles.secondaryButton} ${styles.checkoutReviewButton}`} type="submit" disabled={checkoutLocked}>{!recoveryChecked ? "Checking order status…" : pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>
-    <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2 ref={reviewedSummaryHeadingRef} tabIndex={-1}>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}{isReviewed && shippingOptions.length > 1 ? <fieldset className={styles.shippingMethodSelector}><legend>Shipping method</legend><div>{shippingOptions.map((option) => <label key={option.serviceCode}><input type="radio" name="shippingService" value={option.serviceCode} checked={shipping?.serviceCode === option.serviceCode} disabled={checkoutLocked} onChange={() => void selectShippingService(option.serviceCode)} /><span>{option.serviceName}</span><strong>{formatMarketMoney(option.amountInclGstCents, option.currency)}</strong></label>)}</div></fieldset> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} />{hasPaymentAuthority ? <PaymentMethods methods={paymentMethods} value={selectedPaymentMethod} onChange={setSelectedPaymentMethod} disabled={checkoutLocked} /> : null}<button className={styles.primaryButton} type="button" disabled={paymentIntent ? Boolean(pending) : !hasPaymentAuthority || !selectedPaymentMethod || paymentMethods.length === 0 || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Preparing payment…" : pending === "shipping" ? "Updating shipping…" : paymentIntent?.phase === "starting_payment" ? "Retry payment recovery" : paymentIntent ? "Retry order recovery" : selectedPaymentMethod === "card" ? "Continue to secure card payment" : selectedPaymentMethod === "afterpay" ? "Continue to Afterpay" : "Continue to payment"}</button></aside>
+    <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2 ref={reviewedSummaryHeadingRef} tabIndex={-1}>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}{isReviewed && shippingOptions.length > 1 ? <fieldset className={styles.shippingMethodSelector}><legend>Shipping method</legend><div>{shippingOptions.map((option) => <label key={option.serviceCode}><input type="radio" name="shippingService" value={option.serviceCode} checked={shipping?.serviceCode === option.serviceCode} disabled={checkoutLocked} onChange={() => void selectShippingService(option.serviceCode)} /><span>{option.serviceName}</span><strong>{formatMarketMoney(option.amountInclGstCents, option.currency)}</strong></label>)}</div></fieldset> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} />{hasPaymentAuthority ? <PaymentMethods methods={visiblePaymentMethods} value={selectedPaymentMethod} onChange={setSelectedPaymentMethod} disabled={checkoutLocked} /> : null}<button className={styles.primaryButton} type="button" disabled={paymentIntent ? Boolean(pending) : !hasPaymentAuthority || !selectedPaymentMethod || (selectedPaymentMethod === "flik" && !flikAvailable) || visiblePaymentMethods.length === 0 || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Preparing payment…" : pending === "shipping" ? "Updating shipping…" : paymentIntent?.phase === "starting_payment" ? "Retry payment recovery" : paymentIntent ? "Retry order recovery" : selectedPaymentMethod === "card" ? "Continue to secure card payment" : selectedPaymentMethod === "afterpay" ? "Continue to Afterpay" : selectedPaymentMethod === "flik" ? "Continue to Pay by Bank" : "Continue to payment"}</button></aside>
     </div>
   </>;
 }

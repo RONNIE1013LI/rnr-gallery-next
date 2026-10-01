@@ -14,3 +14,5 @@ export * from "./production";
 export * from "./uploads";
 
 export * from "./staff-security";
+
+export * from "./flik";

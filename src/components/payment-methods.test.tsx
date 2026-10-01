@@ -61,6 +61,16 @@ describe("PaymentMethods", () => {
     expect(container.querySelectorAll("label")[0]?.className).toContain("paymentMethodOption");
   });
 
+  it("accepts Pay by Bank and shows its secure bank-account explanation", () => {
+    const bank = { method: "flik" as const, label: "Pay by Bank", isTest: false };
+    expect(parsePaymentMethodsResponse({ methods: [bank] })).toEqual([bank]);
+    const onChange = vi.fn();
+    render(<PaymentMethods methods={[...methods, bank]} value="card" onChange={onChange} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Pay by Bank" }));
+    expect(onChange).toHaveBeenCalledWith("flik");
+    expect(screen.getByText("Pay securely using your New Zealand bank account.")).toBeInTheDocument();
+  });
+
   it("shows a clear unavailable state instead of an empty group", () => {
     render(<PaymentMethods methods={[]} value={null} onChange={vi.fn()} />);
     expect(screen.getByText("Payment methods are not configured yet")).toBeInTheDocument();

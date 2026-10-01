@@ -8,6 +8,7 @@ export function getAdminPaymentStatus(env: NodeJS.ProcessEnv = process.env) {
     reconciliationConfigured: Boolean(config.operations.reconciliationSecret),
     localTestEnabled: config.localTest.enabled,
     providers: Object.freeze([
+      Object.freeze({ key: "flik", label: "Pay by Bank (Flik)", enabled: config.flik?.enabled ?? false, environment: config.flik?.enabled ? config.flik.mode : "Disabled or not configured", market: "NZ · NZD" }),
       Object.freeze({ key: "stripe", label: "Card (Stripe)", enabled: config.stripe.enabled, environment: config.stripe.enabled ? "Provider configured" : "Not configured", market: null }),
       Object.freeze({ key: "afterpay", label: "Afterpay", enabled: config.afterpay.enabled, environment: config.afterpay.enabled ? config.afterpay.environment : "Not configured", market: config.afterpay.enabled ? `${config.afterpay.merchantCountry} · ${config.afterpay.currency}` : null }),
     ]),

@@ -31,7 +31,7 @@ export type CommerceEvent = Readonly<{
   value: number;
   items: readonly AnalyticsItem[];
   shipping_tier?: string;
-  payment_type?: "card" | "afterpay";
+  payment_type?: "card" | "afterpay" | "flik";
 }>;
 
 export type ItemListEvent = Readonly<{
@@ -92,7 +92,7 @@ export type ProductViewAnalyticsInput = Readonly<{
 
 export type CheckoutAnalyticsDetails = Readonly<{
   shipping_tier?: string;
-  payment_type?: "card" | "afterpay";
+  payment_type?: "card" | "afterpay" | "flik";
 }>;
 
 function isSafeCents(value: number): boolean {

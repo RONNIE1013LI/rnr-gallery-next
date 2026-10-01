@@ -76,6 +76,12 @@ describe("payment provider registry", () => {
     vi.unstubAllEnvs();
   });
 
+  it("never exposes Flik test credentials to ordinary checkout, while preserving other methods", () => {
+    const providers = selectPaymentProviders(config({ flik: { enabled: true, mode: "test", testMode: true,
+      deployment: "development", clientId: "flik_test_cid_fixture", clientSecret: "flik_test_sk_fixture", webhookSecret: "whsec_fixture" } }), { nodeEnv: "test" });
+    expect(providers.map(entry => entry.method)).toEqual(["card", "afterpay"]);
+  });
+
   it("builds explicit local methods and exposes exact labels", async () => {
     const providers = selectPaymentProviders(config(), { nodeEnv: "test" });
 

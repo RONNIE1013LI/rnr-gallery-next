@@ -18,8 +18,8 @@ import type { MarketCurrency } from "@/domain/markets/types";
 import { user } from "./auth";
 import { orders } from "./orders";
 
-export type PaymentProviderKey = "stripe" | "afterpay" | "local-test";
-export type PaymentMethodKey = "card" | "afterpay";
+export type PaymentProviderKey = "stripe" | "afterpay" | "local-test" | "flik";
+export type PaymentMethodKey = "card" | "afterpay" | "flik";
 export type PaymentAttemptStatus =
   | "created"
   | "requires_action"
@@ -294,21 +294,26 @@ export const paymentAttempts = pgTable(
     ),
     check(
       "payment_attempts_provider_valid",
-      sql`${table.provider} in ('stripe', 'afterpay', 'local-test')`,
+      sql`${table.provider} in ('stripe', 'afterpay', 'local-test', 'flik')`,
     ),
     check(
       "payment_attempts_method_valid",
-      sql`${table.method} in ('card', 'afterpay')`,
+      sql`${table.method} in ('card', 'afterpay', 'flik')`,
     ),
     check(
       "payment_attempts_provider_method_valid",
       sql`(
-        ${table.provider} NOT in ('stripe', 'afterpay', 'local-test')
-        OR ${table.method} NOT in ('card', 'afterpay')
+        ${table.provider} NOT in ('stripe', 'afterpay', 'local-test', 'flik')
+        OR ${table.method} NOT in ('card', 'afterpay', 'flik')
         OR (${table.provider} = 'stripe' AND ${table.method} = 'card')
         OR (${table.provider} = 'afterpay' AND ${table.method} = 'afterpay')
+        OR (${table.provider} = 'flik' AND ${table.method} = 'flik')
         OR (${table.provider} = 'local-test' AND ${table.method} in ('card', 'afterpay'))
       )`,
+    ),
+    check(
+      "payment_attempts_flik_checkout_only",
+      sql`${table.provider} <> 'flik' OR (${table.orderId} IS NOT NULL AND ${table.paymentRequestId} IS NULL AND ${table.country} = 'NZ' AND ${table.currency} = 'NZD')`,
     ),
     check(
       "payment_attempts_country_valid",

@@ -3876,6 +3876,18 @@
   min-width: 0;
 }
 
+.paymentBankLabel {
+  flex: 1;
+}
+
+.paymentMethodDescription {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
 .paymentCardBrands {
   margin-inline-start: auto;
   display: inline-flex;

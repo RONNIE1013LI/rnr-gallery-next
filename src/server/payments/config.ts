@@ -1,3 +1,4 @@
+import { parseFlikConfig, type FlikPaymentConfig } from "./flik-config";
 import { isLocalOrPrivateHostname } from "@/server/network/private-hostname";
 
 import type { PaymentCurrency } from "./types";
@@ -33,6 +34,7 @@ export type LocalTestPaymentConfig =
   | Readonly<{ enabled: true; isTest: true }>;
 
 export type PaymentConfig = Readonly<{
+  flik?: FlikPaymentConfig;
   stripe: StripePaymentConfig;
   afterpay: AfterpayPaymentConfig;
   localTest: LocalTestPaymentConfig;
@@ -167,6 +169,7 @@ export function parsePaymentConfig(
   const realProviderEnvironment = returnBaseUrl ? env : {};
 
   return Object.freeze({
+    flik: parseFlikConfig(realProviderEnvironment),
     stripe: parseStripeConfig(realProviderEnvironment),
     afterpay: parseAfterpayConfig(realProviderEnvironment),
     localTest: localTestEnabled

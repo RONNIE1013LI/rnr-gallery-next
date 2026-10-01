@@ -141,7 +141,9 @@ export function parsePaymentStartResponse(
     }
   } else if (action.kind === "redirect") {
     if (!hasExactKeys(action, ["kind", "method", "redirectUrl"]) ||
-      selectedMethod === "card" || payment.status !== "requires_action" || payment.isTest !== false ||
+      selectedMethod === "card" ||
+      (payment.status !== "requires_action" && !(selectedMethod === "flik" && payment.status === "processing")) ||
+      payment.isTest !== false ||
       !trustedActionUrl(action.redirectUrl, "redirect", context)) {
       throw new Error("Payment response is invalid");
     }
@@ -290,6 +292,7 @@ function paymentActionLabel(method: PaymentMethodKey | null, pending: boolean) {
   if (pending) return method === "card" ? "Preparing secure card payment…" : "Starting payment…";
   if (method === "card") return "Continue to secure card payment";
   if (method === "afterpay") return "Continue to Afterpay";
+  if (method === "flik") return "Continue to Pay by Bank";
   return "Continue to payment";
 }
 
@@ -348,6 +351,7 @@ function OrderPaymentPanelState({
     if (paymentStatus === "failed") return "Payment failed. Choose a payment method and try again.";
     if (paymentStatus === "cancelled") return "Payment cancelled. Choose a payment method and try again.";
     if (paymentAction?.kind === "elements") return "Enter your card details below to confirm your order.";
+    if (payment?.method === "flik" && payment.status === "processing") return "Your bank payment is awaiting confirmation. Please do not make another payment. You can return to this page to check the status.";
     if (payment?.status === "processing") return "Complete payment to confirm your order.";
     if (payment?.status === "created") return "Payment setup is pending. Continue with the same payment method.";
     if (payment?.status === "requires_action") return "Payment action is required. Continue with the same payment method.";

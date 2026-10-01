@@ -187,6 +187,7 @@ export function createDrizzleCheckoutRepository(
         return Object.freeze({
           amountCents,
           currency,
+          market: row.session.cartSnapshot.market,
           customer: Object.freeze({
             fullName: billingAddress.fullName,
             email: billingAddress.email,

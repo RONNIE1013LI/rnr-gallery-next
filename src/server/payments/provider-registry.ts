@@ -1,3 +1,4 @@
+import { createFlikProvider } from "./flik-provider";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import { createAfterpayProvider } from "./afterpay-provider";
 import type { PaymentConfig } from "./config";
@@ -27,15 +28,17 @@ export type PaymentProviderRegistryOptions = Readonly<{
 }>;
 
 const methods = ["card", "afterpay"] as const;
-const localLabels: Record<PaymentMethodKey, string> = {
+const localLabels: Record<Exclude<PaymentMethodKey, "flik">, string> = {
   card: "Test card — no real payment",
   afterpay: "Test Afterpay — no real payment",
 };
 const realLabels: Record<PaymentMethodKey, string> = {
+  flik: "Pay by Bank",
   card: "Card",
   afterpay: "Afterpay",
 };
 const realProviderKeys: Record<PaymentMethodKey, PaymentProvider["key"]> = {
+  flik: "flik",
   card: "stripe",
   afterpay: "afterpay",
 };
@@ -59,7 +62,7 @@ function registration(
   }
   return Object.freeze({
     method,
-    label: isTest ? localLabels[method] : realLabels[method],
+    label: isTest && method !== "flik" ? localLabels[method] : realLabels[method],
     isTest,
     provider,
   });
@@ -102,5 +105,9 @@ export function selectPaymentProviders(
     }
   }
 
+  // Test-mode Flik is available only through the isolated, permission-protected test entry.
+  if (config.flik?.enabled && config.flik.mode === "live") {
+    selected.push(registration("flik", createFlikProvider({ config: config.flik }), false));
+  }
   return Object.freeze(selected);
 }

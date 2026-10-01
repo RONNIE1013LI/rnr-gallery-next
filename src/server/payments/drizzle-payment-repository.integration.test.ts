@@ -2332,6 +2332,7 @@ describe("Drizzle payment repository", () => {
     });
     const eventId = `evt-request-number-${randomUUID()}`;
     try {
+      await requests.activateByDigest(request.publicTokenDigest);
       const claim = await requests.preflightAndClaimAttempt({ publicTokenDigest: request.publicTokenDigest, provider: "stripe", method: "card", payerSnapshot: null });
       const providerReference = `pi-request-number-${randomUUID()}`;
       await requests.bindProviderSession({ attemptId: claim.attempt.id, claimId: claim.claimId!, providerReference, returnStateDigest: null, status: "processing" });

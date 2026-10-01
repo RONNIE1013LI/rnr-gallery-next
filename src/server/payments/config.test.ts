@@ -18,11 +18,13 @@ const completeProviderEnvironment = {
 describe("parsePaymentConfig", () => {
   it("disables every provider when configuration is empty", () => {
     expect(parsePaymentConfig({})).toMatchObject({
+      flik: { enabled: false },
       stripe: { enabled: false },
       afterpay: { enabled: false },
       localTest: { enabled: false },
     });
     expect(Object.keys(parsePaymentConfig({}))).toEqual([
+      "flik",
       "stripe",
       "afterpay",
       "localTest",
@@ -115,6 +117,7 @@ describe("parsePaymentConfig", () => {
       currency: "NZD",
     });
     expect(Object.keys(config)).toEqual([
+      "flik",
       "stripe",
       "afterpay",
       "localTest",

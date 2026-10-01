@@ -84,6 +84,46 @@ describe("OrderPaymentPanel", () => {
     window.localStorage.clear();
   });
 
+  it("offers the existing redirect flow for Pay by Bank", async () => {
+    const bank = { method: "flik" as const, label: "Pay by Bank", isTest: false };
+    render(<OrderPaymentPanel orderNumber="RNR-2026-BANK" paymentStatus="awaiting_payment" methods={[bank]} orderHref="/orders/RNR-2026-BANK" />);
+    expect(screen.getByRole("button", { name: "Continue to Pay by Bank" })).toBeEnabled();
+    expect(screen.getByText("Pay securely using your New Zealand bank account.")).toBeInTheDocument();
+    const payload = {
+      payment: { method: "flik", status: "requires_action", isTest: false, canRetry: false },
+      action: { kind: "redirect", method: "flik", redirectUrl: "https://app.flik.co.nz/checkout/session" },
+    };
+    expect(parsePaymentStartResponse(payload, "flik", { nodeEnv: "production", currentOrigin: "https://rnrgallery.com" })).toEqual(payload);
+    expect(() => parsePaymentStartResponse({ ...payload, payment: { ...payload.payment, isTest: true } }, "flik", { nodeEnv: "development", currentOrigin: "http://localhost:3000" })).toThrow();
+  });
+
+  it("accepts the Flik service resume DTO after reconciliation has marked the attempt processing", () => {
+    const context = { nodeEnv: "production", currentOrigin: "https://rnrgallery.com" };
+    const resumed = {
+      payment: { method: "flik", status: "processing", isTest: false, canRetry: false },
+      action: { kind: "redirect", method: "flik", redirectUrl: "https://app.flik.co.nz/checkout/s/existing-session" },
+    };
+    expect(parsePaymentStartResponse(resumed, "flik", context)).toEqual(resumed);
+    for (const status of ["created", "paid", "failed", "cancelled"]) {
+      expect(() => parsePaymentStartResponse({ ...resumed, payment: {
+        ...resumed.payment, status, canRetry: status === "failed" || status === "cancelled",
+      } }, "flik", context)).toThrow("Payment response is invalid");
+    }
+    expect(() => parsePaymentStartResponse({
+      payment: { ...resumed.payment, method: "afterpay" },
+      action: { ...resumed.action, method: "afterpay" },
+    }, "afterpay", context)).toThrow("Payment response is invalid");
+    expect(() => parsePaymentStartResponse({ ...resumed, payment: { ...resumed.payment, isTest: true } }, "flik", context)).toThrow("Payment response is invalid");
+  });
+
+  it("keeps an uncertain bank payment pending and explains that another payment should not be made", () => {
+    render(<OrderPaymentPanel orderNumber="RNR-2026-BANK" paymentStatus="processing"
+      payment={{ method: "flik", status: "processing", isTest: false, canRetry: false }}
+      methods={[]} orderHref="/orders/RNR-2026-BANK" />);
+    expect(screen.getByText(/Your bank payment is awaiting confirmation/)).toHaveTextContent("Please do not make another payment.");
+    expect(screen.queryByText(/Payment failed/)).not.toBeInTheDocument();
+  });
+
   it("resumes the same Stripe payment from durable storage after the browser is reopened", async () => {
     seedDurablePendingCheckout();
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({

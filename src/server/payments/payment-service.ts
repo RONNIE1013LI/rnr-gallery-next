@@ -169,6 +169,11 @@ const providerContracts: Readonly<Record<string, Readonly<{
     sessionKind: "elements",
     isTest: false,
   }),
+  flik: Object.freeze({
+    methods: ["flik"] as readonly PaymentMethodKey[],
+    sessionKind: "redirect",
+    isTest: false,
+  }),
   afterpay: Object.freeze({
     methods: ["afterpay"] as readonly PaymentMethodKey[],
     sessionKind: "redirect",
@@ -194,6 +199,7 @@ function eligibilityContext(context: PaymentEligibilityContext): PaymentEligibil
   return Object.freeze({
     amountCents: context.amountCents,
     currency: context.currency,
+    market: context.market,
     customer: Object.freeze({
       fullName: context.customer.fullName,
       email: context.customer.email,
@@ -211,6 +217,7 @@ function providerPaymentOrder(order: PaymentOrder): PaymentOrder {
     ...(order.paymentReference ? { paymentReference: order.paymentReference } : {}),
     amountCents: order.amountCents,
     currency: order.currency,
+    market: order.market,
     customer: Object.freeze({ ...order.customer }),
     billingAddress: minimalAddress(order.billingAddress),
     deliveryAddress: minimalAddress(order.deliveryAddress),
@@ -1027,6 +1034,7 @@ export function createPaymentService({
           result: {
             providerReference: storedAttempt.providerReference,
             providerStatus: "RETURN_STATUS_UNKNOWN",
+            ...(input.provider === "flik" ? { testMode: false, foreignTransactionId: storedAttempt.id } : {}),
             amountCents: storedAttempt.expectedAmountCents,
             currency: storedAttempt.currency,
             orderNumber: paymentTargetReference(storedOrder),

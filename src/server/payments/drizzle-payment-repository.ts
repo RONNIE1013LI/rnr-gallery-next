@@ -1,3 +1,4 @@
+import { flikEligibility } from "@/domain/checkout/flik-eligibility";
 import { allocateOrderNumber } from "@/server/orders/order-number";
 import { scheduleNewOrderInvoiceEmail, automaticInvoiceActor } from "@/server/admin/admin-invoice-runtime";
 import { createDrizzleInvoiceRepository } from "@/server/invoices/drizzle-invoice-repository";
@@ -247,6 +248,7 @@ function paymentOrder(
     ...(order.paymentReference ? { paymentReference: order.paymentReference } : {}),
     amountCents: order.totalInclGstCents,
     currency: order.currency,
+    market: order.market,
     customer: Object.freeze({
       fullName: billingAddress.fullName,
       email: billingAddress.email,
@@ -666,7 +668,11 @@ function assertVerifiedResult(
     result.amountCents !== order.totalInclGstCents ||
     result.currency !== attempt.currency ||
     result.currency !== order.currency ||
-    result.orderNumber !== (order.paymentReference ?? order.orderNumber)
+    result.orderNumber !== (order.paymentReference ?? order.orderNumber) ||
+    (attempt.provider === "flik" && (
+      result.testMode !== false || result.foreignTransactionId !== attempt.id ||
+      order.market !== "NZ" || attempt.country !== "NZ" || attempt.currency !== "NZD"
+    ))
   ) {
     throw new PaymentVerificationMismatchError();
   }
@@ -878,6 +884,7 @@ export function createDrizzlePaymentRepository(
         ...(hydrated.paymentReference ? { paymentReference: hydrated.paymentReference } : {}),
         amountCents: hydrated.amountCents,
         currency: hydrated.currency,
+        market: hydrated.market,
         customer: hydrated.customer,
         billingAddress: hydrated.billingAddress,
         deliveryAddress: hydrated.deliveryAddress,
@@ -954,6 +961,12 @@ export function createDrizzlePaymentRepository(
         try {
           const addresses = await loadAddresses(transaction, order.id);
           country = addressFor(addresses, "delivery").country;
+          if (input.provider === "flik" && !flikEligibility({
+            market: order.market, currency: order.currency, amountCents: order.totalInclGstCents,
+            billingCountry: addressFor(addresses, "billing").country, deliveryCountry: country,
+          }, { enabled: true, configured: true }).available) {
+            throw new PaymentRepositoryConflictError("Pay by Bank is unavailable for this order");
+          }
         } catch {
           throw new PaymentRepositoryConflictError("Invalid delivery address snapshot");
         }

@@ -49,6 +49,11 @@ describe("payment recovery intent", () => {
     });
   });
 
+  it("preserves a Flik intent for authoritative payment recovery", () => {
+    const intent = { ...rich, method: "flik" };
+    expect(parsePaymentRecoveryIntent(JSON.stringify(intent))).toEqual(intent);
+  });
+
   it.each([
     { ...rich, secret: "must-not-persist" },
     { ...rich, paymentIdempotencyKey: "bad" },

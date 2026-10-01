@@ -18,7 +18,7 @@ export default async function NewPaymentRequestPage({ searchParams = Promise.res
   const summary = orderId ? await getPaymentRequestRuntime().orderSummary(orderId) : null;
   const paymentConfig = parsePaymentConfig();
   const preferredMethods = Object.freeze(
-    (["afterpay", "card"] as const).filter((method): method is PaymentMethodKey => {
+    (["afterpay", "card"] as const).filter((method): method is Exclude<PaymentMethodKey, "flik"> => {
       if (method === "card") return paymentConfig.stripe.enabled || paymentConfig.localTest.enabled;
       return paymentConfig.afterpay.enabled || paymentConfig.localTest.enabled;
     }),
