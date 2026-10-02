@@ -68,7 +68,7 @@ export default function TermsPage() {
         </p>
         <h2 id="timing-and-urgent-service">Timing and urgent service</h2>
         <p>
-          Please note that, by default, all orders have a production time of 5
+          Please note that, by default, all orders have a production time of 3
           business days from the date the order is placed.
         </p>
         <p>Estimated delivery times after production are:</p>

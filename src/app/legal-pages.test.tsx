@@ -39,6 +39,13 @@ describe("legal pages", () => {
   it("explains Australian DHL and standard delivery times separately from production", () => {
     render(<TermsPage />);
 
+    expect(screen.getByText(
+      "Please note that, by default, all orders have a production time of 3 business days from the date the order is placed.",
+    )).toBeVisible();
+    expect(screen.getByText(/New Zealand: 2–3 business days after production/)).toBeVisible();
+    expect(screen.getByRole("main")).toHaveTextContent(
+      "If your order is urgent, please make sure to clearly let us know when placing your order so that we can arrange it accordingly and avoid any delays.",
+    );
     expect(screen.getByText("Last updated: 21 August 2026")).toBeVisible();
     expect(screen.getByText(/DHL Express.*around 2 days.*after production/)).toBeVisible();
     expect(screen.getByText(/Standard delivery.*around 7–10 days.*after production/)).toBeVisible();
