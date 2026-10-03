@@ -1069,6 +1069,54 @@ describe("ProductionJobForm", () => {
     });
   });
 
+  it("autosaves each delivery date change without blur and does not save again on blur", async () => {
+    const saved = vi.fn();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "updated", version: "2026-08-21T09:00:00.000Z" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "updated", version: "2026-08-21T10:00:00.000Z" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductionJobForm assignees={assignees} canManageFinance={false} manualEntryLayout
+      endpoint="/api/forms/jobs" existingOrder={existingOrder} onSaved={saved} />);
+
+    const date = screen.getByLabelText("DlvryDate");
+    fireEvent.focus(date);
+    fireEvent.change(date, { target: { value: "2026-08-29" } });
+    await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`/api/forms/jobs/${existingOrder.id}`);
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("PATCH");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      neededDate: "2026-08-29", expectedUpdatedAt: existingOrder.expectedUpdatedAt,
+    });
+
+    fireEvent.change(date, { target: { value: "2026-08-30" } });
+    await waitFor(() => expect(saved).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      neededDate: "2026-08-30", expectedUpdatedAt: "2026-08-21T09:00:00.000Z",
+    });
+    fireEvent.blur(date);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not autosave an empty delivery date but saves once a valid date is selected", async () => {
+    const saved = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "updated", version: "2026-08-21T09:00:00.000Z",
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductionJobForm assignees={assignees} canManageFinance={false} manualEntryLayout
+      endpoint="/api/forms/jobs" existingOrder={existingOrder} onSaved={saved} />);
+
+    const date = screen.getByLabelText("DlvryDate");
+    fireEvent.focus(date);
+    fireEvent.change(date, { target: { value: "" } });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.change(date, { target: { value: "2026-08-29" } });
+    await waitFor(() => expect(saved).toHaveBeenCalledOnce());
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ neededDate: "2026-08-29" });
+  });
+
   it("shows five change-log entries initially and reveals more on request", () => {
     const audit = Array.from({ length: 7 }, (_, index) => ({
       id: `audit-load-${index}`,

@@ -1083,12 +1083,12 @@ export function ProductionJobForm({
       }}
       onBlurCapture={(event) => {
         if (!existingOrder || event.target instanceof HTMLSelectElement ||
-          (event.target instanceof HTMLInputElement && ["checkbox", "file", "radio"].includes(event.target.type))) return;
+          (event.target instanceof HTMLInputElement && ["checkbox", "date", "file", "radio"].includes(event.target.type))) return;
         if (focusedValues.current.get(event.target) !== fieldValue(event.target)) requestAutoSave();
       }}
       onChangeCapture={(event) => {
         if (event.target instanceof HTMLSelectElement ||
-          (event.target instanceof HTMLInputElement && ["checkbox", "radio"].includes(event.target.type))) requestAutoSave();
+          (event.target instanceof HTMLInputElement && ["checkbox", "date", "radio"].includes(event.target.type))) requestAutoSave();
       }}
     >
       <div className={styles.formUtilityBar}>
