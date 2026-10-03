@@ -4996,6 +4996,24 @@ button.paymentProofPreviewMedia {
   cursor: pointer;
 }
 
+.requiredMark::before {
+  content: "*";
+  color: #b42318;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.productionForm[data-validation-errors] input:invalid,
+.productionForm[data-validation-errors] select:invalid,
+.productionForm[data-validation-errors] textarea:invalid,
+.productionForm [aria-invalid="true"] {
+  border-color: #b42318;
+}
+
+.formSubmitBar p[role="alert"] {
+  color: #b42318;
+}
+
 .fieldHint {
   margin: 9px 0 0;
   color: var(--admin-muted);

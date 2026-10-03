@@ -242,6 +242,10 @@ const manualYesNoChoices: readonly ManualChoice[] = [
   { value: "no", label: "NO" },
 ];
 
+function RequiredMark() {
+  return <span className={styles.requiredMark} data-required-mark aria-hidden="true" />;
+}
+
 function ManualChoiceRow({
   label,
   name,
@@ -258,7 +262,7 @@ function ManualChoiceRow({
   required?: boolean;
 }>) {
   return <div className={styles.manualChoiceRow}>
-    <span>{label}</span>
+    <span>{required ? <RequiredMark /> : null}{label}</span>
     <div className={styles.manualChoiceOptions} role="radiogroup" aria-label={label}>
       {(defaultValue && !choices.some((choice) => choice.value === defaultValue) ? [...choices, { value: defaultValue, label: defaultValue }] : choices).map((choice) => <label
         className={styles.manualChoiceOption}
@@ -426,6 +430,7 @@ export function ProductionJobForm({
   const [nextItemKey, setNextItemKey] = useState(1);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [invalidFields, setInvalidFields] = useState<string[]>([]);
   const [paymentProofError, setPaymentProofError] = useState("");
   const [paymentProofs, setPaymentProofs] = useState<readonly PendingPaymentProof[]>([]);
   const [paymentRecovery, setPaymentRecovery] = useState<PaymentRecovery | null>(null);
@@ -800,9 +805,37 @@ export function ProductionJobForm({
     await continuePaymentRecovery(paymentRecovery);
   }
 
+  function validateFields(form: HTMLFormElement, focusFirst = false) {
+    const invalid = new Map<string, { label: string; control: HTMLElement }>();
+    for (const control of form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("input, select, textarea")) {
+      if (!control.willValidate || (control.validity.valid && (!control.required || control.value.trim()))) continue;
+      const label = control.getAttribute("aria-label")
+        || control.closest('[role="radiogroup"]')?.getAttribute("aria-label")
+        || (control.type === "radio" ? control.closest("fieldset")?.querySelector("legend")?.textContent : null)
+        || control.labels?.[0]?.querySelector("span")?.textContent
+        || control.name;
+      invalid.set(control.name, { label: label.trim(), control });
+    }
+    if (!isWebOrder && customerPhoneRef.current && customerEmailRef.current &&
+      !customerPhoneRef.current.value.trim() && !customerEmailRef.current.value.trim()) {
+      invalid.set("customerContact", {
+        label: manualEntryLayout ? "PhoneNo. or Email (at least one)" : "Phone or Email (at least one)",
+        control: customerPhoneRef.current,
+      });
+    }
+    setInvalidFields([...invalid.keys()]);
+    setFeedback(invalid.size ? `Please complete or correct: ${[...invalid.values()].map((field) => field.label).join(", ")}.` : "");
+    if (focusFirst) invalid.values().next().value?.control.focus();
+    return invalid.size === 0;
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (paymentRecovery) {
+      pinOnNextSave.current = null;
+      return;
+    }
+    if (!validateFields(event.currentTarget, true)) {
       pinOnNextSave.current = null;
       return;
     }
@@ -1043,6 +1076,8 @@ export function ProductionJobForm({
       ref={formRef}
       className={`${styles.productionForm} ${manualEntryLayout ? styles.manualEntryForm : ""} ${manualEntryLayout && !existingOrder ? styles.manualEntryCreateForm : ""}`}
       onSubmit={submit}
+      data-validation-errors={invalidFields.length > 0 || undefined}
+      onInvalidCapture={(event) => validateFields(event.currentTarget)}
       onFocusCapture={(event) => {
         if (existingOrder) focusedValues.current.set(event.target, fieldValue(event.target));
       }}
@@ -1074,6 +1109,7 @@ export function ProductionJobForm({
         </div>
       </div>
 
+      <p className={styles.fieldHint}><RequiredMark />Required field. Phone and Email require at least one.</p>
       <section className={styles.formPanel}>
         {!manualEntryLayout ? <div className={styles.formSectionHeading}>
           <div><span>01</span><h2>Record summary</h2></div>
@@ -1121,8 +1157,8 @@ export function ProductionJobForm({
               <small id="payment-proof-help" className={styles.fieldHint}>Choose any number of JPG, PNG, WebP, HEIC, HEIF or PDF files. Maximum 25 MB each.</small>
               {paymentProofError ? <p id="payment-proof-error" className={styles.fieldHint} role="alert">{paymentProofError}</p> : null}
             </div></div> : null}
-            <label><span>AmtPayable</span><MoneyCentsInput ariaLabel="AmtPayable" name="amountPayable" cents={amountPayableCents} onCentsChange={setAmountPayableCents} required disabled={formDisabled || isWebOrder} /></label>
-            <label><span>AmtPaid</span><MoneyCentsInput ariaLabel="AmtPaid" name="amountPaid" cents={amountPaidCents} onCentsChange={setAmountPaidCents} required disabled={formDisabled || isWebOrder} /></label>
+            <label><span><RequiredMark />AmtPayable</span><MoneyCentsInput ariaLabel="AmtPayable" name="amountPayable" cents={amountPayableCents} onCentsChange={setAmountPayableCents} required disabled={formDisabled || isWebOrder} /></label>
+            <label><span><RequiredMark />AmtPaid</span><MoneyCentsInput ariaLabel="AmtPaid" name="amountPaid" cents={amountPaidCents} onCentsChange={setAmountPaidCents} required disabled={formDisabled || isWebOrder} /></label>
             <label><span>AmtOwe</span><input value={(Math.max(0, amountPayableCents - amountPaidCents) / 100).toFixed(2)} readOnly aria-readonly="true" /></label>
             <ManualChoiceRow label="BankRecon" name="paymentReconciliationStatus" defaultValue={existingOrder?.paymentReconciliationStatus ?? "Not checked"} choices={manualBankChoices} disabled={formDisabled || !canManageFinance} />
           </div>
@@ -1140,7 +1176,7 @@ export function ProductionJobForm({
           <div className={styles.manualFieldRows}>
             <ManualChoiceRow label="Urgent?" name="urgent" defaultValue={existingOrder?.urgent ? "on" : "no"} choices={[{ value: "no", label: "Normal" }, { value: "on", label: "Urgent" }]} disabled={formDisabled} />
             <ManualChoiceRow label="DlvryMethod" name="deliveryMethod" defaultValue={existingOrder?.deliveryMethod ?? "post"} choices={manualDeliveryChoices} disabled={formDisabled} />
-            <label><span>DlvryDate</span><input className={styles.manualContentControl} name="neededDate" type="date" defaultValue={existingOrder?.neededDate ?? defaultNeededDate()} required disabled={formDisabled} /></label>
+            <label><span><RequiredMark />DlvryDate</span><input className={styles.manualContentControl} name="neededDate" type="date" defaultValue={existingOrder?.neededDate ?? defaultNeededDate()} required disabled={formDisabled} /></label>
             <label><span>DlvryAddr</span><div><textarea ref={deliveryAddressRef} name="deliveryAddress" defaultValue={existingOrder?.deliveryAddress ?? ""} rows={5} maxLength={5000} onPaste={pasteCustomerDetails} disabled={formDisabled} />{pasteFeedback ? <p className={styles.fieldHint} role="status">{pasteFeedback}</p> : null}</div></label>
           </div>
         </section>
@@ -1149,11 +1185,11 @@ export function ProductionJobForm({
           <div className={styles.formSectionHeading}><div><h2>Customer info</h2></div></div>
           <div className={styles.manualFieldRows}>
             <ManualChoiceRow label="CustSource" name="customerSource" defaultValue={existingOrder?.customerSource ?? "messenger"} choices={manualCustomerSourceChoices} disabled={formDisabled} />
-            <label><span>Cust.Name</span><input ref={customerNameRef} name="customerName" defaultValue={existingOrder?.customerName ?? ""} required maxLength={190} disabled={formDisabled || isWebOrder} /></label>
-            <label><span>PhoneNo.</span><input ref={customerPhoneRef} name="customerPhone" defaultValue={existingOrder?.customerPhone ?? ""} type="tel" maxLength={80} disabled={formDisabled || isWebOrder} /></label>
-            <label><span>Email</span><input ref={customerEmailRef} name="customerEmail" defaultValue={existingOrder?.customerEmail ?? ""} type="email" maxLength={320} disabled={formDisabled || isWebOrder} /></label>
+            <label><span><RequiredMark />Cust.Name</span><input ref={customerNameRef} name="customerName" defaultValue={existingOrder?.customerName ?? ""} required maxLength={190} disabled={formDisabled || isWebOrder} /></label>
+            <label><span>{!isWebOrder ? <RequiredMark /> : null}PhoneNo.</span><input ref={customerPhoneRef} name="customerPhone" aria-describedby="customer-contact-help" aria-invalid={invalidFields.includes("customerContact") || undefined} defaultValue={existingOrder?.customerPhone ?? ""} type="tel" maxLength={80} disabled={formDisabled || isWebOrder} /></label>
+            <label><span>{!isWebOrder ? <RequiredMark /> : null}Email</span><input ref={customerEmailRef} name="customerEmail" aria-describedby="customer-contact-help" aria-invalid={invalidFields.includes("customerContact") || undefined} defaultValue={existingOrder?.customerEmail ?? ""} type="email" maxLength={320} disabled={formDisabled || isWebOrder} /></label>
           </div>
-          <p className={styles.fieldHint}>Enter at least an email address or phone number.</p>
+          <p id="customer-contact-help" className={styles.fieldHint}><RequiredMark />PhoneNo. or Email: at least one is required.</p>
         </section>
 
         {canEditTracking ? <section className={styles.formPanel}>
@@ -1180,7 +1216,7 @@ export function ProductionJobForm({
 
         {canManageFinance || (isWebOrder && canViewInvoice) ? <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Cost / Profit</h2></div></div>
-          <div className={styles.manualFieldRows}><label><span>Material Cost</span><MoneyCentsInput ariaLabel="Material Cost" name="materialCost" cents={materialCostCents} onCentsChange={setMaterialCostCents} required disabled={formDisabled || isWebOrder} /></label></div>
+          <div className={styles.manualFieldRows}><label><span><RequiredMark />Material Cost</span><MoneyCentsInput ariaLabel="Material Cost" name="materialCost" cents={materialCostCents} onCentsChange={setMaterialCostCents} required disabled={formDisabled || isWebOrder} /></label></div>
           <input name="artistFee" type="hidden" value="0" />
         </section> : null}
 
@@ -1218,13 +1254,13 @@ export function ProductionJobForm({
               <legend>Item {index + 1}</legend>
               {itemKeys.length > 1 ? <button type="button" className={styles.removeItemButton} onClick={() => setItemKeys((current) => current.filter((itemKey) => itemKey !== key))}>Remove</button> : null}
               <div className={styles.formGrid}>
-                <label><span>Product</span><input name={`item-${key}-product`} list="rnr-production-products" required maxLength={190} disabled={pending} /></label>
-                <label><span>Size</span><select name={`item-${key}-size`} defaultValue="" required disabled={pending}>
+                <label><span><RequiredMark />Product</span><input name={`item-${key}-product`} list="rnr-production-products" required maxLength={190} disabled={pending} /></label>
+                <label><span><RequiredMark />Size</span><select name={`item-${key}-size`} defaultValue="" required disabled={pending}>
                   <option value="" disabled>Please choose</option>
                   {FORM_OPTION_SETS.size.map((size) => <option key={size} value={size}>{size}</option>)}
                 </select></label>
                 <label><span>Size other</span><input name={`item-${key}-size-other`} maxLength={190} placeholder="Only if the standard size does not apply" disabled={pending} /></label>
-                <label className={styles.shortField}><span>Quantity</span><input name={`item-${key}-quantity`} type="number" min={1} max={100} defaultValue={1} required disabled={pending} /></label>
+                <label className={styles.shortField}><span><RequiredMark />Quantity</span><input name={`item-${key}-quantity`} type="number" min={1} max={100} defaultValue={1} required disabled={pending} /></label>
               </div>
             </fieldset>
           ))}
@@ -1236,8 +1272,8 @@ export function ProductionJobForm({
           <div className={styles.formSectionHeading}><div><span>04</span><h2>Payment</h2></div><p>Restricted to authorised finance staff.</p></div>
           <div className={styles.formGrid}>
             <label><span>Payment status</span><select name="manualPaymentStatus" defaultValue="awaiting_payment" disabled={pending}>{["awaiting_payment", "processing", "paid", "failed", "cancelled", "refunded"].map((status) => <option value={status} key={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
-            <label><span>Amount payable (NZD)</span><MoneyCentsInput ariaLabel="Amount payable (NZD)" name="amountPayable" cents={amountPayableCents} onCentsChange={setAmountPayableCents} required disabled={pending} /></label>
-            <label><span>Amount paid (NZD)</span><MoneyCentsInput ariaLabel="Amount paid (NZD)" name="amountPaid" cents={amountPaidCents} onCentsChange={setAmountPaidCents} required disabled={pending} /></label>
+            <label><span><RequiredMark />Amount payable (NZD)</span><MoneyCentsInput ariaLabel="Amount payable (NZD)" name="amountPayable" cents={amountPayableCents} onCentsChange={setAmountPayableCents} required disabled={pending} /></label>
+            <label><span><RequiredMark />Amount paid (NZD)</span><MoneyCentsInput ariaLabel="Amount paid (NZD)" name="amountPaid" cents={amountPaidCents} onCentsChange={setAmountPaidCents} required disabled={pending} /></label>
             <label><span>Amount owing (NZD)</span><input value={(Math.max(0, amountPayableCents - amountPaidCents) / 100).toFixed(2)} readOnly aria-readonly="true" /></label>
             <label><span>Payment reconciliation</span><select name="paymentReconciliationStatus" defaultValue="Not checked" disabled={pending}>{["Not checked", "Arrive", "Afterpay", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"].map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
           </div>
@@ -1269,7 +1305,7 @@ export function ProductionJobForm({
             <option value="delivery">Delivery</option><option value="courier">Courier</option>
             <option value="australia_shipping">Australia shipping</option><option value="email">Email</option><option value="other">Other</option>
           </select></label>
-          <label><span>Needed date</span><input name="neededDate" type="date" defaultValue={defaultNeededDate()} required disabled={pending} /></label>
+          <label><span><RequiredMark />Needed date</span><input name="neededDate" type="date" defaultValue={defaultNeededDate()} required disabled={pending} /></label>
           <label className={styles.fullField}><span>Delivery address</span><textarea ref={deliveryAddressRef} name="deliveryAddress" rows={5} maxLength={5000} onPaste={pasteCustomerDetails} disabled={pending} /></label>
           {pasteFeedback ? <p className={`${styles.fieldHint} ${styles.fullField}`} role="status">{pasteFeedback}</p> : null}
         </div>
@@ -1284,11 +1320,11 @@ export function ProductionJobForm({
             <option value="market">Market</option><option value="walk_in">Walk in</option><option value="other">Other</option>
             <option value="rnr">R&amp;R</option><option value="wechat">WeChat</option>
           </select></label>
-          <label><span>Customer name</span><input ref={customerNameRef} name="customerName" required maxLength={190} disabled={pending} /></label>
-          <label><span>Phone</span><input ref={customerPhoneRef} name="customerPhone" type="tel" maxLength={80} disabled={pending} /></label>
-          <label><span>Email</span><input ref={customerEmailRef} name="customerEmail" type="email" maxLength={320} disabled={pending} /></label>
+          <label><span><RequiredMark />Customer name</span><input ref={customerNameRef} name="customerName" required maxLength={190} disabled={pending} /></label>
+          <label><span>{!isWebOrder ? <RequiredMark /> : null}Phone</span><input ref={customerPhoneRef} name="customerPhone" aria-describedby="customer-contact-help" aria-invalid={invalidFields.includes("customerContact") || undefined} type="tel" maxLength={80} disabled={pending} /></label>
+          <label><span>{!isWebOrder ? <RequiredMark /> : null}Email</span><input ref={customerEmailRef} name="customerEmail" aria-describedby="customer-contact-help" aria-invalid={invalidFields.includes("customerContact") || undefined} type="email" maxLength={320} disabled={pending} /></label>
         </div>
-        <p className={styles.fieldHint}>Enter at least an email address or phone number.</p>
+        <p id="customer-contact-help" className={styles.fieldHint}><RequiredMark />Phone or Email: at least one is required.</p>
       </section>
 
       <section className={styles.formPanel}>
@@ -1304,8 +1340,8 @@ export function ProductionJobForm({
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><span>08</span><h2>Cost / Profit</h2></div><p>Restricted to authorised finance staff.</p></div>
           <div className={styles.formGrid}>
-            <label><span>Artist fee (NZD)</span><MoneyCentsInput ariaLabel="Artist fee (NZD)" name="artistFee" cents={artistFeeCents} onCentsChange={setArtistFeeCents} required disabled={pending} /></label>
-            <label><span>Material cost (NZD)</span><MoneyCentsInput ariaLabel="Material cost (NZD)" name="materialCost" cents={materialCostCents} onCentsChange={setMaterialCostCents} required disabled={pending} /></label>
+            <label><span><RequiredMark />Artist fee (NZD)</span><MoneyCentsInput ariaLabel="Artist fee (NZD)" name="artistFee" cents={artistFeeCents} onCentsChange={setArtistFeeCents} required disabled={pending} /></label>
+            <label><span><RequiredMark />Material cost (NZD)</span><MoneyCentsInput ariaLabel="Material cost (NZD)" name="materialCost" cents={materialCostCents} onCentsChange={setMaterialCostCents} required disabled={pending} /></label>
             <label className={styles.checkboxField}><input name="artistPaid" type="checkbox" disabled={pending} /><span>Artist paid</span></label>
           </div>
         </section>
@@ -1315,16 +1351,16 @@ export function ProductionJobForm({
         <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "09" : "07"}</span><h2>Custom information</h2></div><p>Additional studio fields configured by an administrator.</p></div>
         <div className={styles.formGrid}>{customFields.map((field) => {
           const name = `custom-${field.id}`;
-          if (field.fieldType === "textarea") return <label className={styles.fullField} key={field.id}><span>{field.label}</span><textarea name={name} rows={3} required={field.required} maxLength={10000} disabled={pending} /></label>;
-          if (field.fieldType === "select") return <label key={field.id}><span>{field.label}</span><select name={name} required={field.required} defaultValue="" disabled={pending}><option value="">Select…</option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
-          if (field.fieldType === "radio") return <fieldset className={styles.productionItem} key={field.id}><legend>{field.label}</legend>{field.options.map((option) => <label className={styles.checkboxField} key={option}><input type="radio" name={name} value={option} required={field.required} disabled={pending} /><span>{option}</span></label>)}</fieldset>;
-          return <label key={field.id}><span>{field.label}</span><input name={name} type={field.fieldType} required={field.required} maxLength={field.fieldType === "text" ? 10000 : undefined} disabled={pending} /></label>;
+          if (field.fieldType === "textarea") return <label className={styles.fullField} key={field.id}><span>{field.required ? <RequiredMark /> : null}{field.label}</span><textarea name={name} rows={3} required={field.required} maxLength={10000} disabled={pending} /></label>;
+          if (field.fieldType === "select") return <label key={field.id}><span>{field.required ? <RequiredMark /> : null}{field.label}</span><select name={name} required={field.required} defaultValue="" disabled={pending}><option value="">Select…</option>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>;
+          if (field.fieldType === "radio") return <fieldset className={styles.productionItem} key={field.id}><legend>{field.required ? <RequiredMark /> : null}{field.label}</legend>{field.options.map((option) => <label className={styles.checkboxField} key={option}><input type="radio" name={name} value={option} required={field.required} disabled={pending} /><span>{option}</span></label>)}</fieldset>;
+          return <label key={field.id}><span>{field.required ? <RequiredMark /> : null}{field.label}</span><input name={name} type={field.fieldType} required={field.required} maxLength={field.fieldType === "text" ? 10000 : undefined} disabled={pending} /></label>;
         })}</div>
       </section> : null}
       </>}
 
       <div className={styles.formSubmitBar}>
-        <p aria-live="polite">{feedback}</p>
+        <p aria-live="polite" role={invalidFields.length ? "alert" : undefined}>{feedback}</p>
         {existingOrder && canDeleteJob ? <button
           type="button"
           className={styles.dangerButton}

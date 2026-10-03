@@ -906,6 +906,61 @@ describe("ProductionJobForm", () => {
     expect(push).toHaveBeenCalledWith(`/order-system/jobs/${jobId}`);
   });
 
+  it("marks required manual fields without making both contact fields mandatory", () => {
+    render(<ProductionJobForm assignees={assignees} canManageFinance manualEntryLayout />);
+    for (const label of ["Cust.Name", "DlvryDate", "AmtPayable", "AmtPaid", "Material Cost"]) {
+      expect(screen.getByLabelText(label).closest("label")?.querySelector("[data-required-mark]")).not.toBeNull();
+    }
+    expect(manualGroup("Size").parentElement?.querySelector("[data-required-mark]")).not.toBeNull();
+    expect(screen.getByLabelText("DlvryAddr").closest("label")?.querySelector("[data-required-mark]")).toBeNull();
+    expect(screen.getByText(/PhoneNo\. or Email: at least one is required/)).toBeInTheDocument();
+    expect(screen.getByLabelText("PhoneNo.")).not.toBeRequired();
+    expect(screen.getByLabelText("Email", { selector: "input[type=email]" })).not.toBeRequired();
+  });
+
+  it.each(["", "   "])("identifies missing contact details before submitting a manual order (%j)", (phone) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductionJobForm assignees={assignees} canManageFinance={false} manualEntryLayout />);
+    fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Validation fixture" } });
+    fireEvent.change(screen.getByLabelText("PhoneNo."), { target: { value: phone } });
+    chooseManualOption("Size", "A2");
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("PhoneNo. or Email");
+    expect(screen.getByLabelText("PhoneNo.")).toHaveFocus();
+    expect(screen.getByLabelText("PhoneNo.")).toHaveAttribute("aria-invalid", "true");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("lists missing native required fields when browser validation blocks submission", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductionJobForm assignees={assignees} canManageFinance={false} manualEntryLayout />);
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Size");
+    expect(screen.getByRole("alert")).toHaveTextContent("Cust.Name");
+    expect(screen.getByRole("alert")).toHaveTextContent("PhoneNo. or Email");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["phone", "email"])("accepts a manual order with only %s contact details", async (contact) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "created", job: { id: "validation-fixture-job", jobNumber: "TEST" },
+    }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductionJobForm assignees={assignees} canManageFinance={false} manualEntryLayout />);
+    fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Validation fixture" } });
+    chooseManualOption("Size", "A2");
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
+    fireEvent.change(screen.getByLabelText(contact === "phone" ? "PhoneNo." : "Email", { selector: "input:not([type=radio])" }), {
+      target: { value: contact === "phone" ? "0210000000" : "fixture@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(push).toHaveBeenCalledWith("/admin/jobs/validation-fixture-job");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("uses the approved data-entry section order", () => {
     render(
       <ProductionJobForm
