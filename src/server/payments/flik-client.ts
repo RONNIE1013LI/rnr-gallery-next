@@ -136,7 +136,7 @@ export function createFlikClient(config: EnabledFlikConfig, options: Readonly<{
   async function authenticated(path: string, method: "GET" | "POST", body?: unknown, idempotencyKey?: string) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const response = await request(path, {
-        method, headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${await getToken()}`, ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
+        method, headers: { Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }), Authorization: `Bearer ${await getToken()}`, ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       if (response.ok) return response.body;

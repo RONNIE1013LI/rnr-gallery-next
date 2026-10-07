@@ -62,6 +62,16 @@ describe("Flik API client", () => {
     expect(create.headers["Idempotency-Key"]).toBe("attempt-1");
     expect(create.redirect).toBe("error");
   });
+  it("retrieves completed payments when Flik rejects a JSON content type on a bodyless GET", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "POST") return json(token);
+      return new Headers(init?.headers).has("Content-Type")
+        ? json({ error: { code: "internal_server_error" } }, 500)
+        : json(retrieved);
+    });
+    await expect(createFlikClient(config, { fetchImpl }).retrieveSession("cs_fixture", snapshot))
+      .resolves.toMatchObject({ status: "completed", foreignTransactionId: "attempt-1" });
+  });
   it.each([
     { id: "cs_other" }, { amount: { total: 25, currency: "NZD" } }, { amount: { total: 25.01, currency: "AUD" } },
     { foreignTransactionId: "other" }, { testMode: false }, { testMode: undefined },
