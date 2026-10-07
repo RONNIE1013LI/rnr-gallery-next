@@ -217,6 +217,14 @@ export function CatalogueBuyingGuide({ category, market }: CatalogueBuyingGuideP
           with your event date and delivery location before ordering.
         </li>
       </ul>
+      <p>
+        Find ideas for other occasions in our{" "}
+        <Link href="/graduation-banners" prefetch={false}>graduation banners</Link>,{" "}
+        <Link href="/anniversary-designs" prefetch={false}>anniversary designs</Link>,{" "}
+        <Link href="/welcome-home-banners" prefetch={false}>welcome home banners</Link>{" "}
+        and <Link href="/polynesian-banners" prefetch={false}>Pacific and cultural banners</Link>.
+        Choose an example that suits your celebration, then share your own photos and wording.
+      </p>
     </section>
   );
 }

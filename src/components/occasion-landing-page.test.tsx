@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import { occasionLandingPages } from "@/domain/seo/occasion-landing-pages";
@@ -39,6 +39,11 @@ describe("occasion landing output", () => {
     expect(JSON.parse(container.querySelector("#rnr-occasion-breadcrumbs")!.textContent!)["@type"]).toBe("BreadcrumbList");
     expect(screen.queryByRole("button", { name: /3D|zoom|rotate/i })).not.toBeInTheDocument();
     expect(container.querySelector("[data-model-type=roll-up-banner]")).not.toBeNull();
+    for (const slug of content.related) {
+      expect(within(screen.getByRole("region", { name: "Explore related occasions" }))
+        .getByRole("link", { name: occasionLandingPages[slug].label }))
+        .toHaveAttribute("href", occasionLandingPages[slug].path);
+    }
   });
   it("keeps disabled products out of CTAs and retains a useful unavailable-artwork fallback", () => {
     const registry = structuredClone(defaultProductRegistry);

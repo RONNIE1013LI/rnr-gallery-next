@@ -77,6 +77,10 @@ describe("NZ category buying guidance", () => {
       ["wall banner guide", "/custom-wall-banners-nz"],
       ["personalised birthday banners", "/birthday-banners"],
       ["memorial and funeral banners", "/memorial-banners"],
+      ["graduation banners", "/graduation-banners"],
+      ["anniversary designs", "/anniversary-designs"],
+      ["welcome home banners", "/welcome-home-banners"],
+      ["Pacific and cultural banners", "/polynesian-banners"],
     ]) {
       expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
     }

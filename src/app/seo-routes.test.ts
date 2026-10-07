@@ -8,7 +8,7 @@ import { generateMetadata as generateCanvasMetadata } from "./canvas/page";
 import { generateMetadata as generateBannersMetadata } from "./banners/page";
 import { generateMetadata as generateConfigureMetadata } from "./products/[slug]/configure/page";
 import { generateMetadata as generateAuConfigureMetadata } from "./au/products/[slug]/configure/page";
-import { metadata as galleryMetadata } from "./design-gallery/page";
+import { generateMetadata as generateGalleryMetadata } from "./design-gallery/page";
 import { metadata as howItWorksMetadata } from "./how-it-works/page";
 import { metadata as aboutMetadata } from "./about/page";
 import { metadata as contactMetadata } from "./contact/page";
@@ -29,6 +29,22 @@ import { buildPublicMetadata } from "@/server/seo/metadata";
 import { getSiteUrl } from "@/server/seo/site-url";
 
 describe("public SEO routes", () => {
+  it.each([2, 15])("gives gallery page %s its own canonical and social URL", async (page) => {
+    const metadata = await generateGalleryMetadata({ searchParams: Promise.resolve({ page: String(page) }) });
+    expect(metadata.alternates?.canonical).toBe(`https://rnrgallery.com/design-gallery?page=${page}`);
+    expect(metadata.openGraph).toMatchObject({ url: metadata.alternates?.canonical });
+    expect(metadata.robots).toEqual({ index: true, follow: true });
+  });
+
+  it.each([
+    {}, { page: "1" }, { page: "0" }, { page: "invalid" },
+    { page: "2", occasion: "birthday" }, { page: "2", product: "roll-up-banner" },
+    { page: "2", design_type: "canvas" }, { page: "2", theme: "cultural-island" },
+    { page: "2", birthday_age: "1st Birthday" }, { page: "2", filters: "1" },
+  ])("retains the base gallery canonical for first-page and filtered views %j", async (searchParams) => {
+    const metadata = await generateGalleryMetadata({ searchParams: Promise.resolve(searchParams) });
+    expect(metadata.alternates?.canonical).toBe("https://rnrgallery.com/design-gallery");
+  });
   it("uses the approved default social card when the homepage is shared", async () => {
     const socialTitle = "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service";
     const socialImage = "https://rnrgallery.com/media/social/rr-gallery-social-share-2026.webp";
@@ -325,7 +341,7 @@ describe("public SEO routes", () => {
     ["shop", generateShopMetadata, "https://rnrgallery.com/shop"],
     ["canvas", generateCanvasMetadata, "https://rnrgallery.com/canvas"],
     ["banners", generateBannersMetadata, "https://rnrgallery.com/banners"],
-    ["design gallery", () => galleryMetadata, "https://rnrgallery.com/design-gallery"],
+    ["design gallery", () => generateGalleryMetadata({ searchParams: Promise.resolve({}) }), "https://rnrgallery.com/design-gallery"],
     ["how it works", () => howItWorksMetadata, "https://rnrgallery.com/how-it-works"],
     ["about", () => aboutMetadata, "https://rnrgallery.com/about"],
     ["contact", () => contactMetadata, "https://rnrgallery.com/contact"],
@@ -419,6 +435,7 @@ describe("public SEO routes", () => {
       generateCanvasMetadata(),
       generateBannersMetadata(),
     ]);
+    const galleryMetadata = await generateGalleryMetadata({ searchParams: Promise.resolve({}) });
     const metadata = [homeMetadata, shopMetadata, canvasMetadata, bannersMetadata, galleryMetadata, howItWorksMetadata, aboutMetadata, contactMetadata, helpMetadata, shippingMetadata, returnsRefundsMetadata, rollUpLandingMetadata, wallBannerLandingMetadata, photoCanvasLandingMetadata];
     expect(new Set(metadata.map((entry) => entry.title)).size).toBe(metadata.length);
     expect(new Set(metadata.map((entry) => entry.description)).size).toBe(metadata.length);

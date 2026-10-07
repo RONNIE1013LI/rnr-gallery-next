@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import classificationData from "./public-classification-data.json";
 import {
   getPublicDesignClassification,
   getPublicDesignClassificationByPublicSlug,
@@ -6,6 +7,12 @@ import {
 } from "./public-classification";
 
 describe("public Gallery classification overlay", () => {
+  it("publishes distinct reviewed copy for each indexable artwork", () => {
+    const indexable = classificationData.filter((record) => record.seoIndex && !record.hiddenFromListings);
+    for (const field of ["seoTitle", "seoDescription", "intro"] as const) {
+      expect(new Set(indexable.map((record) => record[field])).size).toBe(indexable.length);
+    }
+  });
   it("freezes one classification record for every current live Design", () => {
     expect(publicClassificationStats).toEqual({
       records: 357,
