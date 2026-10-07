@@ -10,7 +10,7 @@ import { createDrizzlePaymentRepository } from "./drizzle-payment-repository";
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error("TEST_DATABASE_URL is required");
 const target = new URL(url);
-if (!["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) || !/^\/rnr_gallery_test_flik(?:_|$)/.test(target.pathname)) {
+if (!["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) || !/^\/rnr_gallery_test_(?:flik(?:_|$)|release_gate_[0-9a-f]{8}_[0-9a-z_]+_integration$)/.test(target.pathname)) {
   throw new Error("Flik integration tests require their own disposable local database");
 }
 const pool = new Pool({ connectionString: url });

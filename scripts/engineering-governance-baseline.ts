@@ -1,4 +1,5 @@
 export const APPROVED_CRONS = Object.freeze([
+  { path: "/api/internal/payment-requests/expire", schedule: "*/5 * * * *" },
   { path: "/api/internal/customer-notifications", schedule: "0 */12 * * *" },
   { path: "/api/internal/analytics/conversion-retention", schedule: "0 4 * * *" },
   { path: "/api/internal/analytics/website-retention", schedule: "1 4 * * *" },
@@ -8,6 +9,7 @@ export const APPROVED_CRONS = Object.freeze([
   { path: "/api/internal/payment-proofs/cleanup", schedule: "5 4 * * *" },
   { path: "/api/internal/reply-assistant/turn-recovery", schedule: "*/30 * * * *" },
   { path: "/api/internal/customer-chat/review-alerts", schedule: "*/30 * * * *" },
+  { path: "/api/internal/payments/flik/reconcile", schedule: "*/5 * * * *" },
 ] as const);
 
 export const REDIS_ONLY_RECOVERY_ROUTES = Object.freeze([

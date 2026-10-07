@@ -498,6 +498,13 @@
       "when": 1790199320727,
       "tag": "0070_production_job_pinning",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1791330397818,
+      "tag": "0071_flik_checkout",
+      "breakpoints": true
     }
   ]
 }

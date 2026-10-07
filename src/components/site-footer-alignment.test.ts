@@ -25,11 +25,11 @@ describe("Site footer customer-column alignment", () => {
     expect(cookieTrigger).toMatch(/align-items:\s*center\s*;/);
   });
 
-  it("preserves the 36px mobile footer touch target", () => {
+  it("keeps the same 30px footer row height on mobile", () => {
     const mobile = css.slice(css.indexOf("@media (max-width: 560px)"));
 
-    expect(mobile).toMatch(
-      /\.site-footer a,\s*\.site-footer__cookie-trigger\s*\{[\s\S]*?min-height:\s*36px\s*;/,
-    );
+    expect(ruleBody(".site-footer a")).toMatch(/min-height:\s*30px\s*;/);
+    expect(ruleBody(".site-footer__cookie-trigger")).toMatch(/min-height:\s*30px\s*;/);
+    expect(mobile).not.toMatch(/\.site-footer(?: a|__cookie-trigger)\s*[,\{]/);
   });
 });

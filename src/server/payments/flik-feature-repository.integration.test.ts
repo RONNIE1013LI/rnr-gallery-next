@@ -7,7 +7,7 @@ import { createDrizzleFlikFeatureRepository, verifyFlikMigrationCatalog, type Fl
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error("TEST_DATABASE_URL is required");
 const target = new URL(url);
-if (!["127.0.0.1", "localhost", "[::1]"].includes(target.hostname) || target.pathname !== "/rnr_gallery_test_flik_feature") {
+if (!["127.0.0.1", "localhost", "[::1]"].includes(target.hostname) || !(target.pathname === "/rnr_gallery_test_flik_feature" || /^\/rnr_gallery_test_release_gate_[0-9a-f]{8}_[0-9a-z_]+_integration$/.test(target.pathname))) {
   throw new Error("Feature persistence tests require their own disposable local database");
 }
 const pool = new Pool({ connectionString: url });
@@ -24,11 +24,11 @@ beforeEach(async () => {
 });
 afterAll(() => pool.end());
 
-describe("private Flik feature state against disposable PostgreSQL without Flik migration", () => {
-  it("reads disabled with no state row and rejects migration readiness with no Flik tables", async () => {
+describe("private Flik feature state against migrated disposable PostgreSQL", () => {
+  it("reads disabled with no state row even when the migration is ready", async () => {
     await expect(repository.readState()).resolves.toBe("disabled");
-    await expect(repository.migrationReady()).resolves.toBe(false);
-    expect((await pool.query("SELECT to_regclass('public.flik_checkout_sessions') AS sessions,to_regclass('public.flik_webhook_events') AS events")).rows[0]).toEqual({ sessions: null, events: null });
+    await expect(repository.migrationReady()).resolves.toBe(true);
+    expect((await pool.query("SELECT to_regclass('public.flik_checkout_sessions') AS sessions,to_regclass('public.flik_webhook_events') AS events")).rows[0]).toEqual({ sessions: "flik_checkout_sessions", events: "flik_webhook_events" });
   });
   it("atomically persists one state and one audit under eight identical concurrent submissions", async () => {
     const input = mutation();

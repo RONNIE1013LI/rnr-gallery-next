@@ -69,10 +69,10 @@ describe("private Flik feature state", () => {
 });
 
 describe("Flik migration readiness", () => {
-  it("does no database I/O while the shipped journal has no registered Flik migration", async () => {
+  it("checks the registered migration and fails closed when the applied catalog is missing", async () => {
     const { repository, database } = mockDatabase();
     await expect(repository.migrationReady()).resolves.toBe(false);
-    expect(database.execute).not.toHaveBeenCalled();
+    expect(database.execute).toHaveBeenCalledOnce();
     expect(database.select).not.toHaveBeenCalled();
   });
   it("requires exactly one valid journal registration", () => {

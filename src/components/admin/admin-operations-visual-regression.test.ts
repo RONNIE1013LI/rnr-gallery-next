@@ -55,22 +55,23 @@ describe("Admin operational visual system", () => {
   });
 
   it("keeps the full mobile administration menu visible without nested clipping", () => {
-    const panel = cssRule(css, ".mobileMenuPanel");
-    const navigation = cssRule(css, ".mobileMenu .navigation");
-    const groups = cssRule(css, ".mobileMenu .navigationGroup");
+    const panel = cssRule(css, ".mobileMenuPanel[open]");
+    const body = cssRule(css, ".mobileMenuBody");
+    const links = cssRule(css, ".mobileMenuPanel .navigation a");
 
     expect(panel).toContain("position: fixed;");
-    expect(panel).toContain("inset: 64px 0 0;");
-    expect(panel).toContain("overflow-y: auto;");
-    expect(navigation).toContain("max-height: none;");
-    expect(navigation).toContain("overflow: visible;");
-    expect(groups).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(panel).toContain("height: 100dvh;");
+    expect(panel).toContain("max-height: none;");
+    expect(body).toContain("min-height: 0;");
+    expect(body).toContain("flex: 1 1 auto;");
+    expect(body).toContain("overflow-y: auto;");
+    expect(links).toContain("min-height: 44px;");
   });
 
   it("keeps mobile navigation text readable on hover and keyboard focus", () => {
     const activeLink = cssRule(
       css,
-      ".mobileMenu .navigation a:hover,\n  .mobileMenu .navigation a:focus-visible",
+      ".mobileMenuPanel .navigation a:hover,\n  .mobileMenuPanel .navigation a:focus-visible,\n  .mobileMenuPanel .navigation a[aria-current=\"page\"]",
     );
 
     expect(activeLink).toContain("color: #fff;");

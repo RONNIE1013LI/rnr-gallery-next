@@ -112,12 +112,16 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(71);
+    expect(journal.entries).toHaveLength(72);
     expect(journal.entries[69]).toMatchObject({ idx: 69, tag: "0069_transactional_business_numbers" });
     expect(journal.entries[70]).toMatchObject({ idx: 70, tag: "0070_production_job_pinning" });
+    expect(journal.entries[71]).toMatchObject({ idx: 71, tag: "0071_flik_checkout" });
+    expect(sha256("drizzle/0071_flik_checkout.sql")).toBe(
+      "332d9bae18f4f4286756a7889c0d8860ad36e2d7f8fc3ea2710d8ddb7c2042d2",
+    );
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(71);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(71);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(72);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(72);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];

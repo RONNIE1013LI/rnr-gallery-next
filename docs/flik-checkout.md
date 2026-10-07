@@ -2,9 +2,13 @@
 
 ## Current release boundary
 
-The integration ships **disabled**. This is not evidence of a successful Flik test payment or approval to accept live payments. Merchant review is pending. Production database migration and configuration are deferred by explicit user approval on 2026-10-01.
+The integration ships **disabled**. This is not evidence of a successful Flik test payment or approval to accept live payments. Flik merchant approval was received and Production credentials were configured on 2026-10-07. The Owner separately approved migration setup and execution on 2026-10-07. Availability remains Disabled pending internal payment verification.
 
-`flik-checkout-migration.sql` is an **unregistered migration draft**. It has not been added to the Drizzle journal and must not be executed automatically during deployment. Before activation, review it against the then-current schema, assign the next migration identifier ending `_flik_checkout`, register it through the existing migration process, verify exact Production identity/lineage, and obtain the separate execution approval. Never edit historical migrations. Runtime readiness refuses activation until the bundled formal journal, applied SQL hash/timestamp and required schema catalog match. The reviewed draft hash is pinned in `flik-feature-repository.ts`; preserve its bytes when registering it. If a later schema change requires a different migration, separately review and update that readiness contract during migration setup.
+`flik-checkout-migration.sql` is registered as `drizzle/0071_flik_checkout.sql`, with its reviewed bytes preserved (SHA-256 `332d9bae18f4f4286756a7889c0d8860ad36e2d7f8fc3ea2710d8ddb7c2042d2`). The bundled journal, applied SQL hash/timestamp and required schema catalog must all match before activation. Registration does not prove Production execution or a successful payment.
+
+The preflight revalidated the completed Migration Lineage Reconciliation: 71/71 Production entries matched; a fresh local replay matched the complete Production catalog with zero differences (90 tables, 1,212 columns, 335 indexes, 665 constraints). The new snapshot includes the already-applied `0070` pinning metadata; historical SQL and snapshots remain unchanged. Generated duplicate historical SQL is excluded from `0071`, which contains only the reviewed Flik migration.
+
+The application role needs only `USAGE` on schema `drizzle` and `SELECT` on `drizzle.__drizzle_migrations` for readiness; no ledger write privilege is granted. Existing migration-owner default privileges supply DML access to the new public tables. Rollback point before this release is Git `e03b587a00a17ef8944d91aba193049e3b33e226`, Production `dpl_4Jvy6kRE47bkcDGXFfjHvobq4pyv`. A failed migration rolls back transactionally. After a successful migration, keep Flik Disabled and preserve its tables and receipts; application rollback needs separately approved normal Git recovery, without dropping tables or rewriting migration history.
 
 ## Admin availability control
 
@@ -37,11 +41,11 @@ Do not paste credentials into chat. Never use `NEXT_PUBLIC_` for Flik credential
 
 | Variable | Isolated local test | Production now |
 | --- | --- | --- |
-| `ENABLE_FLIK_PAYMENTS` | `true` only after test prerequisites | absent/`false` |
-| `FLIK_MODE` | `test` | absent; no live activation |
-| `FLIK_CLIENT_ID` | test credential from Flik API Keys | absent |
-| `FLIK_CLIENT_SECRET` | matching test credential | absent |
-| `FLIK_WEBHOOK_SECRET` | organisation Webhook Signing secret | absent |
+| `ENABLE_FLIK_PAYMENTS` | `true` only after test prerequisites | `true`; saved availability is still Disabled |
+| `FLIK_MODE` | `test` | `live` |
+| `FLIK_CLIENT_ID` | test credential from Flik API Keys | matching live credential, Production Secret only |
+| `FLIK_CLIENT_SECRET` | matching test credential | matching live credential, Production Secret only |
+| `FLIK_WEBHOOK_SECRET` | organisation Webhook Signing secret | configured, Production Secret only |
 | `FLIK_DEPLOYMENT_ENV` | `development` | omit; actual `VERCEL_ENV` is authoritative |
 | `DATABASE_URL` | dedicated local `rnr_gallery_test_*` database | existing value unchanged |
 | `PAYMENT_RETURN_BASE_URL` | trusted HTTPS tunnel origin of the isolated app | existing value unchanged |

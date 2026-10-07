@@ -38,6 +38,7 @@ const protectedPages = new Map<string, string>([
   ["src/app/admin/settings/email-templates/page.tsx", "/admin/settings/email-templates"],
   ["src/app/admin/settings/notifications/page.tsx", "/admin/settings/notifications"],
   ["src/app/admin/settings/page.tsx", "/admin/settings"],
+  ["src/app/admin/settings/payment/flik/page.tsx", "/admin/settings/payment/flik"],
   ["src/app/admin/settings/payment/page.tsx", "/admin/settings/payment"],
   ["src/app/admin/settings/shipping/page.tsx", "/admin/settings/shipping"],
   ["src/app/admin/users/[userId]/page.tsx", "/admin/users/user-id"],
