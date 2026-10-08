@@ -1918,7 +1918,9 @@
 .orderCards {
   display: none;
   gap: 10px;
-  -webkit-text-size-adjust: 100%;
+  /* Preserve the iOS prefix through PostCSS and CSS minification. */
+  /* autoprefixer: ignore next */
+  -webkit-text-size-adjust: 100% !important;
   text-size-adjust: 100%;
 }
 
