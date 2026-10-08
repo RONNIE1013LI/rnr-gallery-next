@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { LuEllipsis, LuPencil, LuTrash2 } from "react-icons/lu";
 
 import type { ProductionSavedView } from "@/server/production/production-saved-view-service";
 import styles from "./forms.module.css";
@@ -22,12 +23,58 @@ export function FormsSavedViews({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [editing, setEditing] = useState<ProductionSavedView | null>(null);
+  const [actionsViewId, setActionsViewId] = useState<string | null>(null);
+  const actionsId = useId();
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const actionsGroupRef = useRef<HTMLDivElement>(null);
+  const actionsButtonRef = useRef<HTMLButtonElement>(null);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!actionsViewId) return;
+    actionsMenuRef.current?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
+    actionsMenuRef.current?.scrollIntoView?.({ block: "nearest" });
+
+    function closeOutside(event: PointerEvent) {
+      if (event.target instanceof Node && !actionsGroupRef.current?.contains(event.target)) {
+        setActionsViewId(null);
+      }
+    }
+
+    function closeOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      // Close this menu before the containing filter dialog handles Escape.
+      event.stopPropagation();
+      actionsButtonRef.current?.focus();
+      setActionsViewId(null);
+    }
+
+    document.addEventListener("pointerdown", closeOutside);
+    window.addEventListener("keydown", closeOnEscape, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      window.removeEventListener("keydown", closeOnEscape, true);
+    };
+  }, [actionsViewId]);
+
+  function moveMenuFocus(event: KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not([disabled])")];
+    if (!items.length) return;
+    event.preventDefault();
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+      : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  }
 
   function beginEdit(view: ProductionSavedView) {
     setEditing(view);
     setName(view.name);
     setMessage(`Editing ${view.name}. Adjust the filters, then save changes.`);
     onEdit?.(view.queryString);
+    nameInputRef.current?.focus();
   }
 
   function cancelEdit() {
@@ -115,16 +162,54 @@ export function FormsSavedViews({
   return (
     <div className={styles.personalViews}>
       {views.length ? <div className={styles.personalViewList} aria-label="Personal saved views">
-        {views.map((view) => <span key={view.id}>
-          <button type="button" onClick={() => onOpen(view.queryString)}>{view.name}</button>
-          <button type="button" aria-label={`Edit ${view.name}`} disabled={pending} onClick={() => beginEdit(view)}>✎</button>
-          <button className={styles.savedViewDeleteButton} type="button" aria-label={`Delete ${view.name}`} disabled={pending} onClick={() => void remove(view)}>×</button>
-        </span>)}
+        {views.map((view) => <div
+          key={view.id}
+          className={styles.savedViewItem}
+          role="group"
+          aria-label={`Saved search ${view.name}`}
+          ref={actionsViewId === view.id ? actionsGroupRef : undefined}
+          onBlur={(event) => {
+            if (actionsViewId === view.id && event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setActionsViewId(null);
+          }}
+        >
+          <button type="button" title={view.name} onClick={() => {
+            setActionsViewId(null);
+            onOpen(view.queryString);
+          }}>{view.name}</button>
+          <button
+            type="button"
+            aria-label={`More actions for ${view.name}`}
+            aria-haspopup="menu"
+            aria-expanded={actionsViewId === view.id}
+            aria-controls={actionsViewId === view.id ? `${actionsId}-${view.id}` : undefined}
+            ref={actionsViewId === view.id ? actionsButtonRef : undefined}
+            disabled={pending}
+            onClick={() => setActionsViewId((current) => current === view.id ? null : view.id)}
+          ><LuEllipsis aria-hidden="true" /></button>
+          {actionsViewId === view.id ? <div
+            id={`${actionsId}-${view.id}`}
+            className={styles.savedViewMenu}
+            role="menu"
+            aria-label={`Actions for ${view.name}`}
+            ref={actionsMenuRef}
+            onKeyDown={moveMenuFocus}
+          >
+            <button type="button" role="menuitem" aria-label={`Edit ${view.name}`} disabled={pending} onClick={() => {
+              setActionsViewId(null);
+              beginEdit(view);
+            }}><LuPencil aria-hidden="true" />Edit</button>
+            <button className={styles.savedViewDeleteButton} type="button" role="menuitem" aria-label={`Delete ${view.name}`} disabled={pending} onClick={() => {
+              setActionsViewId(null);
+              void remove(view);
+            }}><LuTrash2 aria-hidden="true" />Delete</button>
+          </div> : null}
+        </div>)}
       </div> : null}
       <div className={styles.savedViewControls} role="group" aria-label="Save a search">
         <label>
           <span className={styles.visuallyHidden}>Saved view name</span>
           <input
+            ref={nameInputRef}
             aria-label="Saved view name"
             value={name}
             maxLength={80}

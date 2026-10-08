@@ -1217,8 +1217,7 @@
 }
 
 .personalViews,
-.personalViewList,
-.personalViewList span {
+.personalViewList {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1255,56 +1254,96 @@
 
 .personalViewList {
   max-width: 300px;
-  padding: 10px 10px 2px 0;
-  overflow: auto;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.personalViewList span {
+.savedViewItem {
   position: relative;
+  display: flex;
   flex: 0 0 auto;
-  gap: 0;
-  margin-right: 6px;
+  min-width: 160px;
+  max-width: min(100%, 360px);
+  border: 1px solid var(--forms-border);
+  border-radius: 5px;
+  background: var(--forms-surface);
 }
 
-.personalViewList span button:first-child {
+.savedViewItem > button {
+  height: 36px;
+  min-height: 36px;
+  border: 0;
+}
+
+.savedViewItem > button:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   border-radius: 5px 0 0 5px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.personalViewList span button:nth-child(2) {
-  width: 44px;
+.savedViewItem > button:nth-child(2) {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  place-items: center;
   padding: 0;
-  border-left: 0;
+  border-left: 1px solid var(--forms-border);
   border-radius: 0 5px 5px 0;
 }
 
-.personalViewList span .savedViewDeleteButton {
-  position: absolute;
-  z-index: 1;
-  top: -10px;
-  right: -10px;
-  display: grid;
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-  min-height: 24px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  color: #b42318;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
+.savedViewItem > button:hover,
+.savedViewMenu button:hover {
+  background: #f5f3ee;
 }
 
-.personalViewList span .savedViewDeleteButton:hover {
-  background: #fff1f0;
-}
-
-.personalViewList span .savedViewDeleteButton:focus-visible {
+.savedViewItem button:focus-visible {
   outline: 2px solid var(--forms-focus);
-  outline-offset: 0;
+  outline-offset: -2px;
+}
+
+.savedViewItem svg {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.savedViewMenu {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  min-width: 160px;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--forms-border);
+  border-radius: 6px;
+  background: var(--forms-surface);
+  box-shadow: 0 6px 18px rgb(31 35 41 / 12%);
+}
+
+.savedViewMenu button {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 3px;
+  text-align: left;
+}
+
+.savedViewMenu .savedViewDeleteButton {
+  color: #b42318;
+}
+
+.savedViewMenu .savedViewDeleteButton:hover {
+  background: #fff1f0;
 }
 
 .savedViewMessage {
@@ -3147,13 +3186,19 @@
     padding-block: 3px;
   }
 
-  .savedSearchWorkspace .personalViewList span .savedViewDeleteButton {
+  .savedSearchWorkspace .personalViewList {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .savedViewItem {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .savedViewItem > button:nth-child(2) {
+    flex-basis: 44px;
     width: 44px;
-    min-width: 44px;
-    height: 44px;
-    min-height: 44px;
-    padding: 0;
-    font-size: 12px;
   }
 
   .filterPanel .filterGroupTitle {
