@@ -1918,6 +1918,8 @@
 .orderCards {
   display: none;
   gap: 10px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .orderCard {
@@ -1994,9 +1996,8 @@
 }
 
 .orderCard dd {
-  display: flex;
+  display: block;
   min-height: 44px;
-  align-items: center;
   margin-top: 2px;
   padding: 8px 10px;
   overflow: hidden;
@@ -2005,12 +2006,13 @@
   background: #fff;
   font-size: 14px;
   font-weight: 650;
+  line-height: 26px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .orderCard dd[data-align="right"] {
-  justify-content: flex-end;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
@@ -3405,6 +3407,7 @@
     margin-top: 1px;
     padding: 3px 7px;
     font-size: 13px;
+    line-height: 22px;
   }
 
 }
