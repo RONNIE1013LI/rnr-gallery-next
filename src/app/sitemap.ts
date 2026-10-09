@@ -40,7 +40,7 @@ const pages = [
 export function buildPublicSitemap(
   registry: ProductRegistryDocument,
   siteUrl: URL,
-  designs: readonly Readonly<{ slug: string; createdAt: Date }>[] = [],
+  designs: readonly Readonly<{ slug: string; createdAt: Date; imagePath: string }>[] = [],
 ): MetadataRoute.Sitemap {
   const australiaReady = registry.markets.AU.enabled &&
     getMarketCompleteness(registry, "AU").ready;
@@ -48,6 +48,7 @@ export function buildPublicSitemap(
     pathname: string,
     priority: number,
     changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"],
+    imagePath?: string,
   ) => {
     const languages = australiaReady
       ? buildMarketAlternates(pathname, siteUrl)
@@ -56,13 +57,14 @@ export function buildPublicSitemap(
       url: new URL(pathname, siteUrl).toString(),
       priority,
       changeFrequency,
+      ...(imagePath ? { images: [new URL(imagePath, siteUrl).toString()] } : {}),
       ...(languages ? { alternates: { languages } } : {}),
     };
   };
   return [
     ...pages.map(([pathname, priority, frequency]) => entry(pathname, priority, frequency)),
     ...registry.products.filter((product) => product.active).map((product) =>
-      entry(`/products/${product.slug}`, 0.9, "weekly"),
+      entry(`/products/${product.slug}`, 0.9, "weekly", product.image.src),
     ),
     ...(australiaReady
       ? [
@@ -71,12 +73,12 @@ export function buildPublicSitemap(
           entry("/au/canvas", 0.8, "weekly"),
           entry("/au/banners", 0.8, "weekly"),
           ...registry.products.filter((product) => product.active).map((product) =>
-            entry(`/au/products/${product.slug}`, 0.8, "weekly"),
+            entry(`/au/products/${product.slug}`, 0.8, "weekly", product.image.src),
           ),
         ]
       : []),
     ...designs.map((design) =>
-      entry(`/designs/${design.slug}`, 0.7, "monthly"),
+      entry(`/designs/${design.slug}`, 0.7, "monthly", design.imagePath),
     ),
   ];
 }
@@ -89,7 +91,7 @@ async function generatePublicSitemap(): Promise<MetadataRoute.Sitemap> {
 
 const getCachedPublicSitemap = cachePublicData(
   generatePublicSitemap,
-  "sitemap-occasion-pages-v2",
+  "sitemap-images-v3",
   [
     PUBLIC_CACHE_TAGS.sitemap,
     PUBLIC_CACHE_TAGS.products,

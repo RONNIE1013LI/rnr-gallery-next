@@ -42,7 +42,7 @@ function repository(rows: readonly GalleryPublicCandidate[]): GalleryRepository 
 }
 
 describe("public gallery service", () => {
-  it("keeps only indexable, visible designs in the sitemap feed", async () => {
+  it("keeps only indexable, visible designs with available images in the sitemap feed", async () => {
     const indexable = candidate(1, {
       id: "88e63ad4c403d5bcdb37f2ee2f142d63100c970b43808f82f5b6ca21a1aea5aa",
     });
@@ -53,13 +53,14 @@ describe("public gallery service", () => {
       id: "d670df82400b7a107ad9a1133bf5a0ac0484ba7b6da5d3408631e10457975206",
     });
     const service = createPublicGalleryService({
-      repository: repository([indexable, canonicalDuplicate, brokenArtwork]),
-      imageAvailable: async () => true,
+      repository: repository([indexable, canonicalDuplicate, brokenArtwork, candidate(4)]),
+      imageAvailable: async (storageKey) => !storageKey.endsWith("/4.jpg"),
     });
 
     await expect(service.listSitemapDesigns()).resolves.toEqual([{
       slug: "5th-birthday-88e63ad4",
       createdAt: indexable.createdAt,
+      imagePath: `/gallery-images/${indexable.id}?v=${indexable.contentHash}`,
     }]);
   });
 

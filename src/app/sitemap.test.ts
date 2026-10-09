@@ -73,7 +73,7 @@ describe("public sitemap cache", () => {
     expect(state.getRegistry).toHaveBeenCalledOnce();
     expect(state.listDesigns).toHaveBeenCalledOnce();
     expect(state.cacheConfig).toEqual({
-      key: "sitemap-occasion-pages-v2",
+      key: "sitemap-images-v3",
       tags: [
         PUBLIC_CACHE_TAGS.sitemap,
         PUBLIC_CACHE_TAGS.products,

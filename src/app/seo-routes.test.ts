@@ -76,6 +76,7 @@ describe("public SEO routes", () => {
     const sitemap = buildPublicSitemap(registry, new URL("https://shop.example.test"), [{
       slug: "40th-birthday-a1b2c3d4",
       createdAt: new Date("2026-08-10T00:00:00Z"),
+      imagePath: `/gallery-images/${"a".repeat(64)}?v=${"b".repeat(64)}`,
     }]);
     const urls = sitemap.map((entry) => entry.url);
 
@@ -101,12 +102,24 @@ describe("public SEO routes", () => {
     expect(urls.every((url) => !url.includes("?"))).toBe(true);
     expect(urls.some((url) => url.includes("/au"))).toBe(false);
     expect(sitemap.some((entry) => entry.alternates)).toBe(false);
+    expect(sitemap.find((entry) =>
+      entry.url === "https://shop.example.test/products/digital-oil-painting-canvas"
+    )?.images).toEqual([
+      new URL(registry.products.find((product) => product.slug === "digital-oil-painting-canvas")!.image.src,
+        "https://shop.example.test").toString(),
+    ]);
+    expect(sitemap.find((entry) =>
+      entry.url === "https://shop.example.test/designs/40th-birthday-a1b2c3d4"
+    )?.images).toEqual([
+      `https://shop.example.test/gallery-images/${"a".repeat(64)}?v=${"b".repeat(64)}`,
+    ]);
   });
 
   it("keeps the established sitemap URL set while omitting unreliable modification dates", () => {
     const sitemap = buildPublicSitemap(defaultProductRegistry, new URL("https://shop.example.test"), [{
       slug: "40th-birthday-a1b2c3d4",
       createdAt: new Date("2020-01-02T03:04:05Z"),
+      imagePath: `/gallery-images/${"a".repeat(64)}?v=${"b".repeat(64)}`,
     }]);
 
     expect(sitemap.map((entry) => entry.url).sort()).toEqual([
@@ -170,6 +183,9 @@ describe("public SEO routes", () => {
     expect(urls).toContain("https://shop.example.test/au/banners");
     for (const product of registry.products.filter((entry) => entry.active)) {
       expect(urls).toContain(`https://shop.example.test/au/products/${product.slug}`);
+      expect(sitemap.find((entry) =>
+        entry.url === `https://shop.example.test/au/products/${product.slug}`
+      )?.images).toEqual([new URL(product.image.src, "https://shop.example.test").toString()]);
     }
     expect(urls.some((url) => url.includes("/au/products/") && url.includes("configure")))
       .toBe(false);

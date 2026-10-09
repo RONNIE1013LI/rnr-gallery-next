@@ -52,7 +52,7 @@ type ProductPagePresentation = Readonly<{
   prioritizeMobileAction: boolean;
 }>;
 
-export function getProductPagePresentation(product: Product): ProductPagePresentation {
+export function getProductPagePresentation(product: Product, market: Market = "NZ"): ProductPagePresentation {
   if (product.key === "custom-themed-wall-banner") {
     return {
       title: "Custom Birthday & Event Wall Banner",
@@ -72,14 +72,14 @@ export function getProductPagePresentation(product: Product): ProductPagePresent
   if (product.key === "digital-oil-painting-canvas") {
     return {
       title: "Digital Oil Painting Portrait Canvas",
-      summary: "Turn your photos into a personalised digital oil painting portrait on canvas for family, memorial and keepsake artwork in New Zealand.",
+      summary: `Turn your photos into a personalised digital oil painting portrait on canvas for family, memorial and keepsake artwork in ${market === "AU" ? "Australia" : "New Zealand"}.`,
       eyebrow: "Photo to painting canvas",
       prioritizeMobileAction: false,
     };
   }
   if (product.key === "grave-cover") {
     return {
-      title: "Custom Grave Covers NZ",
+      title: market === "AU" ? "Custom Grave Covers" : "Custom Grave Covers NZ",
       summary: "Create a personalised 100 × 200 cm grave cover with photos, names, dates and memorial artwork, finished with reinforced eyelets.",
       eyebrow: "Personalised grave covers",
       prioritizeMobileAction: false,
@@ -87,7 +87,7 @@ export function getProductPagePresentation(product: Product): ProductPagePresent
   }
   if (product.key === "roll-up-banner") {
     return {
-      title: "Personalised Roll-Up Banner NZ",
+      title: market === "AU" ? "Personalised Roll-Up Banner" : "Personalised Roll-Up Banner NZ",
       summary: "Create a personalised 85 × 200 cm roll-up banner with your photos and wording, supplied with stand, carry bag, pegs and box.",
       eyebrow: "Custom roll-up banners",
       prioritizeMobileAction: false,
@@ -144,7 +144,7 @@ export function ProductPageContent({
   sizeLabels?: readonly string[];
   artwork?: readonly PublicGalleryItem[];
 }>) {
-  const presentation = getProductPagePresentation(product);
+  const presentation = getProductPagePresentation(product, market);
   const marketPrefix = market === "AU" ? "/au" : "";
   const configureParams = new URLSearchParams();
   if (selection) configureParams.set("design", selection.id);

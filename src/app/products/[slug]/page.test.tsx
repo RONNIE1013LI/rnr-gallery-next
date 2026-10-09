@@ -312,6 +312,55 @@ describe("ProductPageContent", () => {
 
   it.each([
     {
+      slug: "grave-cover",
+      nzTitle: "Custom Grave Covers NZ",
+      auTitle: "Custom Grave Covers",
+    },
+    {
+      slug: "roll-up-banner",
+      nzTitle: "Personalised Roll-Up Banner NZ",
+      auTitle: "Personalised Roll-Up Banner",
+    },
+    {
+      slug: "digital-oil-painting-canvas",
+      nzTitle: "Digital Oil Painting Portrait Canvas",
+      auTitle: "Digital Oil Painting Portrait Canvas",
+    },
+  ])("uses the correct market copy in metadata, headings and structured data for $slug", async ({
+    slug, nzTitle, auTitle,
+  }) => {
+    state.registry = enabledAustraliaRegistry();
+    const props = {
+      params: Promise.resolve({ slug }),
+      searchParams: Promise.resolve({}),
+    };
+    const nzMetadata = await generateNewZealandProductMetadata(props);
+    const auMetadata = await generateAustraliaProductMetadata(props);
+    expect(nzMetadata.title).toBe(nzTitle);
+    expect(auMetadata.title).toBe(`${auTitle} Australia`);
+    expect(auMetadata.description).not.toMatch(/New Zealand|\bNZ\b/);
+    if (slug === "digital-oil-painting-canvas") {
+      expect(nzMetadata.description).toContain("in New Zealand.");
+      expect(auMetadata.description).toContain("in Australia.");
+    }
+
+    const { container } = render(await AustraliaProductPage(props));
+    expect(screen.getByRole("heading", { level: 1, name: auTitle })).toBeVisible();
+    const data = JSON.parse(container.querySelector("#rnr-product-data")?.textContent ?? "{}");
+    expect(data.name).toBe(auTitle);
+    expect(data.description).not.toMatch(/New Zealand|\bNZ\b/);
+    expect(auMetadata.description).toBe(`${data.description} Fixed Australian pricing in AUD.`);
+    expect(data.offers).toMatchObject({
+      priceCurrency: "AUD",
+      url: `https://rnrgallery.com/au/products/${slug}`,
+    });
+    expect(screen.getByRole("link", { name: "Start Your Design" })).toHaveAttribute(
+      "href", `/au/products/${slug}/configure`,
+    );
+  });
+
+  it.each([
+    {
       slug: "custom-themed-wall-banner",
       heading: "Custom Birthday & Event Wall Banner",
       summary: /personalised birthday banner.*photos/i,

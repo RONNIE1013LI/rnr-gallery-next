@@ -161,6 +161,7 @@ export function createPublicGalleryService(dependencies: Dependencies) {
           ? [{
               slug: candidate.item.publicSlug,
               createdAt: candidate.row.createdAt,
+              imagePath: `/gallery-images/${candidate.item.id}?v=${candidate.item.contentHash}`,
             }]
           : []
       ));

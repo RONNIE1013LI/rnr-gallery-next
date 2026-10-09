@@ -17,7 +17,7 @@ function createRuntime() {
   const publicService = Object.freeze({
     listSitemapDesigns: cachePublicData(
       () => uncachedPublicService.listSitemapDesigns(),
-      "gallery-sitemap-designs-public-taxonomy-v3",
+      "gallery-sitemap-designs-images-v4",
       [PUBLIC_CACHE_TAGS.gallery, PUBLIC_CACHE_TAGS.sitemap],
     ),
     findByPublicSlug: cachePublicData(

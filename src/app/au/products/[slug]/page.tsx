@@ -32,7 +32,7 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
       robots: { index: false, follow: false },
     };
   }
-  const presentation = getProductPagePresentation(product);
+  const presentation = getProductPagePresentation(product, "AU");
   return buildPublicMetadata({
     title: `${presentation.title} Australia`,
     description: `${presentation.summary} Fixed Australian pricing in AUD.`,
