@@ -4823,10 +4823,12 @@ button.paymentProofPreviewMedia {
 .manualChoiceOption[data-field="item-0-size"][data-value="A3"] { background: #655870; }
 .manualChoiceOption[data-field="item-0-size"][data-value="A4"] { background: #80603d; }
 .manualChoiceOption[data-field="item-0-size"][data-value="A5"] { background: #62694e; }
-.manualChoiceOption[data-field="item-0-size"][data-value="Banner 80x160cm"] { background: #854e3e; }
-.manualChoiceOption[data-field="item-0-size"][data-value="Banner 100x200cm"] { background: #815264; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Banner 160cm x 80cm"] { background: #854e3e; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Banner 200cm x 100cm"] { background: #815264; }
 .manualChoiceOption[data-field="item-0-size"][data-value="PullUpBanner"] { background: #555a8e; }
-.manualChoiceOption[data-field="item-0-size"][data-value="Banner 150x300cm"] { background: #755a39; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Banner 300cm x 150cm"] { background: #755a39; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Banner Bundle 200cm"] { background: #3f697b; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Banner Bundle 300cm"] { background: #6b4c80; }
 .manualChoiceOption[data-field="item-0-size"][data-value="Custom Size"] { background: #4c6a60; }
 .manualChoiceOption[data-field="item-0-size"][data-value="Other"] { background: #5f6673; }
 

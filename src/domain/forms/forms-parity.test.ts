@@ -7,6 +7,7 @@ import {
   FORM_ROLE_PRESETS,
   FORM_STAT_WIDGET_TYPES,
   displayFormReference,
+  normalizeFormSize,
 } from "./forms-parity";
 
 describe("forms source parity", () => {
@@ -14,6 +15,16 @@ describe("forms source parity", () => {
     expect(displayFormReference("manual", "08000")).toBe("08000");
     expect(displayFormReference("web", "RNR-2026-ABC123")).toBe("Web-RNR-2026-ABC123");
     expect(displayFormReference("web", "Web-RNR-2026-ABC123")).toBe("Web-RNR-2026-ABC123");
+  });
+
+  it.each([
+    ["Banner 80x160cm", "Banner 160cm x 80cm"],
+    ["Banner 100x200cm", "Banner 200cm x 100cm"],
+    ["Banner 150x300cm", "Banner 300cm x 150cm"],
+    ["Banner Bundle 200cm", "Banner Bundle 200cm"],
+    ["Custom artwork size", "Custom artwork size"],
+  ])("maps the saved size %s into the current editor selection", (saved, current) => {
+    expect(normalizeFormSize(saved)).toBe(current);
   });
 
   it("preserves the source list order", () => {

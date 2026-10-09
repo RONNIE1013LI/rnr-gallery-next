@@ -42,10 +42,12 @@ export const FORM_OPTION_SETS = Object.freeze({
     "A3",
     "A4",
     "A5",
-    "Banner 80x160cm",
-    "Banner 100x200cm",
+    "Banner 160cm x 80cm",
+    "Banner 200cm x 100cm",
     "PullUpBanner",
-    "Banner 150x300cm",
+    "Banner 300cm x 150cm",
+    "Banner Bundle 200cm",
+    "Banner Bundle 300cm",
     "Custom Size",
     "Other",
   ]),
@@ -266,4 +268,11 @@ export function displayFormReference(source: "web" | "manual", jobNumber: string
   const reference = jobNumber.trim();
   if (source === "manual" || /^web-/i.test(reference)) return reference;
   return `Web-${reference}`;
+}
+
+export function normalizeFormSize(sizeLabel: string) {
+  if (sizeLabel === "Banner 80x160cm") return "Banner 160cm x 80cm";
+  if (sizeLabel === "Banner 100x200cm") return "Banner 200cm x 100cm";
+  if (sizeLabel === "Banner 150x300cm") return "Banner 300cm x 150cm";
+  return sizeLabel;
 }

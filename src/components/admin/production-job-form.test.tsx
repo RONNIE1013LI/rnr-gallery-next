@@ -1203,6 +1203,23 @@ describe("ProductionJobForm", () => {
     });
   });
 
+  it.each(["Banner Bundle 200cm", "Banner Bundle 300cm"])("saves %s as a Banner Bundle manual order", async (size) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "created",
+      job: { id: "ec5a34e2-2ca4-4ed7-906a-eb07aa781a03", jobNumber: "RRM-2026-001" },
+    }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProductionJobForm assignees={assignees} canManageFinance={false} manualEntryLayout />);
+    fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Test Customer" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), { target: { value: "size@example.test" } });
+    fireEvent.change(screen.getByLabelText("DlvryDate"), { target: { value: "2026-10-16" } });
+    chooseManualOption("Size", size);
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload.items).toEqual([expect.objectContaining({ productTitle: "Banner Bundle", sizeLabel: size, quantity: 1 })]);
+  });
+
   it("offers every approved Canvas and Banner size without Canvas dimension annotations", () => {
     render(<ProductionJobForm assignees={assignees} canManageFinance />);
 
@@ -1216,10 +1233,12 @@ describe("ProductionJobForm", () => {
       "A3",
       "A4",
       "A5",
-      "Banner 80x160cm",
-      "Banner 100x200cm",
+      "Banner 160cm x 80cm",
+      "Banner 200cm x 100cm",
       "PullUpBanner",
-      "Banner 150x300cm",
+      "Banner 300cm x 150cm",
+      "Banner Bundle 200cm",
+      "Banner Bundle 300cm",
       "Custom Size",
       "Other",
     ]);

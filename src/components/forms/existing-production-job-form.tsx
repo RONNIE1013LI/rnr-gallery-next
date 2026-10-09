@@ -1,4 +1,4 @@
-import { FORM_OPTION_SETS } from "@/domain/forms/forms-parity";
+import { FORM_OPTION_SETS, normalizeFormSize } from "@/domain/forms/forms-parity";
 import {
   ProductionJobForm,
   type ExistingProductionOrder,
@@ -14,6 +14,7 @@ const dateTime = new Intl.DateTimeFormat("en-NZ", {
 });
 
 function sizeFields(sizeLabel: string) {
+  sizeLabel = normalizeFormSize(sizeLabel);
   if (FORM_OPTION_SETS.size.includes(sizeLabel) && sizeLabel !== "Custom Size" && sizeLabel !== "Other") {
     return { size: sizeLabel, sizeOther: "" };
   }

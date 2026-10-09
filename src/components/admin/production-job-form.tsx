@@ -322,6 +322,7 @@ function cents(value: FormDataEntryValue | null) {
 function manualProductTitle(size: string) {
   if (/^A[0-5]$/.test(size)) return "Canvas";
   if (size === "PullUpBanner") return "Roll Up Banner";
+  if (size.startsWith("Banner Bundle ")) return "Banner Bundle";
   if (size.startsWith("Banner ")) return "Wall Banner";
   return "Manual custom order";
 }

@@ -148,8 +148,8 @@ describe("Admin form visual refinements", () => {
     const selected = cssRule(adminCss, ".manualChoiceOption:has(input:checked)");
     const sizeValues = [
       "A0", "A1", "A2", "A3", "A4", "A5",
-      "Banner 80x160cm", "Banner 100x200cm", "PullUpBanner",
-      "Banner 150x300cm", "Custom Size", "Other",
+      "Banner 160cm x 80cm", "Banner 200cm x 100cm", "PullUpBanner",
+      "Banner 300cm x 150cm", "Banner Bundle 200cm", "Banner Bundle 300cm", "Custom Size", "Other",
     ];
     const backgrounds = sizeValues.map((value) => {
       const selector = `.manualChoiceOption[data-field="item-0-size"][data-value="${value}"]`;
