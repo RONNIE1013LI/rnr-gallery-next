@@ -154,6 +154,7 @@ export function HomepageV3({
   const shopHref = market === "AU" ? "/au/shop" : "/shop";
   const canvasHref = market === "AU" ? "/au/canvas" : "/canvas";
   const configureHref = (slug: string) => `${market === "AU" ? "/au" : ""}/products/${slug}/configure`;
+  const productHref = (slug: string) => `${market === "AU" ? "/au" : ""}/products/${slug}`;
   const homepageGalleryItems = selectHomepageGalleryItems(galleryItems);
   const galleryClassNames: Readonly<Record<HomepageGallerySlot, string>> = {
     "canvas-landscape": styles.galleryCanvasLandscape,
@@ -378,25 +379,25 @@ export function HomepageV3({
             {hasActiveCanvas ? (
               <article className={styles.productFeature}>
                 <Artwork slot={homepageV3ImageSlots.canvasProductImage} tone="sage" ratio="five-four" people={4} className={styles.productMedia} productRatio="canvas-5-4" sizes="(max-width: 420px) calc(100vw - 2rem), (max-width: 760px) calc(100vw - 2.5rem), (max-width: 900px) calc(100vw - 3rem), (max-width: 1180px) calc(100vw - 4rem), (max-width: 1352px) calc((100vw - 8.875rem) / 2), 605px" />
-                <div className={styles.productCopy}><h3>Custom Canvas</h3><p>For family portraits, memorial compositions and artwork designed to live in the home.</p><Link className={styles.textLink} href={canvasHref}>Shop Custom Canvas <Arrow /></Link></div>
+                <div className={styles.productCopy}><h3>Custom Canvas</h3><p>For family portraits, memorial compositions and artwork designed to live in the home.</p><div className={styles.productActions}><Link className={styles.textLink} href={canvasHref}>Shop Custom Canvas <Arrow /></Link><Link className={styles.textLink} href={`${canvasHref}#canvas-buying-guide`}>Canvas details <Arrow /></Link></div></div>
               </article>
             ) : null}
             {hasActiveProduct("custom-themed-wall-banner") ? (
               <article className={styles.productFeature}>
                 <Artwork slot={homepageV3ImageSlots.wallBannerProductImage} tone="clay" ratio="five-four" people={4} className={styles.productMedia} productRatio="wall-banner-5-4" sizes="(max-width: 420px) calc(100vw - 2rem), (max-width: 760px) calc(100vw - 2.5rem), (max-width: 900px) calc(100vw - 3rem), (max-width: 1180px) calc(100vw - 4rem), (max-width: 1352px) calc((100vw - 8.875rem) / 2), 605px" />
-                <div className={styles.productCopy}><h3>Wall Banner</h3><p>A large horizontal format for birthdays, memorials, family events and cultural celebrations.</p><Link className={styles.textLink} href={configureHref("custom-themed-wall-banner")}>Shop Wall Banners <Arrow /></Link></div>
+                <div className={styles.productCopy}><h3>Wall Banner</h3><p>A large horizontal format for birthdays, memorials, family events and cultural celebrations.</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("custom-themed-wall-banner")}>Shop Wall Banners <Arrow /></Link><Link className={styles.textLink} href={productHref("custom-themed-wall-banner")}>Wall banner details <Arrow /></Link></div></div>
               </article>
             ) : null}
             {hasActiveProduct("roll-up-banner") ? (
               <article className={styles.productVertical}>
                 <Artwork slot={homepageV3ImageSlots.rollupProductImage} tone="blue" ratio="four-five" people={2} className={styles.productMedia} productRatio="roll-up-4-5" sizes="(max-width: 412px) calc(100vw - 2rem), 380px" />
-                <div className={styles.productCopy}><h3>Roll-up Banner</h3><p>A custom-designed 85 × 200 cm printed roll-up banner supplied with its stand, carry bag, pegs and box.</p><Link className={styles.textLink} href={configureHref("roll-up-banner")}>Shop Roll-up Banners <Arrow /></Link></div>
+                <div className={styles.productCopy}><h3>Roll-up Banner</h3><p>A custom-designed 85 × 200 cm printed roll-up banner supplied with its stand, carry bag, pegs and box.</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("roll-up-banner")}>Shop Roll-up Banners <Arrow /></Link><Link className={styles.textLink} href={productHref("roll-up-banner")}>Roll-up banner details <Arrow /></Link></div></div>
               </article>
             ) : null}
             {hasActiveProduct("grave-cover") ? (
               <article className={styles.productVertical}>
                 <Artwork slot={homepageV3ImageSlots.graveCoverProductImage} tone="olive" ratio="four-five" people={2} className={styles.productMedia} productRatio="grave-cover-4-5" sizes="(max-width: 412px) calc(100vw - 2rem), 380px" />
-                <div className={styles.productCopy}><h3>Grave Cover</h3><p>A personalised 100 × 200 cm memorial grave cover with reinforced eyelets.</p><Link className={styles.textLink} href={configureHref("grave-cover")}>Shop Grave Covers <Arrow /></Link></div>
+                <div className={styles.productCopy}><h3>Grave Cover</h3><p>A personalised 100 × 200 cm memorial grave cover with reinforced eyelets.</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("grave-cover")}>Shop Grave Covers <Arrow /></Link><Link className={styles.textLink} href={productHref("grave-cover")}>Grave cover details <Arrow /></Link></div></div>
               </article>
             ) : null}
           </div>

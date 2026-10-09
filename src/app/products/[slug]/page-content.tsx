@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { AnalyticsEventTracker } from "@/components/analytics-event-tracker";
+import { hasProductBuyingGuide, ProductBuyingGuide } from "@/components/product-buying-guide";
 import { StructuredData } from "@/components/structured-data";
 import { CanvasProductPreview } from "@/components/canvas-product-preview";
 import { canvasDemoSizeKeys } from "@/components/canvas-3d/profiles";
@@ -26,6 +27,8 @@ import type { Market } from "@/domain/markets/types";
 import type { Product } from "@/domain/catalogue/types";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
+import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
+import { parseGalleryQuery } from "@/domain/gallery/query";
 import { getSiteUrl } from "@/server/seo/site-url";
 import { buildBreadcrumbData, buildPublicMetadata } from "@/server/seo/metadata";
 
@@ -128,6 +131,7 @@ export function ProductPageContent({
   taxRegistered,
   selectedSizeKey,
   sizeLabels = [],
+  artwork = [],
 }: Readonly<{
   product: Product;
   selection: GalleryDesignSelection | null;
@@ -138,6 +142,7 @@ export function ProductPageContent({
   taxRegistered?: boolean;
   selectedSizeKey?: string;
   sizeLabels?: readonly string[];
+  artwork?: readonly PublicGalleryItem[];
 }>) {
   const presentation = getProductPagePresentation(product);
   const marketPrefix = market === "AU" ? "/au" : "";
@@ -297,6 +302,7 @@ export function ProductPageContent({
         {presentation.prioritizeMobileAction ? copy : media}
         {presentation.prioritizeMobileAction ? media : copy}
       </div>
+      <ProductBuyingGuide product={product} artwork={artwork} market={market} />
     </main>
   );
 }
@@ -312,6 +318,17 @@ export async function resolveProductPageSearchSelection(productSlug: string, sea
     selection = null;
   }
   return { selection, designId };
+}
+
+export async function loadProductArtwork(product: Product): Promise<readonly PublicGalleryItem[]> {
+  if (!hasProductBuyingGuide(product)) return [];
+  try {
+    const result = await getGalleryRuntime().publicService.list(parseGalleryQuery({ product: product.slug }), 6);
+    return result.items.filter((item) => item.productSlug === product.slug && item.seoIndex
+      && !item.hiddenFromListings && !item.canonicalPublicSlug).slice(0, 3);
+  } catch {
+    return [];
+  }
 }
 
 export function resolveRequestedSizeKey(
@@ -330,7 +347,10 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   const { registry } = await getSafePublicProductRegistry();
   const product = getRegistryProductBySlug(registry, (await params).slug);
   if (!product) notFound();
-  const { selection } = await resolveProductPageSearchSelection(product.slug, searchParams);
+  const [{ selection }, artwork] = await Promise.all([
+    resolveProductPageSearchSelection(product.slug, searchParams),
+    loadProductArtwork(product),
+  ]);
   const resolvedSearchParams = await searchParams;
   const selectedSizeKey = resolveRequestedSizeKey(
     registry,
@@ -354,6 +374,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
       taxRegistered={registry.markets.NZ.tax.registered}
       selectedSizeKey={selectedSizeKey}
       sizeLabels={schema.sizes.map((size) => size.label)}
+      artwork={artwork}
     />
   );
 }

@@ -20,6 +20,8 @@ const state = vi.hoisted(() => ({
   registry: undefined as unknown,
   selection: null as unknown,
   track: vi.fn(),
+  artwork: [] as unknown[],
+  artworkUnavailable: false,
 }));
 
 vi.mock("@/server/admin/product-registry-runtime", () => ({
@@ -28,6 +30,10 @@ vi.mock("@/server/admin/product-registry-runtime", () => ({
 vi.mock("@/server/gallery/gallery-runtime", () => ({
   getGalleryRuntime: () => ({
     selectionService: { resolve: vi.fn().mockImplementation(async () => state.selection) },
+    publicService: { list: async () => {
+      if (state.artworkUnavailable) throw new Error("Gallery unavailable");
+      return { items: state.artwork };
+    } },
   }),
 }));
 vi.mock("@/components/analytics-event-tracker", () => ({
@@ -67,6 +73,35 @@ describe("ProductPageContent", () => {
     state.registry = defaultProductRegistry;
     state.selection = null;
     state.track.mockClear();
+    state.artwork = [];
+    state.artworkUnavailable = false;
+  });
+
+  it("links only matching, indexable public artwork from the product page", async () => {
+    const artwork = {
+      id: "c".repeat(64), productSlug: "digital-oil-painting-canvas",
+      publicSlug: "family-portrait-example", displayTitle: "Family portrait example",
+      altText: "A family portrait printed on canvas", width: 1200, height: 900,
+      contentHash: "d".repeat(64), seoIndex: true, hiddenFromListings: false,
+      canonicalPublicSlug: null,
+    };
+    state.artwork = [
+      artwork,
+      { ...artwork, id: "e".repeat(64), productSlug: "grave-cover", publicSlug: "wrong-product", displayTitle: "Wrong product" },
+      { ...artwork, id: "f".repeat(64), seoIndex: false, publicSlug: "excluded-design", displayTitle: "Excluded design" },
+      { ...artwork, id: "a".repeat(64), hiddenFromListings: true, publicSlug: "hidden-design", displayTitle: "Hidden design" },
+      { ...artwork, id: "b".repeat(64), canonicalPublicSlug: "family-portrait-example", publicSlug: "duplicate-design", displayTitle: "Duplicate design" },
+    ];
+    render(await ProductPage({ params: Promise.resolve({ slug: "digital-oil-painting-canvas" }), searchParams: Promise.resolve({}) }));
+    expect(screen.getByRole("link", { name: /Family portrait example/ })).toHaveAttribute("href", "/designs/family-portrait-example");
+    expect(screen.queryByRole("link", { name: /Wrong product|Excluded design|Hidden design|Duplicate design/ })).not.toBeInTheDocument();
+  });
+
+  it("keeps ordering available when public artwork cannot be loaded", async () => {
+    state.artworkUnavailable = true;
+    render(await ProductPage({ params: Promise.resolve({ slug: "grave-cover" }), searchParams: Promise.resolve({}) }));
+    expect(screen.getByRole("link", { name: "Start Your Design" })).toHaveAttribute("href", "/products/grave-cover/configure");
+    expect(screen.getByRole("link", { name: /Browse grave cover designs/ })).toHaveAttribute("href", "/design-gallery?product=grave-cover");
   });
 
   it("tracks the default NZ product quote in NZD without selected-design details", async () => {

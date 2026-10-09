@@ -13,6 +13,7 @@ import { getSafePublicProductRegistry } from "@/server/admin/product-registry-ru
 import { buildPublicMetadata } from "@/server/seo/metadata";
 import {
   getProductPagePresentation,
+  loadProductArtwork,
   ProductPageContent,
   resolveProductPageSearchSelection,
   resolveRequestedSizeKey,
@@ -49,7 +50,10 @@ export default async function AustraliaProductPage({ params, searchParams }: Pro
   if (!registry.markets.AU.enabled || !getMarketCompleteness(registry, "AU").ready) {
     return <AustraliaUnavailable />;
   }
-  const { selection } = await resolveProductPageSearchSelection(product.slug, searchParams);
+  const [{ selection }, artwork] = await Promise.all([
+    resolveProductPageSearchSelection(product.slug, searchParams),
+    loadProductArtwork(product),
+  ]);
   const resolvedSearchParams = await searchParams;
   const selectedSizeKey = resolveRequestedSizeKey(
     registry,
@@ -74,6 +78,7 @@ export default async function AustraliaProductPage({ params, searchParams }: Pro
       taxRegistered={registry.markets.AU.tax.registered}
       selectedSizeKey={selectedSizeKey}
       sizeLabels={schema.sizes.map((size) => size.label)}
+      artwork={artwork}
     />
   );
 }

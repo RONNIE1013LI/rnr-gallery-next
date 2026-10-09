@@ -87,6 +87,22 @@
   font-weight: 650;
 }
 
+.option > h3:first-child {
+  margin-top: 0;
+}
+
+.section .artworkTitle {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.section .artworkLink {
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: none;
+}
+
 .option dd,
 .preparation li {
   margin: 0;
