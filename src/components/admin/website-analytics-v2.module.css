@@ -475,9 +475,9 @@
 
 .dataTable th,
 .dataTable td {
-  padding: 10px 12px;
+  padding: 10px 16px;
   border-bottom: 1px solid #e8e8eb;
-  text-align: right;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -497,6 +497,16 @@
 .dataTable th:first-child,
 .dataTable td:first-child {
   text-align: left;
+}
+
+.pagesPanel .dataTable {
+  table-layout: fixed;
+}
+
+.pagesPanel .dataTable th:first-child {
+  width: 60%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .dataTable tr:last-child th,
