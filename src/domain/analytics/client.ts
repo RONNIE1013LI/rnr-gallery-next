@@ -14,6 +14,7 @@ import {
   GOOGLE_ADS_PURCHASE_SEND_TO,
   GOOGLE_ADS_TAG_ID,
   googleTagCommand,
+  safeGa4PageLocation,
 } from "./runtime";
 
 export const GA_TRANSPORT_READY_EVENT = "rnr:ga-transport-ready";
@@ -187,15 +188,12 @@ function safePageContext(
   } catch {
     requested = new URL(window.location.href);
   }
-  const explicitSafePrivatePath = requested.pathname === GA4_SAFE_CHECKOUT_PATH
-    || requested.pathname === GA4_SAFE_PURCHASE_PATH;
-  const pathname = explicitSafePrivatePath
-    || classifyGa4Location(requested.pathname, new URLSearchParams()) === "public"
-    ? requested.pathname || "/"
-    : GA4_SAFE_PURCHASE_PATH;
   return {
     ...payload,
-    page_location: new URL(pathname, window.location.origin).href,
+    page_location: safeGa4PageLocation(
+      new URL(`${requested.pathname}${requested.search}`, window.location.origin),
+      googleAdsAllowed(),
+    ),
     page_referrer: "",
     send_to: destination,
   };

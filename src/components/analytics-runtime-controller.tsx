@@ -18,6 +18,7 @@ import {
   GA4_MEASUREMENT_ID,
   GOOGLE_ADS_TAG_ID,
   googleTagCommand,
+  safeGa4PageLocation,
   type Ga4LocationPolicy,
 } from "@/domain/analytics/runtime";
 import { deferThirdPartyTransport } from "@/domain/analytics/deferred-third-party";
@@ -275,7 +276,7 @@ export function AnalyticsRuntimeController({
         };
       if (!analyticsAllowed || state.policy !== "public" || !tagLoaded.current) return;
 
-      const pageLocation = new URL(url.pathname || "/", url.origin).href;
+      const pageLocation = safeGa4PageLocation(url, advertisingAllowed);
       if (lastPageView.current === pageLocation) return;
       lastPageView.current = pageLocation;
       sendControlledGaEvent("page_view", {

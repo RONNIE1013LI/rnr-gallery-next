@@ -195,6 +195,7 @@ describe("emitAnalyticsEvent", () => {
 
   it("pins pageview, view_item, and purchase to the configured destination", () => {
     document.documentElement.dataset.ga4Enabled = "true";
+    document.documentElement.removeAttribute("data-google-ads-enabled");
     sendControlledGaEvent("page_view", {
       page_location: "http://localhost:3000/products/photo-print-canvas?gclid=private-click",
       page_referrer: "",
@@ -205,6 +206,7 @@ describe("emitAnalyticsEvent", () => {
     document.documentElement.removeAttribute("data-ga4-enabled");
     document.documentElement.dataset.ga4PrivatePurchase = "true";
     document.documentElement.dataset.ga4Loaded = "true";
+    document.documentElement.dataset.googleAdsEnabled = "true";
     window.history.replaceState({}, "", "/orders/private?access=private-token");
     expect(emitAnalyticsEvent(purchase)).toBe(true);
 
@@ -225,6 +227,60 @@ describe("emitAnalyticsEvent", () => {
     ]);
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
       .not.toMatch(/G-MALICIOUS|gclid|private-click|private-token/);
+  });
+
+  it("preserves only campaign attribution parameters on public commerce events", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    window.history.replaceState({}, "", "/products/roll-up-banner?utm_source=google&utm_medium=cpc&utm_campaign=NZ+Roll-up&utm_id=23343167994&utm_term=roll+up+banner&utm_content=thick-base&utm_source_platform=google_ads&gclid=example-click_123&gbraid=example-braid&wbraid=example-web-braid&search=private-text&fbclid=other-network#private-fragment");
+
+    expect(emitAnalyticsEvent({ ...event, event: "view_item" })).toBe(true);
+
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "view_item", expect.objectContaining({
+      page_location: "http://localhost:3000/products/roll-up-banner?utm_source=google&utm_medium=cpc&utm_campaign=NZ+Roll-up&utm_id=23343167994&utm_term=roll+up+banner&utm_content=thick-base&utm_source_platform=google_ads&gclid=example-click_123&gbraid=example-braid&wbraid=example-web-braid",
+      page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
+    }));
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
+      .not.toMatch(/private-text|other-network|private-fragment/);
+  });
+
+  it("retains manual campaigns but excludes click identifiers without advertising consent", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    document.documentElement.removeAttribute("data-google-ads-enabled");
+    window.history.replaceState({}, "", "/shop?utm_source=google&utm_medium=cpc&gclid=example-click&gbraid=example-braid&wbraid=example-web-braid");
+
+    emitAnalyticsEvent(event);
+
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "view_cart", expect.objectContaining({
+      page_location: "http://localhost:3000/shop?utm_source=google&utm_medium=cpc",
+    }));
+  });
+
+  it("drops malformed, duplicate, overlong and contact-like campaign values", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    window.history.replaceState({}, "", `/shop?utm_source=google&utm_medium=cpc&utm_medium=email&utm_campaign=${"a".repeat(201)}&utm_content=person%40example.test&utm_term=https%3A%2F%2Fexample.test%2Fprivate&gclid=invalid%20click&gbraid=valid_braid&wbraid=bad%0Avalue`);
+
+    emitAnalyticsEvent(event);
+
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "view_cart", expect.objectContaining({
+      page_location: "http://localhost:3000/shop?utm_source=google&gbraid=valid_braid",
+    }));
+  });
+
+  it("does not carry attribution out of sensitive or private locations", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    for (const path of [
+      "/shop?email=person%40example.test&utm_source=google&gclid=example-click",
+      "/account/orders/private?utm_source=google&gclid=example-click",
+    ]) {
+      window.history.replaceState({}, "", path);
+      emitAnalyticsEvent(event);
+    }
+
+    for (const command of vi.mocked(sendGAEvent).mock.calls) {
+      expect(command[2]).toMatchObject({ page_location: "http://localhost:3000/", page_referrer: "" });
+    }
+    expect(sendGAEvent).toHaveBeenCalledTimes(2);
   });
 
   it("returns false for null events", () => {
@@ -402,7 +458,7 @@ describe("emitAnalyticsEvent", () => {
     window.history.replaceState(
       {},
       "",
-      "/orders/RNR-2026-PRIVATE?access=private-email-token",
+      "/orders/RNR-2026-PRIVATE?access=private-email-token&utm_source=private-order-source&gclid=private-order-click",
     );
     let disabledDuringSend: unknown;
     vi.mocked(sendGAEvent).mockImplementationOnce(() => {
@@ -444,7 +500,7 @@ describe("emitAnalyticsEvent", () => {
     expect(JSON.stringify({
       dataLayer: (window as unknown as { dataLayer: unknown[] }).dataLayer,
       events: vi.mocked(sendGAEvent).mock.calls,
-    })).not.toContain("private-email-token");
+    })).not.toMatch(/private-email-token|private-order-source|private-order-click/);
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 

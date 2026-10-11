@@ -211,7 +211,9 @@ describe("AnalyticsRuntimeController", () => {
     markGoogleTagReady();
     markGoogleTagReady();
     expect(vi.mocked(sendGAEvent).mock.calls.filter((call) => call[1] === "add_to_cart")).toHaveLength(1);
-    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toMatch(/utm_source|gclid|private-deferred-click/);
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "add_to_cart", expect.objectContaining({
+      page_location: "http://localhost:3000/shop?utm_source=google&gclid=private-deferred-click",
+    }));
   });
 
   it("starts transport on programmatic checkout navigation before idle and retains checkout events", async () => {
@@ -279,6 +281,7 @@ describe("AnalyticsRuntimeController", () => {
       "gclid=private-click-id",
       "gbraid=private-gbraid",
       "wbraid=private-wbraid",
+      "search=private-search",
     ].join("&"));
     const view = render(<AnalyticsRuntimeController production />);
 
@@ -309,17 +312,37 @@ describe("AnalyticsRuntimeController", () => {
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
     expect(googleAnalytics.props.at(-1)).toMatchObject({ gaId: GA4_MEASUREMENT_ID });
     expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
-      page_location: "http://localhost:3000/products/photo-print-canvas",
+      page_location: "http://localhost:3000/products/photo-print-canvas?utm_source=google&utm_medium=cpc&gclid=private-click-id&gbraid=private-gbraid&wbraid=private-wbraid",
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
     });
     expect(sendGAEvent).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toMatch(
-      /utm_source|utm_medium|gclid|gbraid|wbraid|private-click-id/,
+      /private-search/,
     );
     expect(googleAnalytics.mounts).toBe(1);
     view.unmount();
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("preserves manual attribution without forwarding click IDs when advertising is declined", async () => {
+    consentState.value = { ...consentState.value!, advertising: false };
+    setLocation("/products/roll-up-banner", "utm_source=google&utm_medium=cpc&gclid=example-click&gbraid=example-braid&wbraid=example-web-braid");
+    const view = render(<AnalyticsRuntimeController production />);
+    loadGoogleTag(await view.findByTestId("official-google-analytics"));
+
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
+      page_location: "http://localhost:3000/products/roll-up-banner?utm_source=google&utm_medium=cpc",
+      page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
+    });
+    expect(googleAnalytics.commands).toContainEqual(["consent", "default", {
+      analytics_storage: "granted",
+      ad_storage: "denied",
+      ad_user_data: "denied",
+      ad_personalization: "denied",
+    }]);
+    view.unmount();
   });
 
   it("queues initial pageview and view_item until the tag becomes ready after 250ms", async () => {
@@ -378,11 +401,13 @@ describe("AnalyticsRuntimeController", () => {
         "view_item",
       ]);
       expect(collected[0]).toEqual(["event", "page_view", {
-        page_location: "http://localhost:3000/products/photo-print-canvas",
+        page_location: "http://localhost:3000/products/photo-print-canvas?utm_source=google&gclid=private-initial-click",
         page_referrer: "",
         send_to: GA4_MEASUREMENT_ID,
       }]);
-      expect(JSON.stringify(collected)).not.toMatch(/utm_source|gclid|private-initial-click/);
+      expect(collected[1][2]).toMatchObject({
+        page_location: "http://localhost:3000/products/photo-print-canvas?utm_source=google&gclid=private-initial-click",
+      });
     } finally {
       window.clearInterval(transport);
       view.unmount();
@@ -443,7 +468,7 @@ describe("AnalyticsRuntimeController", () => {
       .toEqual(["page_view", "view_item"]);
     expect(sendGAEvent).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
-      .not.toMatch(/utm_source|gclid|private-handshake-click|private-client-id/);
+      .not.toMatch(/private-client-id/);
     view.unmount();
   });
 
@@ -479,12 +504,12 @@ describe("AnalyticsRuntimeController", () => {
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY])
       .toBe(false);
     expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
-      page_location: "http://localhost:3000/products/photo-print-canvas",
+      page_location: "http://localhost:3000/products/photo-print-canvas?gclid=private-sync-probe-click",
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
-      .not.toMatch(/gclid|private-sync-probe-click|private-sync-client-id/);
+      .not.toMatch(/private-sync-client-id/);
     view.unmount();
   });
 
@@ -532,12 +557,12 @@ describe("AnalyticsRuntimeController", () => {
         price: 65,
         quantity: 1,
       }],
-      page_location: "http://localhost:3000/products/photo-print-canvas",
+      page_location: "http://localhost:3000/products/photo-print-canvas?utm_source=google&gclid=private-public-click",
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
     }]);
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
-      .not.toMatch(/utm_source|gclid|private-public-click|RNR-2026-PRIVATE|private-order-token/);
+      .not.toMatch(/RNR-2026-PRIVATE|private-order-token/);
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY])
       .toBe(true);
@@ -608,12 +633,12 @@ describe("AnalyticsRuntimeController", () => {
       expect(googleAnalytics.automaticPageLocations).toEqual([]);
       expect(sendGAEvent).toHaveBeenCalledOnce();
       expect(collected).toEqual([["event", "page_view", {
-        page_location: "http://localhost:3000/products/banner-bundle",
+        page_location: "http://localhost:3000/products/banner-bundle?utm_source=delayed&gclid=private-delayed-click",
         page_referrer: "",
         send_to: GA4_MEASUREMENT_ID,
       }]]);
       expect(JSON.stringify(collected))
-        .not.toMatch(/utm_source|gclid|private-delayed-click|private-checkout-token/);
+        .not.toMatch(/private-checkout-token/);
       await act(async () => {
         await new Promise((resolve) => window.setTimeout(resolve, 300));
       });
@@ -665,18 +690,18 @@ describe("AnalyticsRuntimeController", () => {
       );
       expect(pageViews).toEqual([
         ["event", "page_view", {
-          page_location: "http://localhost:3000/products/photo-print-canvas",
+          page_location: "http://localhost:3000/products/photo-print-canvas?utm_source=first&gclid=private-first-click",
           page_referrer: "",
           send_to: GA4_MEASUREMENT_ID,
         }],
         ["event", "page_view", {
-          page_location: "http://localhost:3000/products/banner-bundle",
+          page_location: "http://localhost:3000/products/banner-bundle?utm_source=second&gclid=private-second-click",
           page_referrer: "",
           send_to: GA4_MEASUREMENT_ID,
         }],
       ]);
       expect(JSON.stringify(pageViews))
-        .not.toMatch(/utm_source|gclid|private-first-click|private-second-click|private-start-token/);
+        .not.toMatch(/private-start-token/);
     } finally {
       window.clearInterval(enhancedMeasurement);
       view.unmount();
@@ -749,12 +774,12 @@ describe("AnalyticsRuntimeController", () => {
         }],
         item_list_id: "nz:shop",
         item_list_name: "Shop",
-        page_location: "http://localhost:3000/shop",
+        page_location: "http://localhost:3000/shop?utm_source=catalogue",
         page_referrer: "",
         send_to: GA4_MEASUREMENT_ID,
       }]]);
       expect(JSON.stringify(collected))
-        .not.toMatch(/utm_source|RNR-2026-PRIVATE|private-link-token/);
+        .not.toMatch(/RNR-2026-PRIVATE|private-link-token/);
       expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     } finally {
       window.clearInterval(transport);

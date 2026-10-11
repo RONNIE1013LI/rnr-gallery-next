@@ -7,9 +7,55 @@ import {
   GOOGLE_ADS_PURCHASE_SEND_TO,
   googleTagCommand,
   isGa4Production,
+  safeGa4PageLocation,
 } from "./runtime";
 
 describe("GA4 runtime boundary", () => {
+  it("keeps Google click attribution within GA4's serialized URL limit for Unicode campaigns", () => {
+    const url = new URL("https://rnrgallery.com/products/roll-up-banner");
+    url.searchParams.set("utm_source", "google");
+    url.searchParams.set("utm_medium", "cpc");
+    url.searchParams.set("utm_campaign", "画".repeat(120));
+    url.searchParams.set("gclid", "example-click");
+
+    const location = new URL(safeGa4PageLocation(url, true));
+
+    expect(location.href.length).toBeLessThanOrEqual(1000);
+    expect(location.searchParams.get("gclid")).toBe("example-click");
+    expect(location.searchParams.get("utm_source")).toBe("google");
+    expect(location.searchParams.get("utm_medium")).toBe("cpc");
+    expect(location.searchParams.has("utm_campaign")).toBe(false);
+  });
+
+  it("prioritizes complete consented click IDs when combined campaign values exceed the URL limit", () => {
+    const url = new URL("https://rnrgallery.com/products/roll-up-banner");
+    for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_id", "utm_term", "utm_content", "utm_source_platform"]) {
+      url.searchParams.set(key, "x".repeat(200));
+    }
+    for (const key of ["gclid", "gbraid", "wbraid"]) url.searchParams.set(key, "a".repeat(200));
+
+    const location = new URL(safeGa4PageLocation(url, true));
+
+    expect(location.href.length).toBeLessThanOrEqual(1000);
+    for (const key of ["gclid", "gbraid", "wbraid"]) {
+      expect(location.searchParams.get(key)).toBe("a".repeat(200));
+    }
+    expect(location.searchParams.has("utm_source_platform")).toBe(false);
+  });
+
+  it("accepts exactly 1000 serialized characters and omits whole parameters above the limit", () => {
+    const prefix = "https://rnrgallery.com/";
+    const query = "?utm_source=google";
+    const pathname = "a".repeat(1000 - prefix.length - query.length);
+
+    expect(safeGa4PageLocation(new URL(`${prefix}${pathname}${query}`), false))
+      .toBe(`${prefix}${pathname}${query}`);
+    expect(safeGa4PageLocation(new URL(`${prefix}${pathname}a${query}`), false))
+      .toBe(`${prefix}${pathname}a`);
+    expect(safeGa4PageLocation(new URL(`${prefix}${"a".repeat(1000)}`), false))
+      .toBe(prefix);
+  });
+
   it("enables GA4 only for Vercel Production", () => {
     expect(isGa4Production("production")).toBe(true);
     expect(isGa4Production("preview")).toBe(false);
