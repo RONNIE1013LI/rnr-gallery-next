@@ -155,7 +155,7 @@ export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentReq
         <label><span>Customer name (optional)</span><input aria-label="Customer name (optional)" maxLength={120} value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>
         <label><span>Customer email (optional)</span><input aria-label="Customer email (optional)" maxLength={320} type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} /></label>
       </> : null}
-      <p>Link validity: 12 hours from the customer’s first open.</p>
+      <p>Link validity: no time limit.</p>
       <label className={styles.paymentRequestWideField}><span>Internal note (optional)</span><textarea aria-label="Internal note (optional)" maxLength={2000} value={internalNote} onChange={(event) => setInternalNote(event.target.value)} /></label>
     </div>
     <fieldset className={styles.paymentRequestMethods}>

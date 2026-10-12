@@ -5,11 +5,8 @@ export function effectivePaymentRequestStatus(
     status: PaymentRequestStatus;
     expiresAt: Date | null;
   }>,
-  now: Date,
 ): PaymentRequestStatus {
-  return request.status === "pending" && request.expiresAt && request.expiresAt <= now
-    ? "expired"
-    : request.status;
+  return request.status;
 }
 
 export function isPaymentRequestTransitionAllowed(

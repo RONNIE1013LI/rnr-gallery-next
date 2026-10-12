@@ -199,6 +199,16 @@ describe("payment request service", () => {
 
 
 describe("payment request first-open lifecycle DTO", () => {
+  it("keeps existing pending links payable beyond the old deadline without exposing an expiry", async () => {
+    const legacy = { ...request, expiresAt: new Date("2026-09-25T12:00:00Z") };
+    const store = repository({ findPublicByDigest: vi.fn(async () => legacy), activateByDigest: vi.fn(async () => legacy) });
+    const service = createPaymentRequestService({ repository: store });
+    for (const dto of [await service.publicByToken("a".repeat(43)), await service.activateByToken("a".repeat(43)), await service.adminById(request.id)]) {
+      expect(dto?.status).toBe("pending");
+      expect(dto?.expiresAt).toBeUndefined();
+    }
+  });
+
   it("read-only lookups never activate and return the database clock", async () => {
     const store = repository();
     const service = createPaymentRequestService({ repository: store });
@@ -208,7 +218,7 @@ describe("payment request first-open lifecycle DTO", () => {
     expect(dto?.expiresAt).toBeUndefined();
   });
 
-  it("activates a pre-deployment pending request with the same token and serializes its DB deadline", async () => {
+  it("confirms a pre-deployment pending request with the same token and no deadline", async () => {
     const token = "a".repeat(43);
     const legacy = { ...request, createdAt: new Date("2026-08-18T00:00:00Z"), expiresAt: null };
     const activateByDigest = vi.fn(async () => ({ ...legacy, expiresAt: new Date("2026-09-26T12:00:00Z") }));
@@ -218,21 +228,21 @@ describe("payment request first-open lifecycle DTO", () => {
     expect(activateByDigest).not.toHaveBeenCalled();
     const dto = JSON.parse(JSON.stringify(await service.activateByToken(token)));
     expect(activateByDigest).toHaveBeenCalledWith(digestPaymentRequestToken(token));
-    expect(dto).toMatchObject({ status: "pending", expiresAt: "2026-09-26T12:00:00.000Z", serverNow: "2026-09-26T00:00:00.000Z" });
+    expect(dto).toMatchObject({ status: "pending", serverNow: "2026-09-26T00:00:00.000Z" });
     expect(store.preflightAndClaimAttempt).not.toHaveBeenCalled();
   });
 
-  it("only explicit activation delegates to the atomic repository operation", async () => {
+  it("only explicit confirmation delegates to the repository operation", async () => {
     const store = repository({ activateByDigest: vi.fn(async () => ({ ...request, expiresAt: new Date("2026-09-26T12:00:00Z") })) });
     const dto = await createPaymentRequestService({ repository: store }).activateByToken("a".repeat(43));
     expect(store.activateByDigest).toHaveBeenCalledOnce();
     expect(store.preflightAndClaimAttempt).not.toHaveBeenCalled();
-    expect(dto?.expiresAt).toBe("2026-09-26T12:00:00.000Z");
+    expect(dto?.expiresAt).toBeUndefined();
   });
 
-  it.each(["pending", "paid", "cancelled"] as const)("maps %s at expiry without masking paid", async (status) => {
+  it.each(["pending", "paid", "cancelled"] as const)("preserves %s after the historical deadline without reopening cancelled links", async (status) => {
     const store = repository({ findPublicByDigest: vi.fn(async () => ({ ...request, status, statusReason: status === "cancelled" ? "payment_link_expired" : null, expiresAt: new Date("2026-09-25T12:00:00Z") })) });
     expect((await createPaymentRequestService({ repository: store }).publicByToken("a".repeat(43)))?.status)
-      .toBe(status === "paid" ? "paid" : "expired");
+      .toBe(status === "cancelled" ? "expired" : status);
   });
 });

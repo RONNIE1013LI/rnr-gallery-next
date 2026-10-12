@@ -19,13 +19,13 @@ export default async function AdminPaymentRequestPage({ params }: Readonly<{ par
       <div><dt>Fixed amount</dt><dd>{formatMarketMoney(request.amountCents, request.currency)}</dd></div>
       <div><dt>Payment methods</dt><dd>{request.methods.map((method) => method === "card" ? "Card" : "Afterpay").join(", ")}</dd></div>
       <div><dt>Created by</dt><dd>{request.createdByName ?? "Unknown staff"}</dd></div>
-      {request.expiresAt ? <div><dt>Expires</dt><dd>{new Intl.DateTimeFormat("en-NZ", { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }).format(new Date(request.expiresAt))}</dd></div> : <div><dt>Expiry</dt><dd>{request.status === "pending" ? "Starts when customer first opens the link" : "Not activated"}</dd></div>}
-      <div><dt>Link validity</dt><dd>12 hours from first open</dd></div>
+      <div><dt>Expiry</dt><dd>No expiry</dd></div>
+      <div><dt>Link validity</dt><dd>No time limit</dd></div>
       {request.customerName ? <div><dt>Customer</dt><dd>{request.customerName}</dd></div> : null}
       {request.customerEmail ? <div><dt>Email</dt><dd>{request.customerEmail}</dd></div> : null}
       {request.internalNote ? <div><dt>Internal note</dt><dd>{request.internalNote}</dd></div> : null}
       {request.statusReason ? <div><dt>Status reason</dt><dd>{request.statusReason === "payment_link_expired" ? "Payment link expired" : request.statusReason}</dd></div> : null}
     </dl></section>
-    {request.status === "pending" && (!request.expiresAt || (request.serverNow && Date.parse(request.expiresAt) > Date.parse(request.serverNow))) ? <PaymentRequestActions requestId={request.id} /> : null}
+    {request.status === "pending" ? <PaymentRequestActions requestId={request.id} /> : null}
   </section>;
 }

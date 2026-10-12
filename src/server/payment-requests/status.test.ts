@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { effectivePaymentRequestStatus, isPaymentRequestTransitionAllowed } from "./status";
 
 describe("payment request status", () => {
-  it("expires a pending request at its boundary", () => {
+  it("keeps a pending request payable after its historical deadline", () => {
     expect(effectivePaymentRequestStatus({
       status: "pending",
       expiresAt: new Date("2026-08-18T05:00:00.000Z"),
-    }, new Date("2026-08-18T05:00:00.000Z"))).toBe("expired");
+    })).toBe("pending");
   });
 
   it("allows only pending to move to a terminal state", () => {

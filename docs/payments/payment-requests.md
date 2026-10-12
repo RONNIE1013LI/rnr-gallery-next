@@ -53,8 +53,7 @@ where multiple immutable ledger credits can reduce the outstanding balance.
 1. Open **Admin → Payment Requests → New payment request**.
 2. Leave the type as **Standalone payment**.
 3. Enter the fixed amount, currency, description and allowed methods.
-4. Customer name and email are optional. An expiry and internal note are also
-   optional.
+4. Customer name, email and internal note are optional. Links have no time limit.
 5. Create the request and copy the one-time public link.
 
 ### Outstanding Order balance
@@ -85,10 +84,14 @@ if a prior request becomes invalid after another payment.
 
 - `pending` — may be paid if current balance and provider checks pass.
 - `paid` — one verified provider payment has been credited.
-- `expired` — the configured expiry has passed.
+- `expired` — a historical expired request; it remains unavailable.
 - `cancelled` — cancelled by an authorised administrator.
 - `invalidated` — no longer payable because the current Order balance cannot
   cover it.
+
+Pending links have no first-open deadline, including links with a previously
+stored expiry. Existing terminal requests are not reopened. The expiry cron
+continues provider reconciliation without cancelling links based on time.
 
 Terminal requests do not display payment controls. A rotated token is not a new
 request and does not change the fixed amount.

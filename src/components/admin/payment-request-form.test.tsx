@@ -40,7 +40,7 @@ describe("Admin PaymentRequestForm", () => {
     render(<PaymentRequestForm />);
 
     expect(screen.queryByLabelText("Expires at (optional)")).not.toBeInTheDocument();
-    expect(screen.getByText(/12 hours from the customer/)).toBeInTheDocument();
+    expect(screen.getByText(/Link validity: no time limit/)).toBeInTheDocument();
     expect(screen.getByLabelText("Customer name (optional)")).not.toBeRequired();
     expect(screen.getByLabelText("Customer email (optional)")).not.toBeRequired();
     fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Custom balance" } });

@@ -1,17 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { formatMarketMoney } from "@/domain/money";
 import type { PublicPaymentRequestDTO } from "@/server/payment-requests/types";
 import type { PublicPaymentMethod } from "@/server/payments/payment-service";
 import { PaymentRequestForm } from "./payment-request-form";
 import styles from "./payment-request.module.css";
-
-function countdown(milliseconds: number) {
-  const seconds = Math.max(0, Math.ceil(milliseconds / 1000));
-  return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]
-    .map((part) => String(part).padStart(2, "0")).join(":");
-}
 
 export function PaymentRequestView({ request: initialRequest, methods }: Readonly<{
   request: PublicPaymentRequestDTO;
@@ -22,8 +16,6 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
   const [activationFailed, setActivationFailed] = useState(false);
   const [activationStopped, setActivationStopped] = useState(false);
   const [activationRetry, setActivationRetry] = useState(0);
-  const [remaining, setRemaining] = useState<number | null>(null);
-  const anchor = useRef<{ remaining: number; receivedAt: number } | null>(null);
 
   useEffect(() => {
     if (initialRequest.status === "paid" || initialRequest.status === "cancelled" || initialRequest.status === "invalidated") return;
@@ -37,7 +29,6 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
     let controller: AbortController;
     async function refresh() {
       controller = new AbortController();
-      const sentAt = performance.now();
       if (!opened) attempts++;
       let permanentFailure = false;
       const timeout = setTimeout(() => controller.abort(), 10000);
@@ -54,21 +45,8 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
         const latest = payload.request;
         setRequest((current) => current.status === "paid" ? current : latest);
         setActivationFailed(false);
-        if (latest.expiresAt && latest.serverNow) {
-          // Subtract transport time conservatively; browser wall-clock changes cannot extend validity.
-          const duration = Date.parse(latest.expiresAt) - Date.parse(latest.serverNow) - (performance.now() - sentAt);
-          if (!Number.isFinite(duration)) throw new Error("Invalid payment deadline");
-          const receivedAt = performance.now();
-          const previousRemaining = anchor.current
-            ? anchor.current.remaining - (receivedAt - anchor.current.receivedAt)
-            : duration;
-          const boundedRemaining = Math.max(0, Math.min(duration, previousRemaining));
-          anchor.current = { remaining: boundedRemaining, receivedAt };
-          setRemaining(boundedRemaining);
-          opened = true;
-          setActivated(true);
-        }
-        if (!opened && latest.status === "pending") throw new Error("Missing payment deadline");
+        opened = true;
+        setActivated(true);
         if (latest.status === "paid" || latest.status === "cancelled" || latest.status === "invalidated") return;
       } catch {
         if (disposed) return;
@@ -85,18 +63,12 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
       if (!disposed) timer = setTimeout(refresh, 5000);
     }
     void refresh();
-    const tick = setInterval(() => {
-      if (anchor.current) setRemaining(Math.max(0, anchor.current.remaining - (performance.now() - anchor.current.receivedAt)));
-    }, 1000);
-    return () => { disposed = true; controller?.abort(); clearTimeout(timer); clearInterval(tick); };
+    return () => { disposed = true; controller?.abort(); clearTimeout(timer); };
   }, [initialRequest.status, activationRetry]);
 
   const paid = request.status === "paid";
-  const expired = !paid && (request.status !== "pending" || remaining === 0);
+  const expired = !paid && request.status !== "pending";
   const amount = formatMarketMoney(request.amountCents, request.currency);
-  const urgency = remaining !== null && remaining <= 5 * 60_000 ? styles.deadlineUrgent
-    : remaining !== null && remaining <= 15 * 60_000 ? styles.deadlineSoon
-    : remaining !== null && remaining <= 60 * 60_000 ? styles.deadlineWarning : "";
   return <main id="main-content" className={styles.page}>
     <section className={styles.card} aria-labelledby="payment-request-title">
       <p className={styles.eyebrow}>Secure payment</p>
@@ -117,14 +89,10 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
       </div> : expired ? <div className={styles.status} role="status">
         <p>This payment link has expired.</p>
         <p>Please contact R&amp;R Gallery to request a new payment link.</p>
-        <p className={styles.formHint}>This payment link was valid for 12 hours after it was first opened.</p>
         <a className={styles.payButton} href="/contact">Contact R&amp;R Gallery for a new payment link</a>
-      </div> : activated && remaining !== null ? <>
-        <section className={`${styles.status} ${styles.deadline} ${urgency}`} aria-label="Payment link validity">
-          <h2>Payment link valid for 12 hours</h2>
-          <p className={styles.formHint}>This payment link is valid for 12 hours after it is first opened.</p>
-          <p>{remaining <= 15 * 60_000 ? "Payment link expiring soon" : "Payment link expires in"}</p>
-          <p className={styles.countdown} role="timer" aria-label="Time remaining">{countdown(remaining)}</p>
+      </div> : activated ? <>
+        <section className={styles.status} aria-label="Payment link validity">
+          <p className={styles.formHint}>This payment link has no time limit.</p>
           <p className={styles.formHint}>You may share this link with a family member or friend if they are helping you complete the payment.</p>
         </section>
         <PaymentRequestForm amountCents={request.amountCents} currency={request.currency} methods={methods}

@@ -31,9 +31,8 @@ function publicDto(request: PaymentRequestRecord, now: Date): PublicPaymentReque
     description: request.description,
     amountCents: request.amountCents,
     currency: request.currency,
-    status: request.status !== "paid" && (request.status === "expired" || request.statusReason === "payment_link_expired" || (request.status === "pending" && request.expiresAt && request.expiresAt <= now)) ? "expired" : request.status,
+    status: request.status !== "paid" && (request.status === "expired" || request.statusReason === "payment_link_expired") ? "expired" : request.status,
     methods: Object.freeze([...request.enabledPaymentMethods]),
-    ...(request.expiresAt ? { expiresAt: request.expiresAt.toISOString() } : {}),
   });
 }
 

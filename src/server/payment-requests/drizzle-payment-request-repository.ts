@@ -10,6 +10,8 @@ import {
   inArray,
   isNotNull,
   isNull,
+  ne,
+  or,
   sql,
 } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
@@ -154,36 +156,6 @@ async function lockOrder(transaction: Transaction, orderId: string): Promise<Ord
   return order;
 }
 
-async function expireStaleRequests(
-  transaction: Transaction,
-  now: Date,
-  orderId?: string,
-) {
-  const result = await transaction.execute(sql`
-    with candidates as materialized (
-      select id from ${paymentRequests}
-      where status = 'pending' and expires_at is not null and expires_at <= ${now}
-        ${orderId ? sql`and order_id = ${orderId}` : sql``}
-      for update skip locked
-    )
-    update ${paymentRequests} as request
-    set status = 'cancelled', status_reason = 'payment_link_expired',
-        cancelled_at = ${now}, cancelled_by = null, updated_at = ${now}
-    where request.id in (select id from candidates)
-      and request.status = 'pending'
-      and request.expires_at is not null
-      and request.expires_at <= ${now}
-      ${orderId ? sql`and request.order_id = ${orderId}` : sql``}
-      and not exists (
-        select 1 from ${paymentAttempts} as attempt
-        where attempt.payment_request_id = request.id
-          and attempt.status in ('created', 'requires_action', 'processing', 'paid')
-      )
-    returning request.id
-  `);
-  return result.rows.length;
-}
-
 async function ledgerRowsForOrder(transaction: Transaction, orderId: string) {
   return transaction.select().from(paymentLedgerEntries)
     .where(eq(paymentLedgerEntries.orderId, orderId))
@@ -225,7 +197,6 @@ async function reconcileOrderRequests(
   order: OrderRow,
   now: Date,
 ) {
-  await expireStaleRequests(transaction, now, order.id);
   const { outstandingCents } = await orderBalance(transaction, order);
   const pending = await transaction.select().from(paymentRequests)
     .where(and(
@@ -440,7 +411,6 @@ async function applyRequestVerifiedResult(
     }
   }
   if (nextStatus !== "paid" && !nonterminalAttempts.includes(nextStatus)) {
-    await expireStaleRequests(transaction, now, request.orderId ?? undefined);
     [updatedRequest] = await transaction.select().from(paymentRequests)
       .where(eq(paymentRequests.id, request.id)).limit(1);
   }
@@ -568,14 +538,6 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async activateByDigest(digest) {
-      await database.update(paymentRequests).set({
-        expiresAt: sql`clock_timestamp() + interval '12 hours'`,
-        updatedAt: sql`clock_timestamp()`,
-      }).where(and(
-        eq(paymentRequests.publicTokenDigest, digest),
-        eq(paymentRequests.status, "pending"),
-        isNull(paymentRequests.expiresAt),
-      ));
       return repository.findPublicByDigest(digest);
     },
 
@@ -587,8 +549,11 @@ export function createDrizzlePaymentRequestRepository(
           eq(paymentAttempts.id, attemptId),
           inArray(paymentAttempts.status, nonterminalAttempts),
           eq(paymentRequests.status, "pending"),
-          isNotNull(paymentRequests.expiresAt),
-          sql`${paymentRequests.expiresAt} > clock_timestamp()`,
+          or(
+            ne(paymentAttempts.provider, "afterpay"),
+            isNull(paymentAttempts.providerReference),
+            sql`${paymentAttempts.createdAt} + interval '24 hours' > clock_timestamp()`,
+          ),
         )).limit(1);
       return Boolean(row);
     },
@@ -604,13 +569,13 @@ export function createDrizzlePaymentRequestRepository(
             updated_at = clock_timestamp()
         where attempt.id = ${attemptId}
           and attempt.status in ('created', 'requires_action', 'processing')
+          and attempt.created_at + interval '24 hours' > clock_timestamp()
           and (attempt.provider_session_lease_id is null
             or attempt.provider_session_lease_expires_at <= clock_timestamp())
           and exists (
             select 1 from ${paymentRequests} as request
             where request.id = attempt.payment_request_id
               and request.status = 'pending'
-              and request.expires_at > clock_timestamp()
           )
         returning attempt.id
       `);
@@ -618,8 +583,8 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async expireStaleRequests() {
-      return database.transaction(async (transaction) =>
-        expireStaleRequests(transaction, await databaseNow(transaction)));
+      // Keep the existing cron contract while it continues provider reconciliation.
+      return 0;
     },
 
     async findPublicByDigest(digest) {
@@ -634,7 +599,6 @@ export function createDrizzlePaymentRequestRepository(
 
     async listAdminRequests() {
       return database.transaction(async (transaction) => {
-        await expireStaleRequests(transaction, await databaseNow(transaction));
         const rows = await transaction.select({
           request: paymentRequests,
           orderNumber: orders.orderNumber,
@@ -653,7 +617,6 @@ export function createDrizzlePaymentRequestRepository(
 
     async findAdminById(id) {
       return database.transaction(async (transaction) => {
-        await expireStaleRequests(transaction, await databaseNow(transaction));
         const [row] = await transaction.select({
           request: paymentRequests,
           orderNumber: orders.orderNumber,
@@ -680,7 +643,6 @@ export function createDrizzlePaymentRequestRepository(
           .where(eq(paymentRequests.id, candidate.id)).for("update").limit(1);
         if (!request) throw new PaymentRequestNotFoundError();
         const now = await databaseNow(transaction);
-        await expireStaleRequests(transaction, now, request.orderId ?? undefined);
         const [activeAttempt] = await transaction.select({ id: paymentAttempts.id })
           .from(paymentAttempts)
           .where(and(
@@ -689,7 +651,7 @@ export function createDrizzlePaymentRequestRepository(
           )).limit(1);
         const [current] = await transaction.select().from(paymentRequests)
           .where(eq(paymentRequests.id, request.id)).for("update").limit(1);
-        if (!current || current.status !== "pending" || activeAttempt || (current.expiresAt && current.expiresAt <= now)) {
+        if (!current || current.status !== "pending" || activeAttempt) {
           throw new PaymentRequestConflictError("Payment token cannot be rotated");
         }
         const [updated] = await transaction.update(paymentRequests).set({
@@ -901,13 +863,9 @@ export function createDrizzlePaymentRequestRepository(
           throw new PaymentRequestNotFoundError();
         }
         const now = await databaseNow(transaction);
-        await expireStaleRequests(transaction, now, request.orderId ?? undefined);
         const [current] = await transaction.select().from(paymentRequests)
           .where(eq(paymentRequests.id, request.id)).for("update").limit(1);
-        if (current?.expiresAt && current.expiresAt <= now) {
-          throw new PaymentRequestConflictError("This payment link has expired");
-        }
-        if (!current || current.status !== "pending" || !current.expiresAt) return null;
+        if (!current || current.status !== "pending") return null;
         if (!current.enabledPaymentMethods.includes(input.method)) {
           throw new PaymentRequestConflictError("Payment method is unavailable");
         }
@@ -1051,7 +1009,8 @@ export function createDrizzlePaymentRequestRepository(
         if (attempt.returnStateConsumedAt) {
           // A busy reconciliation lease may have prevented the first callback
           // from capturing. Permit retry only when no capture was dispatched.
-          if (request.status === "pending" && request.expiresAt && request.expiresAt > now
+          if (request.status === "pending"
+            && attempt.createdAt.getTime() + 24 * 60 * 60 * 1000 > now.getTime()
             && nonterminalAttempts.includes(attempt.status)
             && attempt.sanitizedFailureCode !== "capture_outcome_unknown") {
             const record = requestRecord(request, order?.orderNumber ?? null);

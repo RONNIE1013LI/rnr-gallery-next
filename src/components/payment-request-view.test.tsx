@@ -17,6 +17,15 @@ const request: PublicPaymentRequestDTO = Object.freeze({
 });
 
 describe("PaymentRequestView", () => {
+  it("shows payment controls after confirmation without a deadline or countdown", async () => {
+    const unlimited = { ...request, expiresAt: undefined };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ request: unlimited }) }));
+    render(<PaymentRequestView request={unlimited} methods={[{ method: "afterpay", label: "Afterpay", isTest: false }]} />);
+    expect(await screen.findByRole("button", { name: "Pay NZ$200.00" })).toBeInTheDocument();
+    expect(screen.queryByRole("timer")).not.toBeInTheDocument();
+    expect(screen.queryByText(/12 hours/)).not.toBeInTheDocument();
+  });
+
   beforeEach(() => {
     vi.unstubAllGlobals();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ request }) }));
@@ -37,7 +46,7 @@ describe("PaymentRequestView", () => {
     vi.stubGlobal("fetch", fetchSpy);
     render(<PaymentRequestView request={{ ...request, expiresAt: undefined }} methods={[{ method: "card", label: "Card", isTest: false }]} />);
     expect(await screen.findByLabelText("Full name")).toBeInTheDocument();
-    expect(screen.getByText("Payment link valid for 12 hours")).toBeInTheDocument();
+    expect(screen.getByText("This payment link has no time limit.")).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -53,7 +62,7 @@ describe("PaymentRequestView", () => {
     expect(screen.getByRole("link", { name: "Contact R&R Gallery" })).toHaveAttribute("href", "/contact");
     fetchSpy.mockResolvedValue({ ok: true, status: 200, json: async () => ({ request }) });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Try again" })); });
-    expect(screen.getByText("Payment link valid for 12 hours")).toBeInTheDocument();
+    expect(screen.getByText("This payment link has no time limit.")).toBeInTheDocument();
   });
 
   it("bounds stalled activation requests with a timeout", async () => {
@@ -240,7 +249,7 @@ describe("PaymentRequestView", () => {
     expect(fetchSpy).toHaveBeenCalledWith(expect.stringMatching(/\/open$/), expect.objectContaining({ method: "POST" }));
     await act(async () => { finish({ ok: true, json: async () => ({ request }) }); });
     expect(screen.getByRole("button", { name: "Pay NZ$200.00" })).toBeInTheDocument();
-    expect(screen.getByRole("timer")).toHaveTextContent("12:00:00");
+    expect(screen.queryByRole("timer")).not.toBeInTheDocument();
   });
 
   it("polls paid and removes every payment control without a refresh", async () => {
@@ -260,42 +269,17 @@ describe("PaymentRequestView", () => {
     expect(fetchSpy.mock.calls[1][1]).toMatchObject({ method: "GET" });
   });
 
-  it("uses monotonic elapsed time, expires locally, and never restarts activation", async () => {
+  it("keeps an existing pending form available beyond its historical deadline", async () => {
     vi.useFakeTimers();
-    let elapsed = 0;
-    vi.spyOn(performance, "now").mockImplementation(() => elapsed);
-    const shortRequest = { ...request, expiresAt: "2026-09-26T00:00:02.000Z" };
-    const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ request: shortRequest }) });
-    vi.stubGlobal("fetch", fetchSpy);
-    render(<PaymentRequestView request={shortRequest} methods={[{ method: "card", label: "Card", isTest: false }]} />);
+    const legacy = { ...request, expiresAt: "2026-09-25T00:00:00.000Z" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ request: legacy }) }));
+    render(<PaymentRequestView request={legacy} methods={[{ method: "card", label: "Card", isTest: false }]} />);
     await act(async () => {});
-    expect(screen.getByRole("timer")).toHaveTextContent("00:00:02");
-    vi.setSystemTime(new Date("2000-01-01"));
-    elapsed = 2000;
-    await act(async () => { vi.advanceTimersByTime(2000); });
-    expect(screen.getByText("This payment link has expired.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Contact R&R Gallery for a new payment link" })).toHaveAttribute("href", "/contact");
-    expect(screen.queryByRole("button", { name: /Pay / })).not.toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("never restores a locally expired form when a faster poll has more remaining time", async () => {
-    vi.useFakeTimers();
-    let elapsed = 0;
-    vi.spyOn(performance, "now").mockImplementation(() => elapsed);
-    const expiresAt = "2026-09-26T00:00:20.000Z";
-    const fetchSpy = vi.fn().mockImplementationOnce(async () => {
-      elapsed = 10000;
-      return { ok: true, json: async () => ({ request: { ...request, expiresAt, serverNow: "2026-09-26T00:00:10.000Z" } }) };
-    }).mockResolvedValue({ ok: true, json: async () => ({ request: { ...request, expiresAt, serverNow: "2026-09-26T00:00:15.000Z" } }) });
-    vi.stubGlobal("fetch", fetchSpy);
-    render(<PaymentRequestView request={request} methods={[{ method: "card", label: "Card", isTest: false }]} />);
-    await act(async () => {});
-    expect(screen.getByText("This payment link has expired.")).toBeInTheDocument();
-    elapsed = 15000;
+    vi.setSystemTime(new Date("2026-10-13T00:00:00.000Z"));
     await act(async () => { vi.advanceTimersByTime(5000); });
-    expect(screen.getByText("This payment link has expired.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Pay / })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Pay / })).toBeInTheDocument();
+    expect(screen.queryByRole("timer")).not.toBeInTheDocument();
+    expect(screen.queryByText("This payment link has expired.")).not.toBeInTheDocument();
   });
 
   it("continues read-only polling for an expired link until delayed payment is confirmed", async () => {
@@ -310,20 +294,6 @@ describe("PaymentRequestView", () => {
     await act(async () => { vi.advanceTimersByTime(5000); });
     expect(screen.getByRole("heading", { name: "Payment completed" })).toBeInTheDocument();
     expect(fetchSpy.mock.calls.every(([, init]) => init.method === "GET")).toBe(true);
-  });
-
-  it.each([
-    [3600, "Payment link expires in", "deadlineWarning"],
-    [900, "Payment link expiring soon", "deadlineSoon"],
-    [300, "Payment link expiring soon", "deadlineUrgent"],
-  ])("shows the existing warning treatment at %s seconds", async (seconds, label, className) => {
-    vi.spyOn(performance, "now").mockReturnValue(0);
-    const expiresAt = new Date(Date.parse(request.serverNow) + Number(seconds) * 1000).toISOString();
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ request: { ...request, expiresAt } }) }));
-    render(<PaymentRequestView request={request} methods={[]} />);
-    expect(await screen.findByText(label)).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Payment link validity" }).className).toContain(className);
-    expect(screen.getByText(/No payment method is currently available/)).toBeInTheDocument();
   });
 
   it("uses a friendly processing state without offering a duplicate payment", async () => {
