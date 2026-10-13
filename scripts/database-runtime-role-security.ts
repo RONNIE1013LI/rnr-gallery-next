@@ -111,6 +111,12 @@ export const RUNTIME_FUNCTION_ALLOWLIST = Object.freeze([
   "customer_service_mark_ui_row_change()",
 ]);
 
+const SUPPLIES_RUNTIME_TABLES = Object.freeze([
+  "supplies_audit_logs", "supplies_categories", "supplies_images", "supplies_order_items",
+  "supplies_products", "supplies_settings", "supplies_stock_reservations", "supplies_variants",
+]);
+const APPEND_ONLY_RUNTIME_TABLES = Object.freeze(["supplies_audit_logs", "supplies_order_items"]);
+
 export function runtimeRoleAttributesAreSafe(input: RuntimeRoleAttributes) {
   return input.canLogin && !input.inherit && !input.superuser && !input.createRole &&
     !input.createDatabase && !input.replication && !input.bypassRls;
@@ -147,6 +153,11 @@ export function buildRuntimeGrantStatements(input: Readonly<{
     `REVOKE CREATE ON SCHEMA ${schema} FROM ${runtime}`,
     `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schema} FROM ${runtime}`,
     `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${runtime}`,
+    ...SUPPLIES_RUNTIME_TABLES.map((name) => {
+      const table = `${schema}.${quoteIdentifier(name)}`;
+      const privileges = APPEND_ONLY_RUNTIME_TABLES.includes(name) ? "UPDATE, DELETE" : "DELETE";
+      return `DO $rnr_supplies$ BEGIN IF to_regclass(${quoteLiteral(table)}) IS NOT NULL THEN REVOKE ${privileges} ON TABLE ${table} FROM ${runtime}; END IF; END $rnr_supplies$`;
+    }),
     `REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schema} FROM ${runtime}`,
     `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA ${schema} TO ${runtime}`,
     `REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schema} FROM ${runtime}`,
@@ -235,6 +246,8 @@ export function summarizeRuntimeRole(input: RuntimeRoleInventory) {
 }
 
 export function runtimeInventorySql() {
+  const suppliesTables = SUPPLIES_RUNTIME_TABLES.map(quoteLiteral).join(", ");
+  const appendOnlyTables = APPEND_ONLY_RUNTIME_TABLES.map(quoteLiteral).join(", ");
   return `
     select role.rolsuper as superuser,
            role.rolcreaterole as create_role,
@@ -280,13 +293,15 @@ export function runtimeInventorySql() {
              where n.nspname = 'public' and c.relkind in ('r','p','v','m','f')
                and (has_table_privilege(role.rolname, c.oid, 'TRUNCATE')
                  or has_table_privilege(role.rolname, c.oid, 'REFERENCES')
-                 or has_table_privilege(role.rolname, c.oid, 'TRIGGER'))) as unexpected_public_table_privileges,
+                 or has_table_privilege(role.rolname, c.oid, 'TRIGGER')
+                 or (c.relname in (${suppliesTables}) and has_table_privilege(role.rolname, c.oid, 'DELETE'))
+                 or (c.relname in (${appendOnlyTables}) and has_table_privilege(role.rolname, c.oid, 'UPDATE')))) as unexpected_public_table_privileges,
            (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
              where n.nspname = 'public' and c.relkind in ('r','p','v','m','f')
                and not (has_table_privilege(role.rolname, c.oid, 'SELECT')
                  and has_table_privilege(role.rolname, c.oid, 'INSERT')
-                 and has_table_privilege(role.rolname, c.oid, 'UPDATE')
-                 and has_table_privilege(role.rolname, c.oid, 'DELETE'))) as missing_public_table_privileges,
+                 and (c.relname in (${appendOnlyTables}) or has_table_privilege(role.rolname, c.oid, 'UPDATE'))
+                 and (c.relname in (${suppliesTables}) or has_table_privilege(role.rolname, c.oid, 'DELETE')))) as missing_public_table_privileges,
            (select count(*)::int from information_schema.role_table_grants g
              where g.grantee = role.rolname and g.table_schema <> 'public'
                and g.table_schema not in ('pg_catalog','information_schema')) as non_public_table_grants,

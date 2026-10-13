@@ -505,6 +505,13 @@
       "when": 1791330397818,
       "tag": "0071_flik_checkout",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1791883135266,
+      "tag": "0072_supplies_store",
+      "breakpoints": true
     }
   ]
 }

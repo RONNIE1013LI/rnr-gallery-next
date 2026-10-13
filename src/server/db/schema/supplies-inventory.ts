@@ -6,7 +6,7 @@ import { suppliesProducts, suppliesVariants } from "./supplies";
 import { paymentAttempts } from "./payments";
 import { orders } from "./orders";
 
-/** Proposed schema only: migration freeze prevents creating these tables. */
+/** Independent Supplies inventory and immutable order snapshots. */
 export const suppliesStockReservations = pgTable("supplies_stock_reservations", {
   id: uuid("id").defaultRandom().primaryKey(),
   orderId: uuid("order_id").notNull().references(() => orders.id, { onDelete: "restrict" }),

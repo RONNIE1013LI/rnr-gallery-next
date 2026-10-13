@@ -112,16 +112,17 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(72);
+    expect(journal.entries).toHaveLength(73);
     expect(journal.entries[69]).toMatchObject({ idx: 69, tag: "0069_transactional_business_numbers" });
     expect(journal.entries[70]).toMatchObject({ idx: 70, tag: "0070_production_job_pinning" });
     expect(journal.entries[71]).toMatchObject({ idx: 71, tag: "0071_flik_checkout" });
+    expect(journal.entries[72]).toMatchObject({ idx: 72, tag: "0072_supplies_store" });
     expect(sha256("drizzle/0071_flik_checkout.sql")).toBe(
       "332d9bae18f4f4286756a7889c0d8860ad36e2d7f8fc3ea2710d8ddb7c2042d2",
     );
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(72);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(72);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(73);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(73);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -242,6 +243,34 @@ describe("migration lineage artifacts", () => {
     expect(sha256("drizzle/0070_production_job_pinning.sql")).toBe(
       "f3cf3f7725f31efa23198426f32314b99d03a4c3657aa2a0b9c8ad30faa360f8",
     );
+  });
+
+  it("adds only eight Supplies tables with OFF settings, hidden categories and restricted new-table grants", () => {
+    const previous = loadJson<Snapshot>("drizzle/meta/0071_snapshot.json");
+    const current = loadJson<Snapshot>("drizzle/meta/0072_snapshot.json");
+    const added = Object.keys(current.tables).filter((name) => !(name in previous.tables)).sort();
+    expect(current.prevId).toBe(previous.id);
+    expect(added).toEqual([
+      "public.supplies_audit_logs", "public.supplies_categories", "public.supplies_images", "public.supplies_order_items",
+      "public.supplies_products", "public.supplies_settings", "public.supplies_stock_reservations", "public.supplies_variants",
+    ]);
+    const expected = structuredClone(previous);
+    expected.id = current.id;
+    expected.prevId = previous.id;
+    for (const name of added) expected.tables[name] = current.tables[name];
+    expect(current).toEqual(expected);
+    const sql = readFileSync("drizzle/0072_supplies_store.sql", "utf8");
+    expect(sql.match(/CREATE TABLE /g)).toHaveLength(8);
+    const altered = Array.from(sql.matchAll(/ALTER TABLE "([^"]+)"/g), (match) => match[1]);
+    expect(altered.every((name) => added.includes(`public.${name}`))).toBe(true);
+    expect(sql).not.toMatch(/DROP |TRUNCATE |CREATE ROLE|ALTER ROLE|ALTER DEFAULT PRIVILEGES|GRANT .*ALL TABLES|^\s*UPDATE |DELETE FROM/im);
+    expect(sql).toContain("VALUES ('primary', false, 'NZ', 'NZD')");
+    expect(sql).toContain("'Blank Canvas & Canvas Rolls', 'blank-canvas-canvas-rolls', 0, false");
+    expect(sql).toContain("'Roll-Up Banner Stands Only', 'roll-up-banner-stands-only', 1, false");
+    expect(sql).toContain("'Canvas Stretcher Bars & Frames', 'canvas-stretcher-bars-frames', 2, false");
+    expect(sql).toContain("GRANT SELECT, INSERT ON TABLE public.supplies_audit_logs, public.supplies_order_items TO rnr_app_runtime");
+    expect(sql).toContain("REVOKE UPDATE, DELETE ON TABLE public.supplies_audit_logs, public.supplies_order_items FROM rnr_app_runtime");
+    expect(sql).toContain("REVOKE DELETE ON TABLE public.supplies_categories");
   });
 
   it("records the manual tracking and notification migrations in one snapshot", () => {

@@ -41,6 +41,17 @@ describe("Production governance wiring", () => {
     expect(workflow).not.toMatch(/curl[\s\S]*(PATCH|POST|DELETE)/i);
   });
 
+  it("allows only main Git deployments and prevents feature Preview releases", () => {
+    const config = JSON.parse(readFileSync(resolve(root, "vercel.json"), "utf8")) as {
+      git?: { deploymentEnabled?: Record<string, boolean> };
+    };
+    const rules = config.git?.deploymentEnabled;
+    expect(rules?.["**"]).toBe(false);
+    expect(rules?.main).toBe(true);
+    expect(rules?.["codex/supplies-accessories-20261013"]).toBe(false);
+    expect(Object.entries(rules ?? {}).filter(([, enabled]) => enabled)).toEqual([["main", true]]);
+  });
+
   it("keeps the repository prebuild source guard active", () => {
     const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
       scripts?: Record<string, string>;

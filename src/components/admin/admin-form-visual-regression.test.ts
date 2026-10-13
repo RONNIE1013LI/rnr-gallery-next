@@ -66,18 +66,20 @@ describe("Admin form visual refinements", () => {
     expect(searchControls).toContain("min-height: 44px;");
   });
 
-  it("keeps small filter and saved-view marks inside 44px mobile hit areas", () => {
+  it("keeps mobile filter and saved-view action controls inside 44px hit areas", () => {
     const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)", formsCss.indexOf("--forms-filter-control-height-mobile")));
     const filterPanel = cssRule(mobile, ".filterPanel");
     const filterControls = cssRule(mobile, ".filterHeading button,\n  .filterRow > button");
-    const savedViewDelete = cssRule(mobile, ".savedSearchWorkspace .personalViewList span .savedViewDeleteButton");
+    const savedViewActions = cssRule(mobile, ".savedViewItem > button:nth-child(2)");
+    const savedViewControls = cssRule(mobile, ".savedSearchWorkspace .personalViews button");
 
     expect(filterPanel).toContain("--forms-filter-control-height-mobile: 44px;");
     expect(filterControls).toContain("width: var(--forms-filter-control-height-mobile);");
     expect(filterControls).toContain("height: var(--forms-filter-control-height-mobile);");
-    expect(savedViewDelete).toContain("width: 44px;");
-    expect(savedViewDelete).toContain("height: 44px;");
-    expect(savedViewDelete).toContain("font-size: 12px;");
+    expect(savedViewActions).toContain("width: 44px;");
+    expect(savedViewActions).toContain("flex-basis: 44px;");
+    expect(savedViewControls).toContain("height: var(--forms-filter-control-height-mobile);");
+    expect(savedViewControls).toContain("min-height: var(--forms-filter-control-height-mobile);");
   });
 
   it("keeps the manual-order summary in two columns on phones", () => {
