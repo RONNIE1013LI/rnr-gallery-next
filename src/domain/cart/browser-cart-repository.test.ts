@@ -3,7 +3,7 @@ import { calculateFixedPackage } from "@/domain/pricing/calculate-fixed-package"
 import { cartToCheckoutInput } from "./checkout-input";
 import { createBrowserCartRepository } from "./browser-cart-repository";
 import { getCartStorageKey, setActiveCustomerId } from "./browser-cart-scope";
-import type { Cart, CartItem, StorageLike } from "./types";
+import type { Cart, CustomCartItem, StorageLike } from "./types";
 
 class MemoryStorage implements StorageLike {
   readonly values = new Map<string, string>();
@@ -14,7 +14,7 @@ class MemoryStorage implements StorageLike {
 
 const rollUpUploads = ["blob:roll-up-private-1.jpg", "blob:roll-up-private-2.jpg"];
 
-function bundleItem(overrides: Partial<CartItem> = {}): CartItem {
+function bundleItem(overrides: Partial<CustomCartItem> = {}): CustomCartItem {
   return {
     id: "bundle-item",
     productKey: "banner-bundle",
@@ -54,7 +54,7 @@ function bundleItem(overrides: Partial<CartItem> = {}): CartItem {
   };
 }
 
-function regularItem(): CartItem {
+function regularItem(): CustomCartItem {
   return {
     ...bundleItem(),
     id: "regular-item",

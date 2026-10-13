@@ -9,7 +9,8 @@ import type { MarketPriceBreakdown, PriceBreakdown } from "@/domain/pricing/type
 export const LEGACY_CART_STORAGE_KEY = "rnr-cart-v1";
 export const CART_STORAGE_KEY = "rnr:commerce:v1:guest:cart";
 
-export type CartItem = Readonly<{
+export type CustomCartItem = Readonly<{
+  kind?: "custom";
   id: string;
   productKey: string;
   productSlug: string;
@@ -34,6 +35,38 @@ export type CartItem = Readonly<{
   extraBackgroundRemovalUploadIds?: readonly string[];
   bundleComponents?: readonly BannerBundleComponentCustomization[];
 }>;
+
+export type SupplyCartItem = Readonly<{
+  kind: "supply";
+  id: string;
+  supplyProductId: string;
+  supplyVariantId?: string;
+  productKey: string;
+  productSlug: string;
+  productTitle: string;
+  imageSrc: string;
+  sizeKey: string;
+  sizeLabel: string;
+  sku: string;
+  quantity: number;
+  deliveryPreference: DeliveryPreference;
+  price: MarketPriceBreakdown;
+  galleryDesignId?: never;
+  orientation?: never;
+  peoplePets?: never;
+  photoSubmissionMethod?: never;
+  designText?: never;
+  notes?: never;
+  neededDate?: never;
+  urgentServiceConfirmed?: never;
+  urgentFeeInclGstCents?: never;
+  uploadReferences?: never;
+  mainPhotoUploadId?: never;
+  extraBackgroundRemovalUploadIds?: never;
+  bundleComponents?: never;
+}>;
+
+export type CartItem = CustomCartItem | SupplyCartItem;
 
 export type Cart = Readonly<{
   version: 1;

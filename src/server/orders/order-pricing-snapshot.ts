@@ -10,6 +10,8 @@ export type OrderPricingSnapshot = Readonly<{
   taxJurisdiction: RepricedCheckoutCart["taxJurisdiction"];
   taxRateBasisPoints: number;
   items: readonly Readonly<{
+    kind?: "custom" | "supply";
+    supplySnapshot?: import("@/domain/checkout/types").SupplyPurchaseSnapshot;
     clientItemId: string;
     productKey: string;
     sizeKey: string;
@@ -73,6 +75,7 @@ export function buildOrderPricingSnapshot(
     taxJurisdiction: cart.taxJurisdiction,
     taxRateBasisPoints: cart.taxRateBasisPoints,
     items: Object.freeze(cart.items.map((item) => Object.freeze({
+      ...(item.kind === "supply" ? { kind: "supply" as const, supplySnapshot: item.supplySnapshot } : {}),
       clientItemId: item.clientItemId,
       productKey: item.productKey,
       sizeKey: item.sizeKey,

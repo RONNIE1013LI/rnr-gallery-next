@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { calculateFixedPackage } from "@/domain/pricing/calculate-fixed-package";
-import type { Cart, CartItem } from "@/domain/cart/types";
+import type { Cart, CustomCartItem } from "@/domain/cart/types";
 import { subscribeToCart } from "@/domain/cart/browser-cart-events";
 import { setActiveCustomerId } from "@/domain/cart/browser-cart-scope";
 import { MarketSelector } from "./market-selector";
@@ -9,7 +9,7 @@ import { MarketSelector } from "./market-selector";
 const { push, refresh } = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh }) }));
 
-function item(overrides: Partial<CartItem> = {}): CartItem {
+function item(overrides: Partial<CustomCartItem> = {}): CustomCartItem {
   return {
     id: "item-1",
     productKey: "custom-themed-canvas",
@@ -33,7 +33,7 @@ function item(overrides: Partial<CartItem> = {}): CartItem {
   };
 }
 
-function seedCart(items: readonly CartItem[] = [item()], customerId: string | null = null) {
+function seedCart(items: readonly CustomCartItem[] = [item()], customerId: string | null = null) {
   const identity = customerId === null ? "guest" : `user:${encodeURIComponent(customerId)}`;
   const cart: Cart = { version: 1, items };
   localStorage.setItem(`rnr:commerce:v1:${identity}:cart`, JSON.stringify(cart));
@@ -60,7 +60,7 @@ function urgentResponse(issues = [issue()]) {
   }), { status: 409, headers: { "Content-Type": "application/json" } });
 }
 
-function repricedCart(items: readonly CartItem[]) {
+function repricedCart(items: readonly CustomCartItem[]) {
   return {
     version: 1 as const,
     market: "AU" as const,
@@ -112,7 +112,7 @@ function repricedCart(items: readonly CartItem[]) {
   };
 }
 
-function successResponse(items: readonly CartItem[]) {
+function successResponse(items: readonly CustomCartItem[]) {
   return new Response(JSON.stringify({
     market: "AU",
     currency: "AUD",
@@ -303,7 +303,7 @@ describe("MarketSelector", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
-    expect(stored.items.map((entry: CartItem) => entry.urgentServiceConfirmed)).toEqual([
+    expect(stored.items.map((entry: CustomCartItem) => entry.urgentServiceConfirmed)).toEqual([
       true,
       true,
       false,

@@ -42,6 +42,7 @@ export type OrderNotificationDelivery = Readonly<{
   attempts: number;
   createdAt: Date;
   source?: "order" | "manual";
+  supplyOnly?: boolean;
 }>;
 
 export interface OrderNotificationRepository {
@@ -93,7 +94,7 @@ function orderMessage(
     amount: formatMarketMoney(event.totalInclGstCents, event.currency),
     trackingNumber: event.trackingNumber,
     trackingCarrier: event.trackingCarrier,
-  });
+  }, { supplyOnly: event.supplyOnly });
 
   const actionUrl = event.kind === "order_shipped"
     ? (event.trackingUrl ?? (event.source === "manual" ? null : orderUrl.toString()))

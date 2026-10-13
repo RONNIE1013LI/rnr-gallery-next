@@ -97,6 +97,7 @@ describe("AdminShell", () => {
       ["Orders", "/admin/orders"],
       ["Production", "/admin/jobs"],
       ["Customers", "/admin/customers"],
+      ["Supplies", "/admin/supplies"],
       ["Users", "/admin/users"],
       ["Products", "/admin/products"],
       ["Design Gallery", "/admin/design-gallery"],

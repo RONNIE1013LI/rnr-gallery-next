@@ -25,7 +25,10 @@ import {
 } from "@/domain/bundles/banner-bundle";
 import {
   InvalidCheckoutCartError,
-  type CanonicalCheckoutItemInput,
+  type CustomCheckoutItemInput,
+  type SupplyCheckoutItemInput,
+  type SupplyPurchaseSnapshot,
+  supplySelectionKey,
   type GalleryDesignSnapshot,
   type RepricedCheckoutCart,
   type RepricedCheckoutItem,
@@ -37,10 +40,11 @@ export type RepriceCartOptions = Readonly<{
   registry?: ProductRegistryDocument;
   market?: Market;
   registryRevision?: number;
+  supplies?: ReadonlyMap<string, SupplyPurchaseSnapshot>;
 }>;
 
 function validateBundlePayload(
-  item: CanonicalCheckoutItemInput,
+  item: CustomCheckoutItemInput,
 ): readonly BannerBundleComponentCustomization[] | undefined {
   if (item.productKey !== "banner-bundle") {
     if (item.bundleComponents !== undefined) {
@@ -90,7 +94,7 @@ function getAucklandDate(now: Date): string {
 
 function validateOrientation(
   schema: ProductConfigurationSchema,
-  item: CanonicalCheckoutItemInput,
+  item: CustomCheckoutItemInput,
 ): void {
   if (schema.orientationMode === "choice" && !item.orientation) {
     throw new InvalidCheckoutCartError("An orientation must be selected.");
@@ -105,7 +109,7 @@ function validateOrientation(
 
 function validatePeoplePets(
   schema: ProductConfigurationSchema,
-  item: CanonicalCheckoutItemInput,
+  item: CustomCheckoutItemInput,
 ): void {
   if (schema.peoplePetsMode === "required" && item.peoplePets < 1) {
     throw new InvalidCheckoutCartError(
@@ -121,7 +125,7 @@ function validatePeoplePets(
 
 function validateUploads(
   schema: ProductConfigurationSchema,
-  item: CanonicalCheckoutItemInput,
+  item: CustomCheckoutItemInput,
 ): void {
   if (item.photoSubmissionMethod === "later") {
     if (item.uploadReferences.length > 0) {
@@ -148,7 +152,7 @@ function validateUploads(
 
 function validatePhotoSelections(
   schema: ProductConfigurationSchema,
-  item: CanonicalCheckoutItemInput,
+  item: CustomCheckoutItemInput,
 ): Readonly<{
   mainPhotoUploadId?: string;
   extraBackgroundRemovalUploadIds: readonly string[];
@@ -222,7 +226,7 @@ function freezeUnitPrice(
 }
 
 function repriceItem(
-  item: CanonicalCheckoutItemInput,
+  item: CustomCheckoutItemInput,
   orderDate: string,
   galleryDesigns: ReadonlyMap<string, GalleryDesignSnapshot>,
   registry: ProductRegistryDocument,
@@ -347,6 +351,36 @@ function repriceItem(
   });
 }
 
+function repriceSupplyItem(item: SupplyCheckoutItemInput, market: Market, supplies?: ReadonlyMap<string, SupplyPurchaseSnapshot>): RepricedCheckoutItem {
+  if (market !== "NZ") throw new InvalidCheckoutCartError("Supplies are available only in New Zealand.");
+  const snapshot = supplies?.get(supplySelectionKey(item.supplyProductId, item.supplyVariantId));
+  if (!snapshot || snapshot.productId !== item.supplyProductId || snapshot.variantId !== (item.supplyVariantId ?? null)) {
+    throw new InvalidCheckoutCartError("This supply is unavailable.");
+  }
+  if (snapshot.trackInventory && (snapshot.stockQuantity === null || item.quantity > snapshot.stockQuantity)) {
+    throw new InvalidCheckoutCartError("The selected supply quantity exceeds available stock.");
+  }
+  assertSafeCents("Supply price", snapshot.unitPriceCents);
+  if (snapshot.unitPriceCents <= 0) throw new InvalidCheckoutCartError("Supply pricing is unavailable.");
+  const subtotalExGstCents = Math.round(snapshot.unitPriceCents * 100 / 115);
+  const unitPrice = Object.freeze({
+    market: "NZ" as const, currency: "NZD" as const, taxJurisdiction: "NZ_GST" as const,
+    taxRateBasisPoints: 1500, discountCents: 0, designSurchargeCents: 0,
+    subtotalExGstCents, gstCents: snapshot.unitPriceCents - subtotalExGstCents,
+    totalInclGstCents: snapshot.unitPriceCents,
+    lines: Object.freeze([Object.freeze({ key: "supply", label: snapshot.title,
+      amountExGstCents: subtotalExGstCents, amountInclGstCents: snapshot.unitPriceCents })]),
+  });
+  return Object.freeze({ kind: "supply" as const, clientItemId: item.clientItemId,
+    supplyProductId: item.supplyProductId, ...(item.supplyVariantId ? { supplyVariantId: item.supplyVariantId } : {}),
+    productKey: `supply:${snapshot.productId}`, productSlug: snapshot.slug, productTitle: snapshot.title,
+    sizeKey: snapshot.variantId ?? "standard", sizeLabel: snapshot.variantLabel || "Standard supply",
+    supplySnapshot: Object.freeze({ ...snapshot }), quantity: item.quantity, unitPrice,
+    lineSubtotalExGstCents: unitPrice.subtotalExGstCents * item.quantity,
+    lineGstCents: unitPrice.gstCents * item.quantity, lineTotalInclGstCents: unitPrice.totalInclGstCents * item.quantity,
+  });
+}
+
 function createCartDigest(
   orderDate: string,
   items: readonly RepricedCheckoutItem[],
@@ -388,6 +422,7 @@ export function repriceCart(
       throw new InvalidCheckoutCartError("Client item IDs must be unique.");
     }
     const allUploadReferences = input.items.flatMap((item) => {
+      if (item.kind === "supply") return [];
       const bundleComponents = validateBundlePayload(item);
       return bundleComponents
         ? flattenBannerBundleUploadReferences(bundleComponents)
@@ -401,13 +436,16 @@ export function repriceCart(
     const orderDate = getAucklandDate(options.now ?? new Date());
     const registry = options.registry ?? defaultProductRegistry;
     const market = options.market ?? "NZ";
+    if (market !== "NZ" && input.items.some((item) => item.kind === "supply")) {
+      throw new InvalidCheckoutCartError("Supplies are available only in New Zealand.");
+    }
     assertMarketCheckoutReady(registry, market);
     const priceBookRevision = options.registryRevision ?? 0;
     if (!Number.isSafeInteger(priceBookRevision) || priceBookRevision < 0) {
       throw new InvalidCheckoutCartError("The price-book revision is invalid.");
     }
     const items = Object.freeze(
-      input.items.map((item) => repriceItem(
+      input.items.map((item) => item.kind === "supply" ? repriceSupplyItem(item, market, options.supplies) : repriceItem(
         item,
         orderDate,
         options.galleryDesigns ?? new Map(),
@@ -415,6 +453,16 @@ export function repriceCart(
         market,
       )),
     );
+    const supplyQuantities = new Map<string, number>();
+    for (const item of items) {
+      if (item.kind !== "supply") continue;
+      const key = supplySelectionKey(item.supplyProductId, item.supplyVariantId);
+      const quantity = (supplyQuantities.get(key) ?? 0) + item.quantity;
+      supplyQuantities.set(key, quantity);
+      if (item.supplySnapshot.trackInventory && quantity > (item.supplySnapshot.stockQuantity ?? 0)) {
+        throw new InvalidCheckoutCartError("The selected supply quantity exceeds available stock.");
+      }
+    }
     const totals = items.reduce(
       (result, item) => ({
         subtotalExGstCents:

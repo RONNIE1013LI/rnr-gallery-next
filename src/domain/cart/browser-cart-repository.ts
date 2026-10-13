@@ -35,6 +35,20 @@ function isCartItem(value: unknown): value is CartItem {
   const item = value as Record<string, unknown>;
   const price = item.price as Record<string, unknown> | undefined;
 
+  if (item.kind === "supply") {
+    return typeof item.id === "string" && typeof item.supplyProductId === "string" &&
+      (item.supplyVariantId === undefined || typeof item.supplyVariantId === "string") &&
+      typeof item.productKey === "string" && typeof item.productSlug === "string" &&
+      typeof item.productTitle === "string" && typeof item.imageSrc === "string" &&
+      typeof item.sizeKey === "string" && typeof item.sizeLabel === "string" && typeof item.sku === "string" &&
+      Number.isInteger(item.quantity) && Number(item.quantity) >= 1 && Number(item.quantity) <= 999 &&
+      (item.deliveryPreference === "post" || item.deliveryPreference === "pickup") &&
+      price !== undefined && price.market === "NZ" && price.currency === "NZD" &&
+      price.taxJurisdiction === "NZ_GST" && Array.isArray(price.lines) &&
+      isNonNegativeInteger(price.subtotalExGstCents) && isNonNegativeInteger(price.gstCents) &&
+      isNonNegativeInteger(price.totalInclGstCents);
+  }
+  if (item.kind !== undefined && item.kind !== "custom") return false;
   return (
     typeof item.id === "string" &&
     typeof item.productKey === "string" &&
@@ -94,6 +108,13 @@ function isBannerBundleComponent(
 }
 
 function freezeStoredCartItem(item: CartItem): CartItem | null {
+  if (item.kind === "supply") {
+    return Object.freeze({ kind: "supply", id: item.id, supplyProductId: item.supplyProductId,
+      ...(item.supplyVariantId ? { supplyVariantId: item.supplyVariantId } : {}),
+      productKey: item.productKey, productSlug: item.productSlug, productTitle: item.productTitle,
+      imageSrc: item.imageSrc, sizeKey: item.sizeKey, sizeLabel: item.sizeLabel, sku: item.sku,
+      quantity: item.quantity, deliveryPreference: item.deliveryPreference, price: item.price });
+  }
   if (item.productKey !== "banner-bundle") {
     return item.bundleComponents === undefined
       ? Object.freeze({ ...item })

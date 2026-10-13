@@ -4,6 +4,7 @@ import {
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
 import type { StoredOrderAttribution } from "@/domain/analytics/attribution";
+import { supplySelectionKey, type SuppliesPurchaseService } from "@/domain/checkout/types";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
@@ -66,7 +67,10 @@ function toPaymentStartDTO(order: OrderRecord): PaymentOrderCreationResult {
 function canonicalInputFrom(snapshot: RepricedCheckoutCart) {
   return {
     version: 1 as const,
-    items: snapshot.items.map((item) => ({
+    items: snapshot.items.map((item) => item.kind === "supply" ? ({
+      kind: "supply" as const, clientItemId: item.clientItemId, supplyProductId: item.supplyProductId,
+      ...(item.supplyVariantId ? { supplyVariantId: item.supplyVariantId } : {}), quantity: item.quantity,
+    }) : ({
       clientItemId: item.clientItemId,
       productKey: item.productKey,
       ...(item.galleryDesign ? { galleryDesignId: item.galleryDesign.id } : {}),
@@ -79,7 +83,7 @@ function canonicalInputFrom(snapshot: RepricedCheckoutCart) {
       neededDate: item.neededDate,
       urgentServiceConfirmed: item.urgentServiceConfirmed,
       quantity: item.quantity,
-      uploadReferences: [...item.uploadReferences],
+      uploadReferences: [...(item.uploadReferences ?? [])],
       ...(item.mainPhotoUploadId ? { mainPhotoUploadId: item.mainPhotoUploadId } : {}),
       ...(item.extraBackgroundRemovalUploadIds
         ? { extraBackgroundRemovalUploadIds: [...item.extraBackgroundRemovalUploadIds] }
@@ -125,6 +129,7 @@ export function createOrderService({
   repository,
   shippingService,
   productRegistryService,
+  suppliesPurchaseService,
   now = () => new Date(),
   createOrderNumber: makeOrderNumber = () => createOrderNumber(),
 }: {
@@ -133,6 +138,7 @@ export function createOrderService({
   productRegistryService?: Readonly<{
     current(): Promise<Readonly<{ revision?: number; registry: ProductRegistryDocument }>>;
   }>;
+  suppliesPurchaseService?: SuppliesPurchaseService;
   now?: () => Date;
   createOrderNumber?: () => string | Promise<string>;
 }) {
@@ -167,7 +173,18 @@ export function createOrderService({
       const priceBookRevision = registryState?.revision
         ?? state.cartSnapshot.priceBookRevision
         ?? 0;
+      const supplies = new Map();
+      for (const item of state.cartSnapshot.items) {
+        if (item.kind !== "supply") continue;
+        if (!suppliesPurchaseService) throw new OrderStateChangedError("Supplies are unavailable.");
+        const supply = await suppliesPurchaseService.resolve(item.supplyProductId, item.supplyVariantId);
+        if ((state.deliveryMethod === "pickup" && !supply.pickupAllowed) || (state.deliveryMethod === "post" && !supply.shippingAllowed)) {
+          throw new OrderStateChangedError("The selected delivery method is unavailable for a supply.");
+        }
+        supplies.set(supplySelectionKey(item.supplyProductId, item.supplyVariantId), supply);
+      }
       const cart = repriceCart(canonicalInputFrom(state.cartSnapshot), {
+        supplies,
         now: pricingTime,
         galleryDesigns: new Map(
           state.cartSnapshot.items.flatMap((item) =>
@@ -180,7 +197,7 @@ export function createOrderService({
       });
       if (cart.cartDigest !== state.cartDigest) throw new OrderStateChangedError();
 
-      const uploadIds = cart.items.flatMap((item) => [...item.uploadReferences]);
+      const uploadIds = cart.items.flatMap((item) => [...(item.uploadReferences ?? [])]);
       const ownedIds = await repository.findOwnedUploadIds(sessionId, uploadIds);
       if (new Set(ownedIds).size !== new Set(uploadIds).size) {
         throw new OrderStateChangedError("One or more uploads are no longer available");

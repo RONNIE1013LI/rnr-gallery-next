@@ -123,7 +123,27 @@ function isNonProductionSeoHost(request: NextRequest) {
     || hostname.endsWith(".vercel.app");
 }
 
+function optimizesSuppliesImage(request: NextRequest) {
+  if (request.nextUrl.pathname !== "/_next/image") return false;
+  let source = request.nextUrl.searchParams.get("url") ?? "";
+  for (let depth = 0; depth < 4; depth++) {
+    try {
+      const pathname = new URL(source, request.url).pathname;
+      if (/^\/api\/(?:admin\/)?supplies\/images(?:\/|$)/i.test(pathname)) return true;
+      const decoded = decodeURIComponent(source);
+      if (decoded === source) return false;
+      source = decoded;
+    } catch { return false; }
+  }
+  return false;
+}
+
 export function proxy(request: NextRequest) {
+  // Visibility-checked private media must never enter Next's public image cache.
+  if (optimizesSuppliesImage(request)) return new NextResponse(null, {
+    status: 404,
+    headers: { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow, noarchive" },
+  });
   if (
     usesStagingHost(request)
     && process.env.VERCEL_ENV !== "preview"

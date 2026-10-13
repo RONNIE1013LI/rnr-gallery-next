@@ -10,9 +10,9 @@ import {
   applyAuthoritativeRepricing,
   cartMatchesMarket,
 } from "./cart";
-import type { CartItem, StorageLike } from "./types";
+import type { CustomCartItem, StorageLike } from "./types";
 
-function item(overrides: Partial<CartItem> = {}): CartItem {
+function item(overrides: Partial<CustomCartItem> = {}): CustomCartItem {
   return {
     id: "item-1",
     productKey: "photo-print-canvas",

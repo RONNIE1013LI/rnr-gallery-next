@@ -189,9 +189,10 @@ describe("ProductionJobDetail", () => {
       now,
       paymentStatus: "paid",
     });
+    expect(snapshot).not.toBeNull();
     const detail = {
       job: {
-        ...snapshot.job,
+        ...snapshot!.job,
         id: "job-bundle",
         webOrderNumber: "08001",
         paymentReconciliationStatus: "Not checked",
@@ -208,7 +209,7 @@ describe("ProductionJobDetail", () => {
       paymentStatus: "awaiting_payment",
       orderNumber: "08001",
       assignee: null,
-      items: snapshot.items.map((item, index) => ({
+      items: snapshot!.items.map((item, index) => ({
         ...item,
         id: `production-item-${index}`,
         jobId: "job-bundle",

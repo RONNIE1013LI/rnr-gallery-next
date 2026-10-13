@@ -20,6 +20,7 @@ import { HomepageFaq } from "./homepage-faq";
 import { CustomerReviewsSection } from "./customer-reviews/customer-reviews-section";
 import { homepageV3ImageSlots, type HomepageV3ImageSlot } from "./homepage-v3-images";
 import styles from "./homepage-v3.module.css";
+import { SuppliesEntry } from "./supplies-storefront";
 
 type ArtworkProps = Readonly<{
   slot: HomepageV3ImageSlot;
@@ -144,11 +145,13 @@ export function HomepageV3({
   galleryItems = [],
   market = "NZ",
   reviewSection = null,
+  suppliesEnabled = false,
 }: Readonly<{
   registry: ProductRegistryDocument;
   galleryItems?: readonly PublicGalleryItem[];
   market?: Market;
   reviewSection?: PublicCustomerReviewSection | null;
+  suppliesEnabled?: boolean;
 }>) {
   const products = getRegistryProducts(registry);
   const shopHref = market === "AU" ? "/au/shop" : "/shop";
@@ -402,6 +405,7 @@ export function HomepageV3({
             ) : null}
           </div>
           <Link className={`${styles.textLink} ${styles.viewAllProducts}`} href={shopHref}>View all products <Arrow /></Link>
+          {suppliesEnabled && market === "NZ" ? <SuppliesEntry /> : null}
           <div className={styles.discoverySupport} aria-label="Other ways to begin">
             <article className={styles.discoverySupportItem}>
               <p className={styles.eyebrow}>BROWSE BY OCCASION</p>

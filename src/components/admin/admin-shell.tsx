@@ -36,6 +36,7 @@ const navigationGroups = [
     label: "Content",
     items: [
       { label: "Products", href: "/admin/products", permission: "manage_prices" },
+      { label: "Supplies", href: "/admin/supplies", permission: "manage_content" },
       { label: "Design Gallery", href: "/admin/design-gallery", permission: "manage_gallery" },
       { label: "Content", href: "/admin/content", permission: "manage_content" },
       { label: "Customer Reviews", href: "/admin/customer-reviews", permission: "manage_reviews" },

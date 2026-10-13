@@ -1,10 +1,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { calculateFixedPackage } from "@/domain/pricing/calculate-fixed-package";
-import type { Cart, CartItem } from "@/domain/cart/types";
+import type { Cart, CustomCartItem } from "@/domain/cart/types";
 import { MarketSwitchDialog } from "./market-switch-dialog";
 
-function item(overrides: Partial<CartItem> = {}): CartItem {
+function item(overrides: Partial<CustomCartItem> = {}): CustomCartItem {
   return {
     id: "item-1",
     productKey: "custom-themed-canvas",

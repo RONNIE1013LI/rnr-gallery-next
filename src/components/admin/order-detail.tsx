@@ -119,6 +119,7 @@ export function AdminOrderDetail({
         </section>
 
         <section className={styles.panel}>
+          {detail.supplyStockShortage ? <p role="alert">Payment is recorded, but supply stock needs reconciliation before dispatch. Update available stock and retry fulfilment.</p> : null}
           <div className={styles.panelHeading}>
             <h2>Items</h2>
             <span>Original price snapshot — read only</span>
@@ -128,6 +129,7 @@ export function AdminOrderDetail({
               <div className={styles.orderItemHeading}>
                 <div>
                   <h3>{item.productTitle}</h3>
+                  <p>{item.kind === "supply" ? "Supplies & Accessories" : "Custom artwork"}</p>
                   <p>
                     {item.productKey === "grave-cover" ? "100 × 200 cm" : item.sizeLabel}
                     {item.productKey !== "grave-cover" && item.orientation
@@ -139,10 +141,12 @@ export function AdminOrderDetail({
               </div>
               <dl className={styles.definitionGrid}>
                 <div><dt>Quantity</dt><dd>{item.quantity}</dd></div>
+                {item.kind === "supply" ? <div><dt>SKU</dt><dd>{item.supplySnapshot.sku}</dd></div> : <>
                 <div><dt>Face or Pets</dt><dd>{item.peoplePets}</dd></div>
                 <div><dt>Photo submission</dt><dd>{label(item.photoSubmissionMethod)}</dd></div>
                 <div><dt>Needed date</dt><dd>{item.neededDate}</dd></div>
                 <div><dt>Urgent</dt><dd>{item.urgentServiceConfirmed ? `Yes · ${item.urgentWorkingDays} working days` : "No"}</dd></div>
+                </>}
               </dl>
               {item.designText ? <div className={styles.customerText}><strong>Artwork direction</strong><p>{item.designText}</p></div> : null}
               {item.notes ? <div className={styles.customerText}><strong>Customer notes</strong><p>{item.notes}</p></div> : null}
@@ -270,6 +274,8 @@ export function AdminOrderDetail({
           <AdminOrderActions
             orderId={order.id}
             currentStatus={order.fulfilmentStatus}
+            deliveryMethod={order.deliveryMethod}
+            supplyOnly={detail.items.length > 0 && detail.items.every((item) => item.kind === "supply")}
             tracking={{
               carrier: order.trackingCarrier,
               number: order.trackingNumber,

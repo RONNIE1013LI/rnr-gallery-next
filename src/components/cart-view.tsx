@@ -161,7 +161,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
       ...current,
       cart: {
         version: 1,
-        items: current.cart.items.map((item) => item.id === clientItemId
+        items: current.cart.items.map((item) => item.id === clientItemId && item.kind !== "supply"
           ? { ...item, neededDate, urgentServiceConfirmed: false }
           : item),
       },
@@ -173,7 +173,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
     const urgentIds = new Set(marketDialog.issues.map((issue) => issue.clientItemId));
     void reconcileMarket({
       version: 1,
-      items: marketDialog.cart.items.map((item) => urgentIds.has(item.id)
+      items: marketDialog.cart.items.map((item) => urgentIds.has(item.id) && item.kind !== "supply"
         ? { ...item, urgentServiceConfirmed: true }
         : item),
     });
@@ -232,7 +232,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
               onClick={() => removeItemFromCart(item.id)}
             >×</button>
             <div className={styles.cartItemMedia}>
-              <Image src={item.imageSrc} alt="" width={96} height={96} />
+              <Image src={item.imageSrc} alt="" width={96} height={96} unoptimized={item.kind === "supply"} />
             </div>
             <div className={styles.cartItemDetails}>
               <h2>{item.productTitle}</h2>
@@ -247,9 +247,11 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
               <dl>
                 <div><dt>Size</dt><dd>{item.sizeLabel}</dd></div>
                 {item.orientation && <div><dt>Orientation</dt><dd>{labelFor(item.orientation)}</dd></div>}
-                {item.peoplePets > 0 && <div><dt>Face or Pets</dt><dd>{item.peoplePets}</dd></div>}
-                <div><dt>Photo submission</dt><dd>{labelFor(item.photoSubmissionMethod)}</dd></div>
-                <div><dt>Production completion date</dt><dd>{item.neededDate}</dd></div>
+                {item.kind !== "supply" && item.peoplePets > 0 && <div><dt>Face or Pets</dt><dd>{item.peoplePets}</dd></div>}
+                {item.kind === "supply" ? <div><dt>Supply SKU</dt><dd>{item.sku}</dd></div> : <>
+                  <div><dt>Photo submission</dt><dd>{labelFor(item.photoSubmissionMethod)}</dd></div>
+                  <div><dt>Production completion date</dt><dd>{item.neededDate}</dd></div>
+                </>}
                 {Boolean(item.urgentFeeInclGstCents) && (
                   <div>
                     <dt>Urgent service</dt>
@@ -277,7 +279,11 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
             <div className={styles.cartItemActions}>
               <label>
                 <span>Quantity</span>
-                <select
+                {item.kind === "supply" ? <input
+                  type="number" min={1} max={999} step={1}
+                  aria-label={`Quantity for ${item.productTitle}`} value={item.quantity}
+                  onChange={(event) => { const quantity = Number(event.target.value); if (Number.isInteger(quantity) && quantity >= 1 && quantity <= 999) updateCart((current) => setCartItemQuantity(current, item.id, quantity)); }}
+                /> : <select
                   aria-label={`Quantity for ${item.productTitle}`}
                   value={item.quantity}
                   onChange={(event) =>
@@ -288,7 +294,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
                   {[1, 2, 3, 4, 5].map((quantity) => (
                     <option key={quantity} value={quantity}>{quantity}</option>
                   ))}
-                </select>
+                </select>}
               </label>
             </div>
           </article>
@@ -305,7 +311,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
           <div className={styles.priceTotal}><dt>{displayMarket.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt><dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd></div>
         </dl> : <p>Prices will be recalculated for the selected delivery country.</p>}
         <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link>
-        <p className={styles.cartAssurance}>Draft approval comes before production.</p>
+        {cart.items.some((item) => item.kind !== "supply") ? <p className={styles.cartAssurance}>Draft approval comes before custom artwork production.</p> : null}
       </aside>
     </div>
   );

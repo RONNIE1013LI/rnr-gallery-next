@@ -7,7 +7,7 @@ import {
   getPaymentIntentStorageKey,
   getPendingCheckoutStorageKey,
 } from "@/domain/cart/browser-cart-scope";
-import type { Cart } from "@/domain/cart/types";
+import type { CustomCartItem, Cart } from "@/domain/cart/types";
 import { getAttributionStorageKey } from "@/domain/analytics/attribution";
 import { AccountSignOut } from "./account-sign-out";
 import { CartCount } from "./cart-count";
@@ -17,7 +17,7 @@ import { CommerceIdentityProvider, useCommerceIdentity } from "./commerce-identi
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace }), usePathname: () => window.location.pathname, useSearchParams: () => new URLSearchParams(window.location.search) }));
 
-function cart(title: string, quantity = 1): Cart {
+function cart(title: string, quantity = 1): Cart & { items: readonly CustomCartItem[] } {
   return { version: 1, items: [{
     id: title, productKey: "photo-print-canvas", productSlug: "photo-print-canvas",
     productTitle: title, imageSrc: "/test.jpg", sizeKey: "a4", sizeLabel: "A4",
@@ -43,7 +43,7 @@ function bundleCart(
   rollUpMethod: "upload" | "later",
   wallMethod: "upload" | "later",
   uploadCount: number,
-): Cart {
+): Cart & { items: readonly CustomCartItem[] } {
   const uploads = Array.from(
     { length: uploadCount },
     (_, index) => `blob:${id}-private-${index + 1}.jpg`,

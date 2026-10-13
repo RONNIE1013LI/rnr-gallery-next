@@ -21,7 +21,8 @@ export type GalleryDesignSnapshot = Readonly<{
   imageUrl: string;
 }>;
 
-export type CanonicalCheckoutItemInput = Readonly<{
+export type CustomCheckoutItemInput = Readonly<{
+  kind?: "custom";
   clientItemId: string;
   productKey: string;
   galleryDesignId?: string;
@@ -40,12 +41,60 @@ export type CanonicalCheckoutItemInput = Readonly<{
   bundleComponents?: readonly BannerBundleComponentCustomization[];
 }>;
 
+export type SupplyCheckoutItemInput = Readonly<{
+  kind: "supply";
+  clientItemId: string;
+  supplyProductId: string;
+  supplyVariantId?: string;
+  quantity: number;
+  galleryDesignId?: never;
+  productKey?: never;
+  sizeKey?: never;
+  orientation?: never;
+  peoplePets?: never;
+  photoSubmissionMethod?: never;
+  designText?: never;
+  notes?: never;
+  neededDate?: never;
+  urgentServiceConfirmed?: never;
+  uploadReferences?: never;
+  mainPhotoUploadId?: never;
+  extraBackgroundRemovalUploadIds?: never;
+  bundleComponents?: never;
+}>;
+export type CanonicalCheckoutItemInput = CustomCheckoutItemInput | SupplyCheckoutItemInput;
+
+export type SupplyPurchaseSnapshot = Readonly<{
+  productId: string;
+  variantId: string | null;
+  title: string;
+  slug: string;
+  sku: string;
+  variantLabel: string;
+  unitPriceCents: number;
+  trackInventory: boolean;
+  stockQuantity: number | null;
+  weightGrams: number | null;
+  packedLengthMm: number | null;
+  packedWidthMm: number | null;
+  packedHeightMm: number | null;
+  pickupAllowed: boolean;
+  shippingAllowed: boolean;
+}>;
+export type SuppliesPurchaseService = Readonly<{
+  resolve(productId: string, variantId?: string): Promise<SupplyPurchaseSnapshot>;
+}>;
+export function supplySelectionKey(productId: string, variantId?: string | null): string {
+  return variantId ? `${productId}:${variantId}` : productId;
+}
+
 export type CanonicalCheckoutCartInput = Readonly<{
   version: 1;
   items: readonly CanonicalCheckoutItemInput[];
 }>;
 
-export type RepricedCheckoutItem = Readonly<{
+export type RepricedCustomCheckoutItem = Readonly<{
+  kind?: "custom";
   clientItemId: string;
   productKey: string;
   productSlug: string;
@@ -74,6 +123,38 @@ export type RepricedCheckoutItem = Readonly<{
   lineGstCents: number;
   lineTotalInclGstCents: number;
 }>;
+
+export type RepricedSupplyCheckoutItem = Readonly<{
+  kind: "supply";
+  clientItemId: string;
+  supplyProductId: string;
+  supplyVariantId?: string;
+  productKey: string;
+  productSlug: string;
+  productTitle: string;
+  sizeKey: string;
+  sizeLabel: string;
+  supplySnapshot: SupplyPurchaseSnapshot;
+  quantity: number;
+  unitPrice: MarketPriceBreakdown;
+  lineSubtotalExGstCents: number;
+  lineGstCents: number;
+  lineTotalInclGstCents: number;
+  galleryDesign?: never;
+  orientation?: never;
+  peoplePets?: never;
+  photoSubmissionMethod?: never;
+  designText?: never;
+  notes?: never;
+  neededDate?: never;
+  urgentServiceConfirmed?: never;
+  urgentService?: never;
+  uploadReferences?: never;
+  mainPhotoUploadId?: never;
+  extraBackgroundRemovalUploadIds?: never;
+  bundleComponents?: never;
+}>;
+export type RepricedCheckoutItem = RepricedCustomCheckoutItem | RepricedSupplyCheckoutItem;
 
 export type RepricedCheckoutCart = Readonly<{
   version: 1;

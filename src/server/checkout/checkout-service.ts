@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { normalizeAddress } from "@/domain/address/schema";
 import {
   defaultProductRegistry,
@@ -5,6 +6,7 @@ import {
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
 import { parseCheckoutCartInput } from "@/domain/checkout/input-schema";
+import { supplySelectionKey, type SuppliesPurchaseService } from "@/domain/checkout/types";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { DeliveryPreference } from "@/domain/configuration/types";
 import { marketForCountry } from "@/domain/markets/market";
@@ -51,12 +53,14 @@ export function createCheckoutService({
   shippingService,
   gallerySelectionService,
   productRegistryService,
+  suppliesPurchaseService,
   now = () => new Date(),
 }: {
   repository: CheckoutStateRepository;
   shippingService: ShippingService;
   gallerySelectionService?: GallerySelectionService;
   productRegistryService?: ProductRegistryService;
+  suppliesPurchaseService?: SuppliesPurchaseService;
   now?: () => Date;
 }) {
   return {
@@ -79,7 +83,7 @@ export function createCheckoutService({
       const { registry } = registryState;
       const galleryDesigns = new Map();
       await Promise.all(canonicalCart.items.map(async (item) => {
-        if (!item.galleryDesignId || !gallerySelectionService) return;
+        if (item.kind === "supply" || !item.galleryDesignId || !gallerySelectionService) return;
         const product = getRegistryProductByKey(registry, item.productKey);
         if (!product) return;
         const selection = await gallerySelectionService.resolve(
@@ -88,7 +92,18 @@ export function createCheckoutService({
         );
         if (selection) galleryDesigns.set(item.galleryDesignId, selection);
       }));
+      const supplies = new Map();
+      for (const item of canonicalCart.items) {
+        if (item.kind !== "supply") continue;
+        if (!suppliesPurchaseService) throw new InvalidCheckoutStateError("Supplies are unavailable.");
+        const supply = await suppliesPurchaseService.resolve(item.supplyProductId, item.supplyVariantId);
+        if ((input.deliveryMethod === "pickup" && !supply.pickupAllowed) || (input.deliveryMethod === "post" && !supply.shippingAllowed)) {
+          throw new InvalidCheckoutStateError("The selected delivery method is unavailable for a supply.");
+        }
+        supplies.set(supplySelectionKey(item.supplyProductId, item.supplyVariantId), supply);
+      }
       const cartSnapshot = repriceCart(canonicalCart, {
+        supplies,
         now: now(),
         galleryDesigns,
         registry,
@@ -98,7 +113,7 @@ export function createCheckoutService({
       await assertOwnedUploadReferences(
         repository,
         sessionId,
-        cartSnapshot.items.flatMap((item) => [...item.uploadReferences]),
+        cartSnapshot.items.flatMap((item) => [...(item.uploadReferences ?? [])]),
       );
 
       const state = await repository.saveCheckoutState(sessionId, {
@@ -125,6 +140,16 @@ export function createCheckoutService({
         throw new InvalidCheckoutStateError();
       }
 
+      for (const item of state.cartSnapshot.items ?? []) {
+        if (item.kind !== "supply") continue;
+        if (!suppliesPurchaseService) throw new InvalidCheckoutStateError("Supplies are unavailable.");
+        const current = await suppliesPurchaseService.resolve(item.supplyProductId, item.supplyVariantId);
+        if (!isDeepStrictEqual(current, item.supplySnapshot) ||
+            (state.deliveryMethod === "pickup" && !current.pickupAllowed) ||
+            (state.deliveryMethod === "post" && !current.shippingAllowed)) {
+          throw new InvalidCheckoutStateError("Supplies changed. Review checkout again.");
+        }
+      }
       if (state.deliveryMethod === "pickup") {
         const cleared = await repository.clearSelectedShippingQuote(
           sessionId,

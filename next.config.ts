@@ -36,8 +36,12 @@ const nextConfig: NextConfig = {
     qualities: [40, 50, 60, 75],
     unoptimized: process.env.VERCEL_ENV === "preview",
     localPatterns: [
-      { pathname: "/**", search: "" },
+      { pathname: "/media/**", search: "" },
+      { pathname: "/images/**", search: "" },
+      { pathname: "/canvas-3d/**", search: "" },
+      { pathname: "/_next/static/media/**", search: "" },
       { pathname: "/gallery-images/**" },
+      { pathname: "/review-media/**" },
     ],
   },
   devIndicators: false,
@@ -54,6 +58,17 @@ const nextConfig: NextConfig = {
       {
         source: "/notification-email/verify/:token",
         headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      {
+        source: "/admin/supplies/:path*",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store, max-age=0" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+        ],
+      },
+      {
+        source: "/supplies/:path*",
+        headers: [{ key: "Cache-Control", value: "private, no-store, max-age=0" }],
       },
     ];
   },

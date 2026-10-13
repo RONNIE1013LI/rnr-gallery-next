@@ -50,6 +50,7 @@ export function preflightMarketSwitch(
       items: [{ ...item, urgentServiceConfirmed: true }],
     }, options);
     const repricedItem = preview.items[0];
+    if (repricedItem.kind === "supply") return [];
     return [Object.freeze({
       clientItemId: repricedItem.clientItemId,
       productTitle: repricedItem.productTitle,

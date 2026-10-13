@@ -70,7 +70,7 @@ describe("Next.js workspace configuration", () => {
 
   it("keeps only the responsive Gallery widths used by production layouts", () => {
     expect(nextConfig.images?.localPatterns).toContainEqual({
-      pathname: "/**",
+      pathname: "/media/**",
       search: "",
     });
     expect(nextConfig.images?.localPatterns).toContainEqual({
@@ -113,6 +113,17 @@ describe("Next.js workspace configuration", () => {
     expect(configuredHeaders).toContainEqual({
       source: "/notification-email/verify/:token",
       headers: [{ key: "Cache-Control", value: "no-store" }],
+    });
+  });
+
+  it("keeps Supplies previews private and non-indexable", async () => {
+    const configuredHeaders = await nextConfig.headers?.();
+    expect(configuredHeaders).toContainEqual({
+      source: "/admin/supplies/:path*",
+      headers: [
+        { key: "Cache-Control", value: "private, no-store, max-age=0" },
+        { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+      ],
     });
   });
 

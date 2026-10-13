@@ -3,7 +3,7 @@ import {
   getPendingCheckoutStorageKey,
   setActiveCustomerId,
 } from "@/domain/cart/browser-cart-scope";
-import { CART_STORAGE_KEY, type Cart } from "@/domain/cart/types";
+import { CART_STORAGE_KEY, type Cart, type CustomCartItem } from "@/domain/cart/types";
 import type {
   CheckoutStartingPaymentIntent,
   PlacingOrderIntent,
@@ -17,7 +17,7 @@ import {
   savePendingCheckout,
 } from "./pending-checkout";
 
-const cart: Cart = { version: 1, items: [{
+const cart: Cart & { items: readonly CustomCartItem[] } = { version: 1, items: [{
   id: "30000000-0000-4000-8000-000000000001",
   productKey: "photo-print-canvas",
   productSlug: "photo-print-canvas",

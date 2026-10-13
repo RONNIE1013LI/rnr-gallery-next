@@ -1,3 +1,6 @@
+import { parseCheckoutCartInput } from "@/domain/checkout/input-schema";
+import { supplySelectionKey, type SuppliesPurchaseService } from "@/domain/checkout/types";
+import { getSupplyPurchaseService } from "@/server/supplies/purchase-runtime";
 import { parseMarketCookie, marketCookieHeader } from "@/server/markets/market-cookie";
 import { getProductRegistryRuntime } from "@/server/admin/product-registry-runtime";
 import {
@@ -26,6 +29,7 @@ type MarketRouteFailure = Readonly<{
 type Dependencies = Readonly<{
   current: ReturnType<typeof getProductRegistryRuntime>["current"];
   trustedOrigin?: string;
+  suppliesPurchaseService?: SuppliesPurchaseService;
 }>;
 
 function failureResponse(
@@ -63,10 +67,19 @@ export function createMarketRoute(dependencies?: Dependencies) {
             code: "market_unavailable",
           }, 409);
         }
+        const supplies = new Map();
+        if (body.cart !== undefined) {
+          const input = parseCheckoutCartInput(body.cart);
+          const supplyItems = input.items.filter((item) => item.kind === "supply");
+          if (supplyItems.length && market !== "NZ") throw new InvalidCheckoutCartError("Supplies are available only in New Zealand.");
+          const service = dependencies?.suppliesPurchaseService ?? getSupplyPurchaseService();
+          for (const item of supplyItems) supplies.set(supplySelectionKey(item.supplyProductId, item.supplyVariantId), await service.resolve(item.supplyProductId, item.supplyVariantId));
+        }
         const preflight = body.cart === undefined
           ? null
           : preflightMarketSwitch(body.cart, {
               registry,
+              supplies,
               registryRevision: revision,
               market,
             });

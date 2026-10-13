@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CART_STORAGE_KEY, type Cart } from "@/domain/cart/types";
+import { CART_STORAGE_KEY, type Cart, type CustomCartItem } from "@/domain/cart/types";
 import { canonicalCheckoutCart, CheckoutView } from "./checkout-view";
 
 const push = vi.fn();
@@ -29,7 +29,7 @@ vi.mock("./stripe-payment-form", () => ({
   ),
 }));
 
-const cart: Cart = { version: 1, items: [{
+const cart: Cart & { items: readonly CustomCartItem[] } = { version: 1, items: [{
   id: "30000000-0000-4000-8000-000000000001", productKey: "photo-print-canvas",
   productSlug: "photo-print-canvas", productTitle: "Browser title", imageSrc: "/test.jpg",
   sizeKey: "a4", sizeLabel: "Browser size", orientation: "landscape", peoplePets: 0,

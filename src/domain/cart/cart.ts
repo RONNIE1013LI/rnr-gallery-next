@@ -16,6 +16,7 @@ export function emptyCart(): Cart {
 
 export function addCartItem(cart: Cart, item: CartItem): Cart {
   assertQuantity(item.quantity);
+  if (item.kind === "supply" && item.quantity > 999) throw new RangeError("Supply quantity cannot exceed 999.");
   const existing = cart.items.find((candidate) => candidate.id === item.id);
 
   if (!existing) {
@@ -38,6 +39,7 @@ export function setCartItemQuantity(
   quantity: number,
 ): Cart {
   assertQuantity(quantity);
+  if (cart.items.some((item) => item.id === itemId && item.kind === "supply") && quantity > 999) throw new RangeError("Supply quantity cannot exceed 999.");
   return Object.freeze({
     version: 1,
     items: Object.freeze(
@@ -133,6 +135,11 @@ export function applyAuthoritativeRepricing(
     version: 1 as const,
     items: Object.freeze(cart.items.map((item) => {
       const repriced = prices.get(item.id)!;
+      if (item.kind === "supply") {
+        if (repriced.kind !== "supply") throw new Error("Cart item type changed.");
+        return Object.freeze({ ...item, price: repriced.unitPrice });
+      }
+      if (repriced.kind === "supply") throw new Error("Cart item type changed.");
       return Object.freeze({
         ...item,
         price: repriced.unitPrice,

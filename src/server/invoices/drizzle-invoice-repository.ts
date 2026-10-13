@@ -125,6 +125,7 @@ export function createDrizzleInvoiceRepository(database: Database, options: { sy
         currency: orders.currency,
         taxRateBasisPoints: orders.taxRateBasisPoints,
         shippingTotalInclGstCents: orders.shippingTotalInclGstCents,
+        pricingSnapshot: orders.pricingSnapshot,
         totalExGstCents: orders.totalExGstCents,
         totalGstCents: orders.totalGstCents,
         totalInclGstCents: orders.totalInclGstCents,
@@ -152,6 +153,11 @@ export function createDrizzleInvoiceRepository(database: Database, options: { sy
           quantityMilli: item.quantity * 1_000,
           rateInclGstCents: item.unitTotalInclGstCents,
         }));
+        for (const item of job.pricingSnapshot?.items ?? []) {
+          if (item.kind !== "supply" || !item.supplySnapshot) continue;
+          seededItems.push({ code: item.supplySnapshot.sku, description: `${item.supplySnapshot.title} — ${item.supplySnapshot.variantLabel}`,
+            quantityMilli: item.quantity * 1000, rateInclGstCents: item.unitPrice.totalInclGstCents });
+        }
         if ((job.shippingTotalInclGstCents ?? 0) > 0) {
           seededItems.push({
             code: "SHIPPING",

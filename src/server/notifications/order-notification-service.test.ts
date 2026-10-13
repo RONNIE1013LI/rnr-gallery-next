@@ -329,3 +329,17 @@ describe("order notification delivery", () => {
     expect(repo.discard).toHaveBeenCalledWith(staleFailure.id);
   });
 });
+
+it("renders supplies-only confirmation from the saved order type without artwork promises", async () => {
+  const repo: OrderNotificationRepository = { ...repository(), claimNext: vi.fn().mockResolvedValueOnce({ ...delivery, supplyOnly: true }).mockResolvedValue(null) };
+  const send = vi.fn().mockResolvedValue({ providerMessageId: "synthetic-supplies-email" });
+  const service = createOrderNotificationService(repo, { provider: { configured: true, send }, siteUrl: "https://shop.example.test", orderAccessSecret, now: () => now,
+    loadPublishedTemplates: async () => ({ "email.payment_confirmed.body": "Custom artwork production normally takes 3 business days." }) });
+  await expect(service.deliverPending()).resolves.toMatchObject({ sent: 1, failed: 0 });
+  const message = send.mock.calls[0][0];
+  expect(message.text).toContain("supplies order");
+  expect(message.text).not.toContain("being prepared");
+  expect(message.text).not.toMatch(/artwork|production|design review|3 business days/i);
+  expect(message.html).not.toMatch(/artwork|production|design review|3 business days/i);
+  expect(message.idempotencyKey).toBe(delivery.eventKey);
+});

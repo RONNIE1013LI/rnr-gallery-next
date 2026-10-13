@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { calculateFixedPackage } from "@/domain/pricing/calculate-fixed-package";
-import type { CartItem } from "@/domain/cart/types";
+import type { CustomCartItem } from "@/domain/cart/types";
 import { generatedSrcsetDescriptors } from "@/test/image-candidate-assertions";
 import { CartView } from "./cart-view";
 
@@ -11,7 +11,7 @@ const analytics = vi.hoisted(() => ({
 
 vi.mock("@/domain/analytics/client", () => analytics);
 
-const cartItem: CartItem = {
+const cartItem: CustomCartItem = {
   id: "item-1",
   productKey: "photo-print-canvas",
   productSlug: "photo-print-canvas",
@@ -31,7 +31,7 @@ const cartItem: CartItem = {
   uploadReferences: [],
 };
 
-const bundleItem: CartItem = {
+const bundleItem: CustomCartItem = {
   ...cartItem,
   id: "bundle-item",
   productKey: "banner-bundle",

@@ -1,3 +1,5 @@
+import { suppliesOrderItems } from "@/server/db/schema/supplies-inventory";
+import { orderHasSupplies } from "@/server/supplies/inventory";
 import { and, count, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { checkoutSessions, orderAddresses, orderItems, orders, paymentAttempts } from "@/server/db/schema";
@@ -7,6 +9,7 @@ import { toPublicPaymentDTO } from "@/server/payments/public-dto";
 import type {
   OrderQueryRepository,
   PublicOrder,
+  PublicSupplyOrderItem,
   PublicOrderSummary,
 } from "./order-query-service";
 
@@ -108,7 +111,7 @@ function publicAddress(addressRows: OrderAddressRow[], kind: "billing" | "delive
 function publicItems(itemRows: OrderItemRow[], order: OrderRow) {
   assertSnapshot(itemRows.length > 0);
   return itemRows.map((item, index) => {
-    assertSnapshot(item.position === index);
+    assertSnapshot(item.position >= index);
     assertSnapshot(isNonEmptyString(item.productTitle) && isNonEmptyString(item.sizeLabel));
     const galleryValues = [
       item.galleryDesignId,
@@ -204,6 +207,36 @@ function publicItems(itemRows: OrderItemRow[], order: OrderRow) {
   });
 }
 
+function publicSupplyItems(rows: (typeof suppliesOrderItems.$inferSelect)[], order: OrderRow): PublicSupplyOrderItem[] {
+  return rows.map((item) => {
+    assertSnapshot(order.market === "NZ" && order.currency === "NZD");
+    assertSnapshot(isNonEmptyString(item.productTitle) && isNonEmptyString(item.supplySnapshot.sku));
+    assertSnapshot(item.productTitle === item.supplySnapshot.title && item.productSlug === item.supplySnapshot.slug);
+    assertSnapshot(item.quantity >= 1 && item.quantity <= 999 && Number.isInteger(item.quantity));
+    assertMoneyBalance(item.unitTotalInclGstCents, item.unitSubtotalExGstCents, item.unitGstCents);
+    assertSnapshot(item.lineSubtotalExGstCents === item.unitSubtotalExGstCents * item.quantity &&
+      item.lineGstCents === item.unitGstCents * item.quantity && item.lineTotalInclGstCents === item.unitTotalInclGstCents * item.quantity);
+    assertSnapshot(item.supplySnapshot.unitPriceCents === item.unitTotalInclGstCents &&
+      item.unitSubtotalExGstCents === Math.round(item.unitTotalInclGstCents * 100 / 115));
+    assertSnapshot(Array.isArray(item.priceLines) && item.priceLines.length > 0);
+    const priceLines = item.priceLines.map((line) => {
+      assertSnapshot(isNonEmptyString(line.key) && isNonEmptyString(line.label) && isMoney(line.amountExGstCents));
+      if (line.amountInclGstCents !== undefined) {
+        assertSnapshot(isMoney(line.amountInclGstCents) && Math.round(line.amountInclGstCents * 100 / 115) === line.amountExGstCents);
+      }
+      return Object.freeze({ key: line.key, label: line.label, amountExGstCents: line.amountExGstCents,
+        ...(line.amountInclGstCents !== undefined ? { amountInclGstCents: line.amountInclGstCents } : {}) });
+    });
+    assertSnapshot(priceLines.reduce((sum, line) => sum + line.amountExGstCents, 0) === item.unitSubtotalExGstCents);
+    return Object.freeze({ kind: "supply", productKey: item.productKey, productTitle: item.productTitle,
+      sizeKey: item.sizeKey, sizeLabel: item.sizeLabel, sku: item.supplySnapshot.sku, quantity: item.quantity,
+      priceLines: Object.freeze(priceLines),
+      unitSubtotalExGstCents: item.unitSubtotalExGstCents, unitGstCents: item.unitGstCents,
+      unitTotalInclGstCents: item.unitTotalInclGstCents, lineSubtotalExGstCents: item.lineSubtotalExGstCents,
+      lineGstCents: item.lineGstCents, lineTotalInclGstCents: item.lineTotalInclGstCents });
+  });
+}
+
 function publicPayment(row: OrderRow, attempts: PaymentReadRow[]) {
   const orderAttempts = attempts.filter((attempt) => attempt.orderId === row.id);
   const candidates = row.paymentStatus === "paid" || row.paymentStatus === "refunded"
@@ -226,12 +259,20 @@ export function buildPublicOrders(
   items: OrderItemRow[],
   addresses: OrderAddressRow[],
   attempts: PaymentReadRow[] = [],
+  supplyRows: (typeof suppliesOrderItems.$inferSelect)[] = [],
 ): PublicOrder[] {
   return rows.map((row) => {
     try {
       validateOrderRow(row);
       const itemRows = items.filter(({ orderId }) => orderId === row.id);
-      const mappedItems = publicItems(itemRows, row);
+      const rowSupplies = supplyRows.filter(({ orderId }) => orderId === row.id);
+      assertSnapshot(itemRows.length + rowSupplies.length > 0);
+      const customItems = itemRows.length ? publicItems(itemRows, row) : [];
+      const supplyItems = publicSupplyItems(rowSupplies, row);
+      const positions = [...itemRows.map((item, index) => ({ position: item.position, item: customItems[index] })),
+        ...rowSupplies.map((item, index) => ({ position: item.position, item: supplyItems[index] }))].sort((a, b) => a.position - b.position);
+      assertSnapshot(positions.every((item, index) => item.position === index));
+      const mappedItems = positions.map(({ item }) => item);
       assertSnapshot(mappedItems.reduce((sum, item) => sum + item.lineSubtotalExGstCents, 0) === row.productSubtotalExGstCents);
       assertSnapshot(mappedItems.reduce((sum, item) => sum + item.lineGstCents, 0) === row.productGstCents);
       assertSnapshot(mappedItems.reduce((sum, item) => sum + item.lineTotalInclGstCents, 0) === row.productTotalInclGstCents);
@@ -288,7 +329,10 @@ export function createDrizzleOrderQueryRepository(database: Database): OrderQuer
       createdAt: paymentAttempts.createdAt,
       id: paymentAttempts.id,
     }).from(paymentAttempts).where(inArray(paymentAttempts.orderId, ids));
-    return buildPublicOrders(rows, items, addresses, attempts);
+    const supplyIds = rows.filter(orderHasSupplies).map(({ id }) => id);
+    const supplyRows = supplyIds.length ? await executor.select().from(suppliesOrderItems)
+      .where(inArray(suppliesOrderItems.orderId, supplyIds)).orderBy(suppliesOrderItems.position) : [];
+    return buildPublicOrders(rows, items, addresses, attempts, supplyRows);
   }
   async function one(executor: ReadExecutor, rows: OrderRow[]) {
     return (await hydrate(executor, rows))[0] ?? null;

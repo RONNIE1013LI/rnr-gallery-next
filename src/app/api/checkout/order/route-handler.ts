@@ -1,3 +1,4 @@
+import { getSupplyPurchaseService } from "@/server/supplies/purchase-runtime";
 import { attributionHistorySchema, consentedAttributionHistory, readAttributionHistory } from "@/domain/analytics/attribution-history";
 import { z, ZodError } from "zod";
 import {
@@ -90,6 +91,7 @@ function defaults(): Dependencies {
       repository,
       shippingService: createShippingService({ provider: selectShippingProvider() }),
       productRegistryService: getProductRegistryRuntime(),
+      suppliesPurchaseService: getSupplyPurchaseService(),
     }),
     getOptionalSession,
     analyticsConfig,

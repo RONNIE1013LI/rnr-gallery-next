@@ -150,14 +150,23 @@ export function renderEmailTemplateText(value: string) {
   return value.replace(markdownLinkPattern, "$1 ($2)");
 }
 
+const supplyOrderBodies: Partial<Record<OrderNotificationKind, string>> = Object.freeze({
+  payment_confirmed: "We have confirmed your payment of {{amount}} for order {{order_number}}.\n\nView your supplies order for pickup or delivery updates.",
+  admin_order_received: "A new paid supplies order for {{amount}} is ready for fulfilment.\n\nOpen the admin order to review its items, delivery and fulfilment details.",
+  payment_failed: "Payment for order {{order_number}} was not completed.\n\nYou can return to your order and try payment again.",
+});
+
 export function renderOrderEmailTemplate(
   kind: OrderNotificationKind | "invoice_sent",
   values: Partial<OrderEmailTemplateValues>,
   variables: OrderEmailTemplateVariables,
+  options: Readonly<{ supplyOnly?: boolean }> = {},
 ) {
   const keys = keysByKind[kind];
   const subjectTemplate = values[keys.subject] ?? defaultOrderEmailTemplateValues[keys.subject];
-  const bodyTemplate = values[keys.body] ?? defaultOrderEmailTemplateValues[keys.body];
+  // Custom managed copy remains unchanged; standard supplies do not inherit artwork promises.
+  const supplyBody = options.supplyOnly && kind !== "invoice_sent" ? supplyOrderBodies[kind] : undefined;
+  const bodyTemplate = supplyBody ?? values[keys.body] ?? defaultOrderEmailTemplateValues[keys.body];
   const actionTemplate = values[keys.actionLabel] ?? defaultOrderEmailTemplateValues[keys.actionLabel];
   const hasTracking = Boolean(variables.trackingNumber && variables.trackingCarrier);
   const paragraphs = bodyTemplate

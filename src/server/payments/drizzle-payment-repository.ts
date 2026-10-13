@@ -1,3 +1,6 @@
+import { supplyPaymentNeedsHold } from "@/server/supplies/inventory-transition";
+import { invalidateSuppliesInventory } from "@/server/supplies/inventory-cache";
+import { assertSupplyOrderPayable, settleSuppliesInventory, orderHasSupplies, bindSuppliesPaymentAttempt, suppliesFailureIsCurrent } from "@/server/supplies/inventory";
 import { flikEligibility } from "@/domain/checkout/flik-eligibility";
 import { allocateOrderNumber } from "@/server/orders/order-number";
 import { scheduleNewOrderInvoiceEmail, automaticInvoiceActor } from "@/server/admin/admin-invoice-runtime";
@@ -76,6 +79,7 @@ type OrderRow = typeof orders.$inferSelect;
 type AddressRow = typeof orderAddresses.$inferSelect;
 type PaymentLedgerEntryRow = typeof paymentLedgerEntries.$inferSelect;
 type AppliedVerifiedResult = Readonly<{
+  hasSupplies?: boolean;
   value: PaymentAttemptWithOrder;
   analyticsTransition: WebsiteAnalyticsDirectPaymentTransition | null;
   analyticsLedgerEntryId: string | null;
@@ -702,6 +706,7 @@ async function applyLockedVerifiedResult(
       input.result,
     );
     return Object.freeze({
+      hasSupplies: orderHasSupplies(order),
       value: Object.freeze({
         attempt: attemptRecord(attempt),
         order: paymentOrder(order, addresses),
@@ -716,6 +721,7 @@ async function applyLockedVerifiedResult(
     input.result.status,
   );
   if (order.paymentStatus === "paid" && incoming !== "refunded") {
+    await settleSuppliesInventory(transaction, order, "paid", await databaseNow(transaction));
     await ensurePaidWebOrderProductionJob(transaction, order, await databaseNow(transaction));
     const addresses = await loadAddresses(transaction, order.id);
     const evidence = evidenceForResult(
@@ -723,6 +729,7 @@ async function applyLockedVerifiedResult(
       input.result,
     );
     return Object.freeze({
+      hasSupplies: orderHasSupplies(order),
       value: Object.freeze({
         attempt: attemptRecord(attempt),
         order: paymentOrder(order, addresses),
@@ -730,6 +737,13 @@ async function applyLockedVerifiedResult(
       analyticsTransition: evidence?.transition ?? null,
       analyticsLedgerEntryId: evidence?.ledgerEntryId ?? null,
     });
+  }
+  if ((incoming === "failed" || incoming === "cancelled") && !await suppliesFailureIsCurrent(transaction, order, attempt.id)) {
+    const now = await databaseNow(transaction);
+    const [oldAttempt] = await transaction.update(paymentAttempts).set({ status: incoming, updatedAt: now })
+      .where(eq(paymentAttempts.id, attempt.id)).returning(paymentAttemptCoreColumns);
+    const addresses = await loadAddresses(transaction, order.id);
+    return { hasSupplies: true, value: { attempt: attemptRecord(oldAttempt), order: paymentOrder(order, addresses) }, analyticsTransition: null, analyticsLedgerEntryId: null };
   }
   const orderStatus = nextOrderPaymentStatus(order.paymentStatus, incoming);
   const attemptStatus = incoming === "refunded" || attempt.status === "paid"
@@ -767,9 +781,11 @@ async function applyLockedVerifiedResult(
     .set(attemptUpdates)
     .where(eq(paymentAttempts.id, attempt.id))
     .returning(paymentAttemptCoreColumns);
+  const supplyShortage = await settleSuppliesInventory(transaction, order, orderStatus, now, attempt.id);
+  const supplyHold = orderHasSupplies(order) && supplyPaymentNeedsHold(orderStatus, order.fulfilmentStatus, supplyShortage);
   const [updatedOrder] = await transaction
     .update(orders)
-    .set({ paymentStatus: orderStatus, orderNumber: order.orderNumber, updatedAt: now })
+    .set({ paymentStatus: orderStatus, orderNumber: order.orderNumber, updatedAt: now, ...(supplyHold ? { fulfilmentStatus: "on_hold" as const } : {}) })
     .where(eq(orders.id, order.id))
     .returning();
   if (updatedOrder.paymentStatus === "paid" || order.paymentStatus === "paid") {
@@ -790,6 +806,7 @@ async function applyLockedVerifiedResult(
   }
   const addresses = await loadAddresses(transaction, order.id);
   return Object.freeze({
+    hasSupplies: orderHasSupplies(order),
     value: Object.freeze({
       attempt: attemptRecord(updatedAttempt),
       order: paymentOrder(updatedOrder, addresses),
@@ -941,7 +958,8 @@ export function createDrizzlePaymentRepository(
     async createOrClaimNonterminalAttempt(
       input: CreatePaymentAttemptInput,
     ): Promise<AttemptClaim> {
-      return database.transaction(async (transaction) => {
+      let suppliesChanged = false;
+      const claim = await database.transaction(async (transaction) => {
         const [order] = await transaction
           .select()
           .from(orders)
@@ -957,6 +975,9 @@ export function createDrizzlePaymentRepository(
           throw new PaymentRepositoryConflictError();
         }
 
+        suppliesChanged = orderHasSupplies(order);
+        try { await assertSupplyOrderPayable(transaction, order); }
+        catch { throw new PaymentRepositoryConflictError("Supplies are unavailable. Review your order before paying."); }
         let country: SupportedCountry;
         try {
           const addresses = await loadAddresses(transaction, order.id);
@@ -981,26 +1002,30 @@ export function createDrizzlePaymentRepository(
           .for("update")
           .limit(1);
         const now = await databaseNow(transaction);
+        const bindClaim = async (claimed: AttemptClaim) => {
+          await bindSuppliesPaymentAttempt(transaction, order, claimed.attempt.id, now);
+          return claimed;
+        };
 
         if (existing) {
           if (existing.country !== country) {
             throw new PaymentRepositoryConflictError("Payment country does not match delivery");
           }
           if (existing.provider !== input.provider || existing.method !== input.method) {
-            return Object.freeze({
+            return bindClaim(Object.freeze({
               outcome: "existing_conflict" as const,
               attempt: attemptRecord(existing),
               claimId: null,
-            });
+            }));
           }
           const activeLease = existing.providerSessionLeaseExpiresAt &&
             existing.providerSessionLeaseExpiresAt.getTime() > now.getTime();
           if (existing.providerReference || activeLease) {
-            return Object.freeze({
+            return bindClaim(Object.freeze({
               outcome: "existing" as const,
               attempt: attemptRecord(existing),
               claimId: null,
-            });
+            }));
           }
           const claimId = randomUUID();
           const [reclaimed] = await transaction
@@ -1012,11 +1037,11 @@ export function createDrizzlePaymentRepository(
             })
             .where(eq(paymentAttempts.id, existing.id))
             .returning(paymentAttemptCoreColumns);
-          return Object.freeze({
+          return bindClaim(Object.freeze({
             outcome: "claimed" as const,
             attempt: attemptRecord(reclaimed),
             claimId,
-          });
+          }));
         }
 
         const attemptId = randomUUID();
@@ -1041,12 +1066,14 @@ export function createDrizzlePaymentRepository(
           .where(eq(paymentAttempts.id, attemptId))
           .limit(1);
         if (!created) throw new PaymentRepositoryConflictError();
-        return Object.freeze({
+        return bindClaim(Object.freeze({
           outcome: "claimed" as const,
           attempt: attemptRecord(created),
           claimId,
-        });
+        }));
       });
+      if (suppliesChanged) invalidateSuppliesInventory();
+      return claim;
     },
 
     async bindProviderSession(
@@ -1158,6 +1185,7 @@ export function createDrizzlePaymentRepository(
         applyLockedVerifiedResult(transaction, input, websiteAnalyticsV2Enabled, newInvoiceJobs),
       );
       scheduleInvoices(newInvoiceJobs);
+      if (applied.hasSupplies) invalidateSuppliesInventory();
       await recordDirectPaymentEvidence(applied);
       return applied.value;
     },
@@ -1254,12 +1282,14 @@ export function createDrizzlePaymentRepository(
           .where(eq(webhookEvents.id, event.id));
         return {
           status: "applied" as const,
+          hasSupplies: applied.hasSupplies,
           attemptId: candidate.id,
           analyticsTransition: applied.analyticsTransition,
           analyticsLedgerEntryId: applied.analyticsLedgerEntryId,
         };
       });
       scheduleInvoices(newInvoiceJobs);
+      if ("hasSupplies" in outcome && outcome.hasSupplies) invalidateSuppliesInventory();
       await recordDirectPaymentEvidence("analyticsTransition" in outcome
         ? {
             analyticsTransition: outcome.analyticsTransition ?? null,
@@ -1362,6 +1392,7 @@ export function createDrizzlePaymentRepository(
         return applied;
       });
       scheduleInvoices(newInvoiceJobs);
+      if (applied.hasSupplies) invalidateSuppliesInventory();
       await recordDirectPaymentEvidence(applied);
       return applied.value;
     },

@@ -136,7 +136,7 @@ export function MarketSelector({
       ...current,
       cart: {
         version: 1,
-        items: current.cart.items.map((item) => item.id === clientItemId
+        items: current.cart.items.map((item) => item.id === clientItemId && item.kind !== "supply"
           ? { ...item, neededDate, urgentServiceConfirmed: false }
           : item),
       },
@@ -148,7 +148,7 @@ export function MarketSelector({
     const urgentIds = new Set(dialogState.issues.map((issue) => issue.clientItemId));
     const confirmedCart: Cart = {
       version: 1,
-      items: dialogState.cart.items.map((item) => urgentIds.has(item.id)
+      items: dialogState.cart.items.map((item) => urgentIds.has(item.id) && item.kind !== "supply"
         ? { ...item, urgentServiceConfirmed: true }
         : item),
     };

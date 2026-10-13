@@ -1,0 +1,5 @@
+import { createSuppliesItemRoute } from "@/server/supplies/admin-routes";
+const route = createSuppliesItemRoute("category");
+export const GET = route.GET;
+export const PATCH = route.PATCH;
+export const DELETE = route.DELETE;

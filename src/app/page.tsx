@@ -6,6 +6,7 @@ import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import { getSafePublicCustomerReviewSection } from "@/server/customer-reviews/customer-review-runtime";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
 import { buildPublicMetadata } from "@/server/seo/metadata";
+import { isSuppliesStoreEnabled } from "@/server/supplies/catalogue";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +27,11 @@ export default async function Home() {
   const galleryPromise: Promise<readonly PublicGalleryItem[]> = getGalleryRuntime()
     .publicService.findByIds(homepageGalleryDesignIds)
     .catch(() => []);
-  const [{ registry }, galleryItems, reviewSection] = await Promise.all([
+  const [{ registry }, galleryItems, reviewSection, suppliesEnabled] = await Promise.all([
     getSafePublicProductRegistry(),
     galleryPromise,
     getSafePublicCustomerReviewSection(),
+    isSuppliesStoreEnabled().catch(() => false),
   ]);
-  return <HomepageV3 registry={registry} galleryItems={galleryItems} reviewSection={reviewSection} />;
+  return <HomepageV3 registry={registry} galleryItems={galleryItems} reviewSection={reviewSection} suppliesEnabled={suppliesEnabled} />;
 }

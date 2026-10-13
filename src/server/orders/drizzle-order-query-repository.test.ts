@@ -583,3 +583,17 @@ describe("Drizzle order query read model", () => {
     }
   });
 });
+
+describe("immutable standard supplies order display", () => {
+  it("shows saved SKU/variant/tax without artwork fields or internal price metadata", () => {
+    const snapshot = { productId: "00000000-0000-4000-8000-000000000002", variantId: null, title: "Synthetic supply", slug: "synthetic", sku: "TEST-SKU", variantLabel: "Standard", unitPriceCents: 1150, trackInventory: false, stockQuantity: null, weightGrams: null, packedLengthMm: null, packedWidthMm: null, packedHeightMm: null, pickupAllowed: true, shippingAllowed: false };
+    const row = { id: "supply-item", orderId: orderRow.id, position: 0, clientItemId: "client-item", productKey: `supply:${snapshot.productId}`, productSlug: snapshot.slug, productTitle: snapshot.title, sizeKey: "standard", sizeLabel: "Standard", supplySnapshot: snapshot, quantity: 12,
+      priceLines: [{ key: "supply", label: "Synthetic supply", amountExGstCents: 1000, amountInclGstCents: 1150, internalMetadata: "private" }], unitSubtotalExGstCents: 1000, unitGstCents: 150, unitTotalInclGstCents: 1150, lineSubtotalExGstCents: 12000, lineGstCents: 1800, lineTotalInclGstCents: 13800, createdAt };
+    const order = { ...orderRow, productSubtotalExGstCents: 12000, productGstCents: 1800, productTotalInclGstCents: 13800, totalExGstCents: 12000, totalGstCents: 1800, totalInclGstCents: 13800 };
+    const [display] = buildPublicOrders([order], [], addresses, [], [row]);
+    expect(display.items[0]).toMatchObject({ kind: "supply", sku: "TEST-SKU", sizeLabel: "Standard", quantity: 12, lineTotalInclGstCents: 13800 });
+    expect(display.items[0]).not.toHaveProperty("photoSubmissionMethod");
+    expect(display.items[0]).not.toHaveProperty("neededDate");
+    expect(JSON.stringify(display.items[0])).not.toMatch(/internalMetadata|stockQuantity|weightGrams/);
+  });
+});

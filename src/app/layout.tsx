@@ -19,6 +19,7 @@ import {
   parseAdvertisingConsent,
 } from "@/domain/consent/advertising-consent";
 import "./globals.css";
+import { isSuppliesStoreEnabled } from "@/server/supplies/catalogue";
 
 const socialTitle = "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service";
 const socialImage = "/media/social/rr-gallery-social-share-2026.webp";
@@ -73,7 +74,7 @@ export default async function RootLayout({
   const ga4Enabled = isGa4Production(process.env.VERCEL_ENV);
   const firstPartyAnalyticsEnabled = process.env.FIRST_PARTY_ANALYTICS_ENABLED
     ?.trim().toLowerCase() === "true";
-  const [managed, session, registryState, cookieStore, requestHeaders, reviewSection] = await Promise.all([
+  const [managed, session, registryState, cookieStore, requestHeaders, reviewSection, suppliesEnabled] = await Promise.all([
     getSafePublicContent([
       "footer.tagline",
       "contact.email",
@@ -85,6 +86,7 @@ export default async function RootLayout({
     cookies(),
     headers(),
     getSafePublicCustomerReviewSection(),
+    isSuppliesStoreEnabled().catch(() => false),
   ]);
   const resolvedMarket = parseMarketCookie(requestHeaders.get("x-rnr-resolved-market"))
     ?? parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value)
@@ -112,6 +114,7 @@ export default async function RootLayout({
             initialCustomerId={session?.user.id ?? null}
             initialMarket={resolvedMarket}
             australiaEnabled={registryState.registry.markets.AU.enabled}
+            suppliesEnabled={suppliesEnabled}
             customerChatEnabled={process.env.WEBSITE_CUSTOMER_ASSISTANT_ENABLED?.trim().toLowerCase() === "true"}
             footerContent={{
               tagline: managed["footer.tagline"],

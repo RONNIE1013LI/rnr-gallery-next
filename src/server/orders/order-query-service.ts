@@ -17,7 +17,27 @@ export type PublicOrderBundleComponent = Readonly<{
   photoCount: number;
   backgroundRemovalCount: number;
 }>;
-export type PublicOrderItem = Readonly<{ productKey: string; productTitle: string; galleryDesign?: Readonly<{ id: string; title: string; contentHash: string; productSlug: string; imageUrl: string }>; sizeKey: string; sizeLabel: string; orientation?: Orientation; peoplePets: number; photoSubmissionMethod: PhotoSubmissionMethod; designText: string; notes: string; neededDate: string; urgentServiceConfirmed: boolean; urgentWorkingDays: number; quantity: number; priceLines: readonly PublicOrderPriceLine[]; bundleComponents?: readonly PublicOrderBundleComponent[]; unitSubtotalExGstCents: number; unitGstCents: number; unitTotalInclGstCents: number; lineSubtotalExGstCents: number; lineGstCents: number; lineTotalInclGstCents: number }>;
+export type PublicCustomOrderItem = Readonly<{ kind?: "custom"; productKey: string; productTitle: string; galleryDesign?: Readonly<{ id: string; title: string; contentHash: string; productSlug: string; imageUrl: string }>; sizeKey: string; sizeLabel: string; orientation?: Orientation; peoplePets: number; photoSubmissionMethod: PhotoSubmissionMethod; designText: string; notes: string; neededDate: string; urgentServiceConfirmed: boolean; urgentWorkingDays: number; quantity: number; priceLines: readonly PublicOrderPriceLine[]; bundleComponents?: readonly PublicOrderBundleComponent[]; unitSubtotalExGstCents: number; unitGstCents: number; unitTotalInclGstCents: number; lineSubtotalExGstCents: number; lineGstCents: number; lineTotalInclGstCents: number }>;
+export type PublicSupplyOrderItem = Readonly<{
+  kind: "supply";
+  productKey: string;
+  productTitle: string;
+  sizeKey: string;
+  sizeLabel: string;
+  sku: string;
+  quantity: number;
+  priceLines: readonly PublicOrderPriceLine[];
+  unitSubtotalExGstCents: number;
+  unitGstCents: number;
+  unitTotalInclGstCents: number;
+  lineSubtotalExGstCents: number;
+  lineGstCents: number;
+  lineTotalInclGstCents: number;
+  galleryDesign?: never; orientation?: never; peoplePets?: never;
+  photoSubmissionMethod?: never; designText?: never; notes?: never; neededDate?: never;
+  urgentServiceConfirmed?: never; urgentWorkingDays?: never; bundleComponents?: never;
+}>;
+export type PublicOrderItem = PublicCustomOrderItem | PublicSupplyOrderItem;
 export type PublicOrder = Readonly<{ orderNumber: string; paymentReference?: string; createdAt: string; paymentStatus: OrderPaymentStatus; fulfilmentStatus: OrderFulfilmentStatus; currency: MarketCurrency; deliveryMethod: DeliveryPreference; shipping: Readonly<{ provider: ProviderShippingQuote["provider"] | null; serviceName: string; isTest: boolean; amountExGstCents: number; gstCents: number; amountInclGstCents: number }>; totals: Readonly<{ productSubtotalExGstCents: number; productGstCents: number; productTotalInclGstCents: number; totalExGstCents: number; totalGstCents: number; totalInclGstCents: number }>; items: readonly PublicOrderItem[]; addresses: Readonly<{ billing: NormalizedAddress; delivery: NormalizedAddress }>; payment: PublicPaymentDTO | null }>;
 export type PublicOrderSummary = Readonly<{
   orderNumber: string;

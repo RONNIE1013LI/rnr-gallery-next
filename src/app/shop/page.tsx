@@ -4,6 +4,8 @@ import { getRegistryProducts } from "@/domain/catalogue/product-registry";
 import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { buildPublicMetadata } from "@/server/seo/metadata";
+import { isSuppliesStoreEnabled } from "@/server/supplies/catalogue";
+import { SuppliesEntry } from "@/components/supplies-storefront";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +22,7 @@ export async function generateMetadata() {
 }
 
 export default async function ShopPage() {
-  const { registry } = await getSafePublicProductRegistry();
+  const [{ registry }, suppliesEnabled] = await Promise.all([getSafePublicProductRegistry(), isSuppliesStoreEnabled().catch(() => false)]);
   const products = getRegistryProducts(registry).filter((product) => product.active);
   const pricesInclTaxCents = products.some((product) => product.key === "banner-bundle")
     ? { "banner-bundle": getMarketStartingPriceInclTaxCents(
@@ -38,6 +40,8 @@ export default async function ShopPage() {
       breadcrumbLabel="Shop"
       products={products}
       pricesInclTaxCents={pricesInclTaxCents}
-    />
+    >
+      {suppliesEnabled ? <SuppliesEntry /> : null}
+    </CataloguePage>
   );
 }

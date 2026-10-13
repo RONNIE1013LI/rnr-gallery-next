@@ -9,6 +9,8 @@ import styles from "./admin.module.css";
 type Props = Readonly<{
   orderId: string;
   currentStatus: OrderFulfilmentStatus;
+  supplyOnly?: boolean;
+  deliveryMethod?: "pickup" | "post";
   tracking: Readonly<{
     carrier: string | null;
     number: string | null;
@@ -22,10 +24,10 @@ function label(value: string) {
 
 const carrierChoices = ["Aramex NZ", "NZ Couriers", "NZ Post", "DHL"] as const;
 
-export function AdminOrderActions({ orderId, currentStatus, tracking }: Props) {
+export function AdminOrderActions({ orderId, currentStatus, tracking, supplyOnly = false, deliveryMethod = "post" }: Props) {
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
-  const allowedStatuses = getAllowedOrderStatusTransitions(currentStatus);
+  const allowedStatuses = getAllowedOrderStatusTransitions(currentStatus, supplyOnly, deliveryMethod);
 
   async function mutate(payload: Record<string, unknown>) {
     setPending(true);

@@ -20,7 +20,8 @@ const bannerBundleComponentSchema = z.object({
     .optional(),
 });
 
-const checkoutItemInputSchema = z.object({
+const customCheckoutItemInputSchema = z.object({
+  kind: z.literal("custom").optional(),
   clientItemId: z.uuid(),
   productKey: z.string().trim().min(1).max(100),
   galleryDesignId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
@@ -49,6 +50,15 @@ const checkoutItemInputSchema = z.object({
     });
   }
 });
+
+const supplyCheckoutItemInputSchema = z.object({
+  kind: z.literal("supply"),
+  clientItemId: z.uuid(),
+  supplyProductId: z.uuid(),
+  supplyVariantId: z.uuid().optional(),
+  quantity: z.number().int().min(1).max(999),
+});
+const checkoutItemInputSchema = z.union([supplyCheckoutItemInputSchema, customCheckoutItemInputSchema]);
 
 export const checkoutCartInputSchema = z.object({
   version: z.literal(1),

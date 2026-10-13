@@ -1,3 +1,4 @@
+import { getSupplyPurchaseService } from "@/server/supplies/purchase-runtime";
 import { ZodError } from "zod";
 import { InvalidCheckoutCartError } from "@/domain/checkout/types";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
@@ -59,6 +60,7 @@ function defaults(): Dependencies {
       }),
       gallerySelectionService: getGalleryRuntime().selectionService,
       productRegistryService: getProductRegistryRuntime(),
+      suppliesPurchaseService: getSupplyPurchaseService(),
     }),
     getOptionalSession,
   };

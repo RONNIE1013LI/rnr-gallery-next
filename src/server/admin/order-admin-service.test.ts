@@ -3,6 +3,7 @@ import {
   AdminOrderValidationError,
   createAdminOrderMutationService,
   isOrderStatusTransitionAllowed,
+  getAllowedOrderStatusTransitions,
   parseAdminOrderFilters,
 } from "./order-admin-service";
 
@@ -291,5 +292,13 @@ describe("order notification delivery trigger", () => {
       },
     )).resolves.toBe("duplicate");
     expect(onNotificationOutboxAvailable).not.toHaveBeenCalled();
+  });
+});
+
+describe("standard supply fulfilment", () => {
+  it("allows paid supply dispatch without custom design or printing stages", () => {
+    expect(getAllowedOrderStatusTransitions("new", true, "post")).toEqual(["shipped", "on_hold", "cancelled"]);
+    expect(getAllowedOrderStatusTransitions("new", true, "pickup")).toEqual(["shipped", "completed", "on_hold", "cancelled"]);
+    expect(getAllowedOrderStatusTransitions("new")).toEqual(["designing", "on_hold", "cancelled"]);
   });
 });

@@ -217,3 +217,14 @@ describe("market selection route", () => {
     }
   });
 });
+
+describe("NZ-only standard supply market repricing", () => {
+  it("reprices a NZ supply selection using fresh authority", async () => {
+    const productId = "00000000-0000-4000-8000-000000000002";
+    const route = createMarketRoute({ current: async () => ({ revision: 1, registry: defaultProductRegistry }), trustedOrigin: origin,
+      suppliesPurchaseService: { resolve: async () => ({ productId, variantId: null, title: "Synthetic", slug: "synthetic", sku: "TEST", variantLabel: "Standard", unitPriceCents: 1150, trackInventory: false, stockQuantity: null, weightGrams: 100, packedLengthMm: 100, packedWidthMm: 100, packedHeightMm: 100, pickupAllowed: true, shippingAllowed: true }) } });
+    const response = await route.POST(request("NZ", { version: 1, items: [{ kind: "supply", clientItemId: "00000000-0000-4000-8000-000000000001", supplyProductId: productId, quantity: 12 }] }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).cart.totalInclGstCents).toBe(13800);
+  });
+});

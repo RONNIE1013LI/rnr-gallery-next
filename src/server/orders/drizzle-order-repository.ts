@@ -1,3 +1,6 @@
+import { invalidateSuppliesInventory } from "@/server/supplies/inventory-cache";
+import { suppliesOrderItems } from "@/server/db/schema/supplies-inventory";
+import { reserveSuppliesForOrder } from "@/server/supplies/inventory";
 import { isDeepStrictEqual } from "node:util";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { NormalizedAddress } from "@/domain/address/types";
@@ -9,6 +12,7 @@ import {
 import type {
   RepricedCheckoutCart,
   RepricedCheckoutItem,
+  RepricedCustomCheckoutItem,
 } from "@/domain/checkout/types";
 import type { DeliveryPreference } from "@/domain/configuration/types";
 import type { getDatabase } from "@/server/db/client";
@@ -35,7 +39,7 @@ type Database = ReturnType<typeof getDatabase>;
 export function buildOrderItemCustomizationSnapshot(
   item: RepricedCheckoutItem,
 ) {
-  const uploadReferences = Object.freeze([...item.uploadReferences]);
+  const uploadReferences = Object.freeze([...(item.uploadReferences ?? [])]);
   if (!item.bundleComponents) {
     return Object.freeze({ bundleComponents: null, uploadReferences });
   }
@@ -71,6 +75,7 @@ export function buildOrderItemPhotoMetadata(
   item: RepricedCheckoutItem,
   uploads: readonly { id: string; originalName: string | null }[],
 ): readonly OrderItemPhotoMetadata[] {
+  if (item.kind === "supply") return Object.freeze([]);
   if (item.productKey === "banner-bundle") {
     if (!item.bundleComponents) {
       throw new AtomicOrderStateError("Banner Bundle photo selections are missing");
@@ -192,7 +197,7 @@ function productionCustomizationText(
   item: WebProductionSourceItem,
   field: "designText" | "notes",
 ): string {
-  if (!item.bundleComponents) return item[field];
+  if (!item.bundleComponents) return item[field] ?? "";
   const descriptor = field === "designText" ? "wording" : "design instructions";
   return item.bundleComponents.map((component) => {
     const value = component[field].trim();
@@ -235,7 +240,7 @@ export function buildWebProductionJobSnapshot(
 ): NonNullable<ReturnType<typeof buildWebProductionJobSnapshotImplementation>>;
 export function buildWebProductionJobSnapshot(
   input: CartWebProductionJobInput,
-): NonNullable<ReturnType<typeof buildWebProductionJobSnapshotImplementation>>;
+): ReturnType<typeof buildWebProductionJobSnapshotImplementation>;
 export function buildWebProductionJobSnapshot(
   input: PersistedWebProductionJobInput | CartWebProductionJobInput,
 ) {
@@ -249,13 +254,14 @@ function buildWebProductionJobSnapshotImplementation(
     return null;
   }
   const sourceItems: readonly WebProductionSourceItem[] = "items" in input
-    ? input.items
-    : input.cart.items.map((item) => ({ ...item, bundleComponents: item.bundleComponents ?? null }));
+    ? input.items.filter((item) => typeof item.neededDate === "string")
+    : input.cart.items.filter((item): item is RepricedCustomCheckoutItem => item.kind !== "supply").map((item) => ({ ...item, bundleComponents: item.bundleComponents ?? null }));
+  if (sourceItems.length === 0) return null;
   if (input.orderItemIds.length !== sourceItems.length) {
     throw new AtomicOrderStateError("Production job item links are incomplete");
   }
   const neededDate = [...sourceItems]
-    .map((item) => item.neededDate)
+    .map((item) => item.neededDate).filter((date): date is string => typeof date === "string")
     .sort()[0];
   if (!neededDate) {
     throw new AtomicOrderStateError("Production job required date is missing");
@@ -407,7 +413,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
 
     async createAtomicOrder(input) {
       try {
-        return await database.transaction(async (transaction) => {
+        const created = await database.transaction(async (transaction) => {
           const [locked] = await transaction
             .select()
             .from(checkoutSessions)
@@ -554,9 +560,22 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
             })
             .returning();
 
+          if (input.cart.items.some((item) => item.kind === "supply")) {
+            await reserveSuppliesForOrder(transaction, order.id, input.cart, input.deliveryMethod, input.now);
+          }
           for (const [position, item] of input.cart.items.entries()) {
+            if (item.kind === "supply") {
+              await transaction.insert(suppliesOrderItems).values({ orderId: order.id, position,
+                clientItemId: item.clientItemId, productKey: item.productKey, productSlug: item.productSlug,
+                productTitle: item.productTitle, sizeKey: item.sizeKey, sizeLabel: item.sizeLabel,
+                supplySnapshot: item.supplySnapshot, quantity: item.quantity, priceLines: item.unitPrice.lines,
+                unitSubtotalExGstCents: item.unitPrice.subtotalExGstCents, unitGstCents: item.unitPrice.gstCents,
+                unitTotalInclGstCents: item.unitPrice.totalInclGstCents, lineSubtotalExGstCents: item.lineSubtotalExGstCents,
+                lineGstCents: item.lineGstCents, lineTotalInclGstCents: item.lineTotalInclGstCents });
+              continue;
+            }
             const customizationSnapshot = buildOrderItemCustomizationSnapshot(item);
-            const itemUploads = item.uploadReferences.length === 0 ? [] : await transaction
+            const itemUploads = !item.uploadReferences?.length ? [] : await transaction
               .select({ id: checkoutUploads.id, originalName: checkoutUploads.originalName })
               .from(checkoutUploads)
               .where(and(
@@ -640,6 +659,8 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
           if (completed.length !== 1) throw new AtomicOrderStateError();
           return order;
         });
+        if (input.cart.items.some((item) => item.kind === "supply")) invalidateSuppliesInventory();
+        return created;
       } catch (error) {
         if (isOrderNumberCollision(error)) throw new OrderNumberCollisionError();
         throw error;

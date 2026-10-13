@@ -41,7 +41,15 @@ export class ShippingUnavailableError extends Error {
 
 function packagesFor(cart: RepricedCheckoutCart): ShippingPackage[] {
   return cart.items.flatMap((item) => {
-    const profiles = getPackageProfiles(item.productKey, item.sizeKey);
+    const profiles = item.kind === "supply" ? (() => {
+      const supply = item.supplySnapshot;
+      const values = [supply.weightGrams, supply.packedLengthMm, supply.packedWidthMm, supply.packedHeightMm];
+      if (!supply.shippingAllowed || values.some((value) => !Number.isSafeInteger(value) || Number(value) <= 0)) {
+        throw new ShippingUnavailableError("Accurate packed dimensions and weight are required for supply shipping.");
+      }
+      return [{ productKey: item.productKey, sizeKey: item.sizeKey, weightGrams: supply.weightGrams!,
+        lengthMm: supply.packedLengthMm!, widthMm: supply.packedWidthMm!, heightMm: supply.packedHeightMm! }];
+    })() : getPackageProfiles(item.productKey, item.sizeKey);
     const totalWeightGrams = profiles.reduce(
       (total, profile) => total + profile.weightGrams,
       0,

@@ -1,3 +1,4 @@
+import { getSupplyPurchaseService } from "@/server/supplies/purchase-runtime";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
 import {
   createCheckoutService,
@@ -54,6 +55,7 @@ function defaults(): Dependencies {
       repository,
       shippingService: createShippingService({ provider: selectShippingProvider() }),
       productRegistryService: getProductRegistryRuntime(),
+      suppliesPurchaseService: getSupplyPurchaseService(),
     }),
     getOptionalSession,
   };

@@ -109,6 +109,7 @@ async function loadPaidOrder(orderNumber: string): Promise<MetaPaidOrderSnapshot
     totalInclGstCents: orders.totalInclGstCents,
     customerEmail: orders.customerEmail,
     attribution: orders.attribution,
+    pricingSnapshot: orders.pricingSnapshot,
   }).from(orders).where(or(eq(orders.orderNumber, orderNumber), eq(orders.paymentReference, orderNumber))).limit(1);
   if (!order) return null;
   const [items, [billing]] = await Promise.all([
@@ -131,7 +132,9 @@ async function loadPaidOrder(orderNumber: string): Promise<MetaPaidOrderSnapshot
     customerEmail: order.customerEmail,
     customerPhone: billing.phone,
     attribution: order.attribution,
-    items: Object.freeze(items.map((item) => Object.freeze(item))),
+    items: Object.freeze([...items, ...(order.pricingSnapshot?.items?.filter((item) => item.kind === "supply").map((item) => ({
+      productKey: item.productKey, quantity: item.quantity, unitSubtotalExGstCents: item.unitPrice.subtotalExGstCents,
+    })) ?? [])].map((item) => Object.freeze(item))),
   });
 }
 

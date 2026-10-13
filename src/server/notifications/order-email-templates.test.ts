@@ -78,3 +78,16 @@ describe("order email templates", () => {
     ]);
   });
 });
+
+describe("standard supplies order email copy", () => {
+  it.each(["payment_confirmed", "admin_order_received", "payment_failed"] as const)("keeps custom artwork promises out of a supplies-only %s email", (kind) => {
+    const result = renderOrderEmailTemplate(kind, defaultOrderEmailTemplateValues, variables, { supplyOnly: true });
+    expect(result.paragraphs.join(" ")).not.toMatch(/production|artwork|design|3 business days/i);
+    expect(result.subject).toContain(variables.orderNumber);
+  });
+  it("keeps a published custom body unchanged and uses separate supplies copy", () => {
+    const values = { "email.payment_confirmed.body": "Your custom artwork is being designed." };
+    expect(renderOrderEmailTemplate("payment_confirmed", values, variables).paragraphs).toEqual(["Your custom artwork is being designed."]);
+    expect(renderOrderEmailTemplate("payment_confirmed", values, variables, { supplyOnly: true }).paragraphs.join(" ")).not.toMatch(/artwork|design/i);
+  });
+});

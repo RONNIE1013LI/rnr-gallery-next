@@ -9,6 +9,18 @@ import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import { buildMarketAlternates } from "@/server/seo/metadata";
 import { getSiteUrl } from "@/server/seo/site-url";
 import { cachePublicData, PUBLIC_CACHE_TAGS } from "@/server/cache/public-cache-tags";
+import { getPublicSuppliesCatalogue } from "@/server/supplies/catalogue";
+import type { SuppliesCatalogue } from "@/domain/supplies/types";
+
+export const dynamic = "force-dynamic";
+
+export function buildSuppliesSitemap(catalogue: SuppliesCatalogue | null, siteUrl: URL): MetadataRoute.Sitemap {
+  if (!catalogue?.settings.enabled) return [];
+  const categories = catalogue.categories.filter((category) => category.visible && !category.archived);
+  const categoryIds = new Set(categories.map((category) => category.id));
+  const paths = ["/supplies", ...categories.map((category) => `/supplies/categories/${category.slug}`), ...catalogue.products.filter((product) => product.status === "published" && categoryIds.has(product.categoryId)).map((product) => `/supplies/products/${product.slug}`)];
+  return paths.map((path) => ({ url: new URL(path, siteUrl).toString(), changeFrequency: "weekly", priority: .7 }));
+}
 
 const pages = [
   ["/", 1, "weekly"],
@@ -101,10 +113,13 @@ const getCachedPublicSitemap = cachePublicData(
 );
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const supplies = await getPublicSuppliesCatalogue().catch(() => null);
+  const suppliesEntries = buildSuppliesSitemap(supplies, getSiteUrl());
   try {
-    return await getCachedPublicSitemap();
+    const cached = await getCachedPublicSitemap();
+    return suppliesEntries.length ? [...cached, ...suppliesEntries] : cached;
   } catch {
     const { registry } = await getSafePublicProductRegistry();
-    return buildPublicSitemap(registry, getSiteUrl(), []);
+    return [...buildPublicSitemap(registry, getSiteUrl(), []), ...suppliesEntries];
   }
 }

@@ -29,6 +29,7 @@ function marketFromChangedEvent(event: Event): Market | null {
 }
 
 function explicitMarketForPathname(pathname: string): Market | null {
+  if (pathname === "/supplies" || pathname.startsWith("/supplies/")) return "NZ";
   if (pathname === "/au" || pathname.startsWith("/au/")) return "AU";
   return australianCommerceDestination(pathname) ? "NZ" : null;
 }
@@ -41,6 +42,7 @@ export function SiteChrome({
   initialMarket = "NZ",
   australiaEnabled = false,
   customerChatEnabled = false,
+  suppliesEnabled = false,
 }: Readonly<{
   children: React.ReactNode;
   footerContent: SiteFooterContent;
@@ -49,6 +51,7 @@ export function SiteChrome({
   initialMarket?: Market;
   australiaEnabled?: boolean;
   customerChatEnabled?: boolean;
+  suppliesEnabled?: boolean;
 }>) {
   const pathname = usePathname();
   const [previousPathname, setPreviousPathname] = useState(pathname);
@@ -118,10 +121,10 @@ export function SiteChrome({
   return (
     <CommerceIdentityProvider initialCustomerId={initialCustomerId}>
       <ImageProtectionLayer />
-      <SiteHeader initialMarket={market} australiaEnabled={australiaEnabled} />
+      <SiteHeader initialMarket={market} australiaEnabled={australiaEnabled} suppliesEnabled={suppliesEnabled} />
       {children}
       {!suppressFooterLead ? footerLead : null}
-      <SiteFooter content={footerContent} market={market} />
+      <SiteFooter content={footerContent} market={market} suppliesEnabled={suppliesEnabled} />
       {customerChatEnabled && !customerChatExcluded
         ? <CustomerChat pathname={pathname} market={market} />
         : null}

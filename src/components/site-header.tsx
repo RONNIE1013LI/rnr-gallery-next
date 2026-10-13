@@ -136,9 +136,11 @@ function DesktopMenu({
 export function SiteHeader({
   initialMarket = "NZ",
   australiaEnabled = false,
+  suppliesEnabled = false,
 }: Readonly<{
   initialMarket?: Market;
   australiaEnabled?: boolean;
+  suppliesEnabled?: boolean;
 }>) {
   const pathname = usePathname();
   const market: Market = pathname === "/au" || pathname.startsWith("/au/")
@@ -148,7 +150,9 @@ export function SiteHeader({
   const shopHref = market === "AU" ? "/au/shop" : "/shop";
   const visibleShopMenu = market === "AU"
     ? shopMenu.map((item) => ({ ...item, href: `/au${item.href}` }))
-    : shopMenu;
+    : suppliesEnabled ? [...shopMenu, {
+      href: "/supplies", label: "Supplies & Accessories", detail: "Canvas materials and display hardware",
+    }] : shopMenu;
   const visibleMobileNavigation = market === "AU"
     ? mobileNavigation
         .map((item) => item.label === "Home"
@@ -156,7 +160,9 @@ export function SiteHeader({
           : ["Shop", "Canvas", "Banners"].includes(item.label)
             ? { ...item, href: `/au${item.href}` }
           : item)
-    : mobileNavigation;
+    : suppliesEnabled ? [...mobileNavigation.slice(0, 4), {
+      href: "/supplies", label: "Supplies & Accessories",
+    }, ...mobileNavigation.slice(4)] : mobileNavigation;
   const mobileMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuDrawerRef = useRef<HTMLElement>(null);

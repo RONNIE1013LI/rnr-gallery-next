@@ -33,7 +33,8 @@ function phoneHref(phone: string) {
 export function SiteFooter({
   content = defaultContent,
   market = "NZ",
-}: Readonly<{ content?: SiteFooterContent; market?: Market }>) {
+  suppliesEnabled = false,
+}: Readonly<{ content?: SiteFooterContent; market?: Market; suppliesEnabled?: boolean }>) {
   const shopHref = market === "AU" ? "/au/shop" : "/shop";
   const canvasHref = market === "AU" ? "/au/canvas" : "/canvas";
   const bannersHref = market === "AU" ? "/au/banners" : "/banners";
@@ -86,6 +87,7 @@ export function SiteFooter({
             <li><Link href={shopHref}>All products</Link></li>
             <li><Link href={canvasHref}>Canvas</Link></li>
             <li><Link href={bannersHref}>Banners</Link></li>
+            {suppliesEnabled && market === "NZ" ? <li><Link href="/supplies">Supplies &amp; Accessories</Link></li> : null}
             <li><Link href="/cart">Cart</Link></li>
             <li><Link href="/account">My account</Link></li>
           </ul>

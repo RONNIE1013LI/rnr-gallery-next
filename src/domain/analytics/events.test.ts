@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Cart, CartItem } from "@/domain/cart/types";
+import type { Cart, CustomCartItem } from "@/domain/cart/types";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { PublicOrder } from "@/server/orders/order-query-service";
 import {
@@ -32,7 +32,7 @@ function expectPrivacySafe(value: unknown) {
   }
 }
 
-function cartItem(overrides: Partial<CartItem> = {}): CartItem {
+function cartItem(overrides: Partial<CustomCartItem> = {}): CustomCartItem {
   return {
     id: "private-checkout-token",
     productKey: "photo-print-canvas",

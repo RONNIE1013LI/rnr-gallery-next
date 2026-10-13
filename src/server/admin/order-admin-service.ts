@@ -137,13 +137,18 @@ const productionStatuses = new Set<OrderFulfilmentStatus>([
 export function isOrderStatusTransitionAllowed(
   from: OrderFulfilmentStatus,
   to: OrderFulfilmentStatus,
+  supplyOnly = false,
+  deliveryMethod: "pickup" | "post" = "post",
 ): boolean {
-  return transitions[from].includes(to);
+  return getAllowedOrderStatusTransitions(from, supplyOnly, deliveryMethod).includes(to);
 }
 
 export function getAllowedOrderStatusTransitions(
   from: OrderFulfilmentStatus,
+  supplyOnly = false,
+  deliveryMethod: "pickup" | "post" = "post",
 ): readonly OrderFulfilmentStatus[] {
+  if (supplyOnly && (from === "new" || from === "on_hold")) return ["shipped", ...(deliveryMethod === "pickup" ? ["completed"] : []), "on_hold", "cancelled"].filter((status) => status !== from) as OrderFulfilmentStatus[];
   return transitions[from];
 }
 
@@ -207,6 +212,8 @@ export interface AdminOrderMutationRepository {
     idempotencyKey: string,
   ): Promise<OrderFulfilmentStatus | null>;
   getStatus(orderId: string): Promise<OrderFulfilmentStatus | null>;
+  isSupplyOnlyOrder?(orderId: string): Promise<boolean>;
+  getDeliveryMethod?(orderId: string): Promise<"pickup" | "post" | null>;
   getPaymentStatus(orderId: string): Promise<OrderPaymentStatus | null>;
   applyStatusChange(
     input: StatusChangeInput & Readonly<{
@@ -255,7 +262,9 @@ export function createAdminOrderMutationService(
       }
       const fromStatus = await repository.getStatus(parsed.orderId);
       if (!fromStatus) throw new AdminOrderNotFoundError();
-      if (!isOrderStatusTransitionAllowed(fromStatus, parsed.toStatus)) {
+      const supplyOnly = await repository.isSupplyOnlyOrder?.(parsed.orderId) ?? false;
+      const deliveryMethod = supplyOnly ? await repository.getDeliveryMethod?.(parsed.orderId) ?? "post" : "post";
+      if (!isOrderStatusTransitionAllowed(fromStatus, parsed.toStatus, supplyOnly, deliveryMethod)) {
         throw new AdminOrderValidationError(
           `Cannot move an order from ${fromStatus} to ${parsed.toStatus}`,
         );

@@ -1,3 +1,6 @@
+import { invalidateSuppliesInventory } from "@/server/supplies/inventory-cache";
+import { suppliesOrderItems, suppliesStockReservations } from "@/server/db/schema/supplies-inventory";
+import { orderHasSupplies, settleSuppliesInventory } from "@/server/supplies/inventory";
 import {
   and,
   asc,
@@ -115,6 +118,7 @@ export async function listAdminOrders(
         customerEmail: orders.customerEmail,
         country: orderAddresses.country,
         currency: orders.currency,
+        pricingSnapshot: orders.pricingSnapshot,
         totalInclGstCents: orders.totalInclGstCents,
         paymentStatus: orders.paymentStatus,
         fulfilmentStatus: orders.fulfilmentStatus,
@@ -167,10 +171,13 @@ export async function listAdminOrders(
 
   const items = rows.map((row) => {
     const matchingItems = itemRows.filter((item) => item.orderId === row.id);
-    const titles = [...new Set(matchingItems.map((item) => item.productTitle))];
+    const supplyTitles = row.pricingSnapshot?.items?.filter((item) => item.kind === "supply").map((item) => `${item.supplySnapshot?.title ?? "Supply"} · Supplies`) ?? [];
+    const titles = [...new Set([...matchingItems.map((item) => item.productTitle), ...supplyTitles])];
     const latestPayment = paymentRows.find((payment) => payment.orderId === row.id);
+    const { pricingSnapshot, ...publicRow } = row;
+    void pricingSnapshot;
     return Object.freeze({
-      ...row,
+      ...publicRow,
       productTitles: Object.freeze(titles),
       paymentMethod: latestPayment?.method ?? null,
       urgent: matchingItems.some((item) => item.urgent),
@@ -222,6 +229,15 @@ export async function getAdminOrderDetail(database: Database, orderId: string) {
       .where(eq(orderStatusHistory.orderId, orderId))
       .orderBy(desc(orderStatusHistory.createdAt)),
   ]);
+  const supplyItems = orderHasSupplies(order) ? await database.select().from(suppliesOrderItems)
+    .where(eq(suppliesOrderItems.orderId, orderId)).orderBy(suppliesOrderItems.position) : [];
+  const reservations = orderHasSupplies(order) ? await database.select({ stockShortage: suppliesStockReservations.stockShortage })
+    .from(suppliesStockReservations).where(eq(suppliesStockReservations.orderId, orderId)) : [];
+  const displayItems = [...items.map((item) => ({ ...item, kind: "custom" as const, supplySnapshot: undefined })),
+    ...supplyItems.map((item) => ({ ...item, kind: "supply" as const, orientation: undefined, peoplePets: undefined,
+      photoSubmissionMethod: undefined, neededDate: undefined, urgentServiceConfirmed: undefined,
+      urgentWorkingDays: undefined, designText: undefined, notes: undefined, bundleComponents: undefined, photoMetadata: [] }))]
+    .sort((a, b) => a.position - b.position);
   const itemIds = items.map((item) => item.id);
   const uploads = itemIds.length
     ? await database
@@ -239,8 +255,9 @@ export async function getAdminOrderDetail(database: Database, orderId: string) {
 
   return Object.freeze({
     order,
+    supplyStockShortage: reservations.some((reservation) => reservation.stockShortage),
     addresses: Object.freeze(addresses),
-    items: Object.freeze(items),
+    items: Object.freeze(displayItems),
     payments: Object.freeze(payments),
     uploads: Object.freeze(uploads),
     notes: Object.freeze(notes),
@@ -273,6 +290,15 @@ export function createDrizzleAdminOrderMutationRepository(
       return record?.status ?? null;
     },
 
+    async getDeliveryMethod(orderId) {
+      const [record] = await database.select({ method: orders.deliveryMethod }).from(orders).where(eq(orders.id, orderId)).limit(1);
+      return record?.method ?? null;
+    },
+    async isSupplyOnlyOrder(orderId) {
+      const [order] = await database.select({ pricingSnapshot: orders.pricingSnapshot }).from(orders).where(eq(orders.id, orderId)).limit(1);
+      return Boolean(order?.pricingSnapshot?.items?.length && order.pricingSnapshot.items.every((item) => item.kind === "supply"));
+    },
+
     async getPaymentStatus(orderId) {
       const [record] = await database
         .select({ status: orders.paymentStatus })
@@ -283,9 +309,11 @@ export function createDrizzleAdminOrderMutationRepository(
     },
 
     async applyStatusChange(input) {
-      return database.transaction(async (transaction) => {
+      let suppliesChanged = false;
+      const result = await database.transaction(async (transaction) => {
         const [current] = await transaction
           .select({
+            order: orders,
             status: orders.fulfilmentStatus,
             paymentStatus: orders.paymentStatus,
             deliveryMethod: orders.deliveryMethod,
@@ -294,6 +322,7 @@ export function createDrizzleAdminOrderMutationRepository(
           })
           .from(orders)
           .where(eq(orders.id, input.orderId))
+          .for("update")
           .limit(1);
         if (!current || current.status !== input.fromStatus) return "conflict" as const;
         if (
@@ -301,12 +330,21 @@ export function createDrizzleAdminOrderMutationRepository(
             .includes(input.toStatus) &&
           current.paymentStatus !== "paid"
         ) return "conflict" as const;
+        if (input.toStatus === "completed" && current.deliveryMethod === "post" && ["new", "on_hold"].includes(current.status)) return "conflict" as const;
         if (
           input.toStatus === "shipped" &&
           current.deliveryMethod === "post" &&
           !current.trackingNumber
         ) return "conflict" as const;
 
+        if (["shipped", "completed"].includes(input.toStatus) && current.order && orderHasSupplies(current.order)) {
+          const [shortage] = await transaction.select({ id: suppliesStockReservations.id }).from(suppliesStockReservations)
+            .where(and(eq(suppliesStockReservations.orderId, input.orderId), eq(suppliesStockReservations.stockShortage, true))).limit(1);
+          if (shortage) {
+            suppliesChanged = true;
+            if (await settleSuppliesInventory(transaction, current.order, "paid", new Date())) return "conflict" as const;
+          }
+        }
         const now = new Date();
         const [updated] = await transaction
           .update(orders)
@@ -328,6 +366,10 @@ export function createDrizzleAdminOrderMutationRepository(
           .returning({ id: orders.id });
         if (!updated) return "conflict" as const;
 
+        if (input.toStatus === "cancelled" && current.order && current.paymentStatus !== "paid" && current.paymentStatus !== "refunded") {
+          await settleSuppliesInventory(transaction, current.order, "cancelled", now);
+          suppliesChanged = orderHasSupplies(current.order);
+        }
         await transaction.insert(orderStatusHistory).values({
           orderId: input.orderId,
           fromStatus: input.fromStatus,
@@ -362,6 +404,8 @@ export function createDrizzleAdminOrderMutationRepository(
         }));
         return "updated" as const;
       });
+      if (suppliesChanged) invalidateSuppliesInventory();
+      return result;
     },
 
     async addNote(input) {

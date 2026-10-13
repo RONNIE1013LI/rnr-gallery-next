@@ -1,3 +1,4 @@
+import type { CanonicalCheckoutCartInput } from "@/domain/checkout/types";
 import type { Cart } from "./types";
 import {
   validateBannerBundleComponents,
@@ -21,10 +22,13 @@ function copyBundleComponents(
   })));
 }
 
-export function cartToCheckoutInput(cart: Cart) {
+export function cartToCheckoutInput(cart: Cart): CanonicalCheckoutCartInput {
   return {
     version: 1 as const,
-    items: cart.items.map((item) => ({
+    items: cart.items.map((item) => item.kind === "supply" ? ({
+      kind: "supply" as const, clientItemId: item.id, supplyProductId: item.supplyProductId,
+      ...(item.supplyVariantId ? { supplyVariantId: item.supplyVariantId } : {}), quantity: item.quantity,
+    }) : ({
       clientItemId: item.id,
       productKey: item.productKey,
       sizeKey: item.sizeKey,
