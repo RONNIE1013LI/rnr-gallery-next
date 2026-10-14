@@ -14,6 +14,56 @@ import {
 describe("identity-scoped advertising attribution", () => {
   beforeEach(() => sessionStorage.clear());
 
+  it("preserves an OpenAI click unchanged through guest handoff", () => {
+    const attribution = parseAttribution(new URLSearchParams("oppref=openai-click_123"));
+    expect(attribution).toEqual({ oppref: "openai-click_123" });
+    saveAttribution(sessionStorage, null, attribution!);
+    expect(handoffGuestAttribution(sessionStorage, "user-a")).toBe("transferred");
+    expect(readAttribution(sessionStorage, "user-a")).toEqual({ oppref: "openai-click_123" });
+    expect(parseAttribution(new URLSearchParams("oppref=%20changed-click%20"))).toBeNull();
+  });
+
+  it("stores an OpenAI click only with granted advertising consent", () => {
+    const campaign = { utm_source: "chatgpt", oppref: "openai-click_123" };
+    const consent = { version: 1 as const, analytics: true, advertising: true, decidedAt: "2026-10-15T00:00:00.000Z" };
+    expect(buildStoredOrderAttribution(campaign, null, {})).toEqual({ utm_source: "chatgpt" });
+    expect(buildStoredOrderAttribution(campaign, { ...consent, advertising: false }, {})?.oppref).toBeUndefined();
+    expect(buildStoredOrderAttribution(campaign, consent, {})?.oppref).toBe("openai-click_123");
+  });
+
+  it("preserves an internal OpenAI capture time through identity handoff but never reads it from URL parameters", () => {
+    const attribution = { oppref: "openai-click_123", opprefCapturedAt: "2026-10-14T00:00:00.000Z" };
+    saveAttribution(sessionStorage, null, attribution);
+    expect(handoffGuestAttribution(sessionStorage, "user-a")).toBe("transferred");
+    expect(readAttribution(sessionStorage, "user-a")).toEqual(attribution);
+    expect(readAttribution(sessionStorage, "user-b")).toBeNull();
+    expect(parseAttribution(new URLSearchParams({ ...attribution }))).toEqual({ oppref: "openai-click_123" });
+    expect(isOrderAttribution({ opprefCapturedAt: attribution.opprefCapturedAt })).toBe(false);
+    expect(isOrderAttribution({ ...attribution, opprefCapturedAt: "2026-10-14" })).toBe(false);
+  });
+
+  it("stores a valid dated OpenAI click in measurement with advertising-only consent", () => {
+    const consent = { version: 1 as const, analytics: false, advertising: true, decidedAt: "2026-10-15T00:00:00.000Z" };
+    const campaign = { oppref: "openai-click_123", opprefCapturedAt: "2026-10-14T00:00:00.000Z" };
+    const now = new Date(consent.decidedAt);
+    expect(buildStoredOrderAttribution(campaign, consent, {}, now)).toEqual({
+      oppref: "openai-click_123",
+      measurement: { version: 1, advertisingConsent: true, decidedAt: consent.decidedAt, opprefCapturedAt: campaign.opprefCapturedAt },
+    });
+    expect(JSON.stringify(buildStoredOrderAttribution(campaign, { ...consent, advertising: false }, {}, now))).not.toContain("oppref");
+    expect(buildStoredOrderAttribution(campaign, null, {}, now)).toBeNull();
+  });
+
+  it.each([undefined, "2026-09-14T00:00:00.000Z", "2026-10-16T00:00:00.000Z", "2026-10-14"])(
+    "does not invent or refresh an invalid OpenAI capture time %s", (opprefCapturedAt) => {
+      const consent = { version: 1 as const, analytics: false, advertising: true, decidedAt: "2026-10-15T00:00:00.000Z" };
+      const stored = buildStoredOrderAttribution({ oppref: "old_click", ...(opprefCapturedAt ? { opprefCapturedAt } : {}) }, consent, {}, new Date(consent.decidedAt));
+      expect(stored?.measurement).not.toHaveProperty("opprefCapturedAt");
+      expect(stored).not.toHaveProperty("opprefCapturedAt");
+      if (opprefCapturedAt) expect(stored).not.toHaveProperty("oppref");
+    },
+  );
+
   it("excludes fbclid without consent while preserving UTM and Google click attribution", () => {
     const campaign = {
       utm_source: "facebook",

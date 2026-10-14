@@ -53,7 +53,8 @@ export function readAttributionHistory(storage: StorageReader, customerId: strin
 }
 export function classifyAttributionTouch(touch: AttributionTouch) {
   const c = touch.campaign;
-  return classifyWebsiteAttribution({ advertisingConsent: true, utmSource: c.utm_source ?? null, utmMedium: c.utm_medium ?? null,
+  const openAI = Boolean(c.oppref) && !c.utm_source && !c.utm_medium;
+  return classifyWebsiteAttribution({ advertisingConsent: true, utmSource: c.utm_source ?? (openAI ? "chatgpt" : null), utmMedium: c.utm_medium ?? (openAI ? "paid" : null),
     utmCampaign: c.utm_campaign ?? null, referrerOrigin: touch.referrerOrigin,
     clickIdTypes: ["gclid", "gbraid", "wbraid", "fbclid"].filter(k => Boolean(c[k])),
   });
@@ -64,7 +65,7 @@ export function acquisitionAttribution(history: AttributionHistory) {
 export function consentedAttributionHistory(history: AttributionHistory, advertising: boolean): AttributionHistory {
   if (advertising) return history;
   const strip = (touch: AttributionTouch): AttributionTouch => {
-    const campaign = Object.fromEntries(Object.entries(touch.campaign).filter(([key]) => !["fbclid", "gclid", "gbraid", "wbraid"].includes(key)));
+    const campaign = Object.fromEntries(Object.entries(touch.campaign).filter(([key]) => !["fbclid", "gclid", "gbraid", "wbraid", "oppref"].includes(key)));
     return { ...touch, campaign };
   };
   const firstTouch = strip(history.firstTouch);
@@ -76,6 +77,7 @@ export function consentedAttributionHistory(history: AttributionHistory, adverti
 }
 export function captureAttributionHistory(storage: HistoryStorage, customerId: string | null, input: Readonly<{
   url: string; referrer: string; now: Date; consent: Readonly<{ analytics: boolean; advertising: boolean }>;
+  opprefCapturedAt?: string | null;
 }>): AttributionHistory | null {
   if (!input.consent.analytics) { clearAttributionHistory(storage, customerId); return null; }
   try {
@@ -95,19 +97,30 @@ export function captureAttributionHistory(storage: HistoryStorage, customerId: s
       if (!ownReferrer && /^https?:$/.test(referrer.protocol)) referrerOrigin = referrer.origin.slice(0,255);
     } catch { /* Empty referrer is a Direct entry. */ }
     const campaign = { ...parseAttribution(url.searchParams) };
+    if (input.opprefCapturedAt === null) delete campaign.oppref;
     if (!input.consent.advertising) {
-      for (const key of ["fbclid", "gclid", "gbraid", "wbraid"] as const) delete campaign[key];
+      for (const key of ["fbclid", "gclid", "gbraid", "wbraid", "oppref"] as const) delete campaign[key];
     }
-    const touch = { at: input.now.toISOString(), landingPath: url.pathname, referrerOrigin, campaign };
     const saved = readAttributionHistory(storage, customerId, input.now);
     const previous = saved ? consentedAttributionHistory(saved, input.consent.advertising) : null;
+    const originalClickTime = campaign.oppref
+      && !(["gclid", "gbraid", "wbraid", "fbclid"] as const).some(key => campaign[key])
+      ? [input.opprefCapturedAt,
+        ...[previous?.firstTouch, previous?.lastNonDirectTouch, previous?.lastTouch]
+          .filter(touch => touch?.campaign.oppref === campaign.oppref).map(touch => touch?.at)]
+        .filter((at): at is string => typeof at === "string" && Number.isFinite(Date.parse(at))
+          && new Date(at).toISOString() === at && Date.parse(at) <= input.now.getTime())
+        .sort((a, b) => Date.parse(a) - Date.parse(b))[0] : undefined;
+    const touch = { at: originalClickTime ?? input.now.toISOString(), landingPath: url.pathname, referrerOrigin, campaign };
     const tagged = Object.keys(campaign).length > 0;
     const withinSession = previous && input.now.getTime() - Date.parse(previous.lastSeenAt) < SESSION_GAP;
     const sameTaggedEntry = previous && tagged && previous.lastTouch.landingPath === touch.landingPath
       && JSON.stringify(previous.lastTouch.campaign) === JSON.stringify(campaign) && withinSession;
-    const next = previous && ((!tagged && ownReferrer && withinSession) || sameTaggedEntry)
+    const olderOpenAIReplay = originalClickTime !== undefined && previous?.lastNonDirectTouch
+      && Date.parse(originalClickTime) < Date.parse(previous.lastNonDirectTouch.at);
+    const next = previous && ((!tagged && ownReferrer && withinSession) || sameTaggedEntry || olderOpenAIReplay)
       ? { ...previous, lastSeenAt: input.now.toISOString() }
-      : { version: 1 as const, firstTouch: previous?.firstTouch ?? touch, lastTouch: touch,
+      : { version: 1 as const, firstTouch: previous && Date.parse(previous.firstTouch.at) <= Date.parse(touch.at) ? previous.firstTouch : touch, lastTouch: touch,
         lastNonDirectTouch: classifyAttributionTouch(touch).channel !== "direct" ? touch : previous?.lastNonDirectTouch ?? null,
         lastSeenAt: input.now.toISOString() };
     const filtered = consentedAttributionHistory(next, input.consent.advertising);

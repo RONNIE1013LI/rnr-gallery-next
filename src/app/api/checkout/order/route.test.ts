@@ -231,6 +231,50 @@ describe("POST /api/checkout/order", () => {
     expect(service.createOrder).toHaveBeenCalledWith(sessionId,key,expect.objectContaining({ attribution: expect.objectContaining({ touches: history, measurement: expect.objectContaining({ fbc: `fb.1.${Date.parse(touch.at)}.click_123` }) }) }));
   });
 
+  it.each([true, false])("stores dated OpenAI attribution with analytics disabled and advertising %s", async (advertising) => {
+    const service = { createOrder: vi.fn().mockResolvedValue({ orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-OPENAI", currency: "NZD", totalInclGstCents: 9775, paymentStatus: "awaiting_payment" }) };
+    const now = new Date("2026-10-15T00:00:00.000Z");
+    const handler = createCheckoutOrderRoute({ repository: repository(), orderService: service, getOptionalSession: async () => null, trustedOrigin: origin, now: () => now });
+    const consent = encodeURIComponent(serializeAdvertisingConsent({ version: 1, analytics: false, advertising, decidedAt: "2026-10-14T00:00:00.000Z" }));
+    const req = request({ ...validBody, attribution: { oppref: "openai-click_123", opprefCapturedAt: "2026-10-14T00:00:00.000Z" } });
+    req.headers.set("Cookie", `${getCheckoutSessionCookieName(null)}=${token}; rnr-consent-v1=${consent}`);
+    expect((await handler(req)).status).toBe(200);
+    const stored = service.createOrder.mock.calls[0][2].attribution;
+    expect(stored).not.toHaveProperty("opprefCapturedAt");
+    expect(stored).not.toHaveProperty("touches");
+    if (advertising) {
+      expect(stored).toMatchObject({ oppref: "openai-click_123", measurement: { advertisingConsent: true, opprefCapturedAt: "2026-10-14T00:00:00.000Z" } });
+    } else {
+      expect(JSON.stringify(stored)).not.toContain("oppref");
+    }
+  });
+
+  it("uses the matching OpenAI history click time instead of a submitted fresher capture time", async () => {
+    const service = { createOrder: vi.fn().mockResolvedValue({ orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-OPENAI", currency: "NZD", totalInclGstCents: 9775, paymentStatus: "awaiting_payment" }) };
+    const now = new Date("2026-10-15T00:00:00.000Z");
+    const handler = createCheckoutOrderRoute({ repository: repository(), orderService: service, getOptionalSession: async () => null, trustedOrigin: origin, now: () => now });
+    const touch = { at: "2026-10-14T00:00:00.000Z", landingPath: "/canvas", referrerOrigin: null, campaign: { oppref: "openai-click_123" } };
+    const history = { version: 1, firstTouch: touch, lastNonDirectTouch: touch, lastTouch: { ...touch, at: now.toISOString(), campaign: {} }, lastSeenAt: now.toISOString() };
+    const consent = encodeURIComponent(serializeAdvertisingConsent({ version: 1, analytics: true, advertising: true, decidedAt: touch.at }));
+    const req = request({ ...validBody, attribution: { oppref: "openai-click_123", opprefCapturedAt: now.toISOString() }, attributionHistory: history });
+    req.headers.set("Cookie", `${getCheckoutSessionCookieName(null)}=${token}; rnr-consent-v1=${consent}`);
+    expect((await handler(req)).status).toBe(200);
+    expect(service.createOrder.mock.calls[0][2].attribution.measurement.opprefCapturedAt).toBe("2026-10-14T00:00:00.000Z");
+  });
+
+  it("does not resurrect an expired same click from a newer submitted history", async () => {
+    const service = { createOrder: vi.fn().mockResolvedValue({ orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-OPENAI", currency: "NZD", totalInclGstCents: 9775, paymentStatus: "awaiting_payment" }) };
+    const now = new Date("2026-10-15T00:00:00.000Z");
+    const handler = createCheckoutOrderRoute({ repository: repository(), orderService: service, getOptionalSession: async () => null, trustedOrigin: origin, now: () => now });
+    const touch = { at: "2026-10-14T00:00:00.000Z", landingPath: "/canvas", referrerOrigin: null, campaign: { oppref: "old_click" } };
+    const history = { version: 1, firstTouch: touch, lastNonDirectTouch: touch, lastTouch: touch, lastSeenAt: touch.at };
+    const consent = encodeURIComponent(serializeAdvertisingConsent({ version: 1, analytics: true, advertising: true, decidedAt: touch.at }));
+    const req = request({ ...validBody, attribution: { oppref: "old_click", opprefCapturedAt: "2026-09-01T00:00:00.000Z" }, attributionHistory: history });
+    req.headers.set("Cookie", `${getCheckoutSessionCookieName(null)}=${token}; rnr-consent-v1=${consent}`);
+    expect((await handler(req)).status).toBe(200);
+    expect(service.createOrder.mock.calls[0][2].attribution).not.toHaveProperty("oppref");
+  });
+
   it("binds only allowlisted attribution to the new order", async () => {
     const service = { createOrder: vi.fn().mockResolvedValue({
       orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-ATTR",

@@ -41,6 +41,7 @@ const privacyLeakCases = [
   ["nested array", { rows: [{ profile: { customer_email: "private-nested" } }] }],
   ["Google click identifiers", { gclid: "private-gclid", gbraid: "private-gbraid", wbraid: "private-wbraid" }],
   ["Meta click identifiers", { fbclid: "private-fbclid", fbp: "private-fbp", fbc: "private-fbc" }],
+  ["OpenAI click identifier", { oppref: "private-openai-click" }],
 ] as const;
 
 function dependencies(overrides: Record<string, unknown> = {}) {

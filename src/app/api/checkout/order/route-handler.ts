@@ -50,7 +50,9 @@ export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
 const attributionSchema = z.object(Object.fromEntries(
   ATTRIBUTION_FIELDS.map((field) => [field, z.string().trim().min(1).max(200).optional()]),
-) as Record<typeof ATTRIBUTION_FIELDS[number], z.ZodOptional<z.ZodString>>).strict()
+) as Record<typeof ATTRIBUTION_FIELDS[number], z.ZodOptional<z.ZodString>>)
+  .extend({ opprefCapturedAt: z.iso.datetime().optional() }).strict()
+  .refine((value) => !value.opprefCapturedAt || Boolean(value.oppref))
   .refine((value) => Object.values(value).some(Boolean))
   .optional();
 const inputSchema = z.object({
@@ -194,6 +196,12 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
               requestNow,
               [history?.lastNonDirectTouch, history?.lastTouch, history?.firstTouch]
                 .find(touch => touch?.campaign.fbclid && touch.campaign.fbclid === campaign?.fbclid)?.at,
+              [...[history?.firstTouch, history?.lastNonDirectTouch, history?.lastTouch]
+                .filter(touch => touch?.campaign.oppref && touch.campaign.oppref === campaign?.oppref)
+                .map(touch => touch?.at),
+                input.attribution?.oppref === campaign?.oppref ? input.attribution?.opprefCapturedAt : undefined]
+                .filter((at): at is string => typeof at === "string")
+                .sort((a, b) => Date.parse(a) - Date.parse(b))[0],
             );
             return attribution || history ? { attribution: { ...attribution, ...(history ? { touches: history } : {}) } } : {};
           })(),

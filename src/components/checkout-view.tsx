@@ -110,10 +110,13 @@ function readPaymentIntent() {
 
 function placementRequest(intent: CheckoutPaymentIntent) {
   const attributionHistory = typeof window === "undefined" ? null : readAttributionHistory(window.localStorage, getActiveCustomerId());
+  const capturedAttribution = typeof window === "undefined" ? null : readAttribution(window.sessionStorage, getActiveCustomerId());
   const attribution = typeof window === "undefined"
     ? null
-    : attributionHistory ? (attributionHistory.lastNonDirectTouch ?? attributionHistory.firstTouch).campaign
-      : readAttribution(window.sessionStorage, getActiveCustomerId());
+    : attributionHistory ? { ...(attributionHistory.lastNonDirectTouch ?? attributionHistory.firstTouch).campaign,
+      ...((attributionHistory.lastNonDirectTouch ?? attributionHistory.firstTouch).campaign.oppref === capturedAttribution?.oppref
+        && capturedAttribution?.opprefCapturedAt ? { opprefCapturedAt: capturedAttribution.opprefCapturedAt } : {}) }
+      : capturedAttribution;
   return {
     idempotencyKey: intent.orderIdempotencyKey,
     checkoutVersion: intent.checkoutVersion,

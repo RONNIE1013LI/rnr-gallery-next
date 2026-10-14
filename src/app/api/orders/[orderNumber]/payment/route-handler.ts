@@ -24,7 +24,7 @@ import {
 } from "@/server/payments/payment-service";
 import { selectCheckoutPaymentProviders } from "@/server/payments/provider-registry";
 import type { PaymentActionDTO, PublicPaymentDTO } from "@/server/payments/public-dto";
-import { createMetaPaidOrderObserver } from "@/server/analytics/meta-purchase";
+import { createPaidOrderMeasurementObserver } from "@/server/analytics/paid-order-measurement";
 import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 
 export const runtime = "nodejs";
@@ -83,7 +83,7 @@ function defaultPaymentService() {
     checkoutAuthority: checkoutRepository,
     providers: selectCheckoutPaymentProviders(config),
     returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
-    onVerifiedPaidOrder: createMetaPaidOrderObserver((task) => after(task)),
+    onVerifiedPaidOrder: createPaidOrderMeasurementObserver((task) => after(task)),
     onNotificationOutboxAvailable: createImmediateNotificationDeliveryObserver({
       scheduleAfter: (task) => after(task),
     }),

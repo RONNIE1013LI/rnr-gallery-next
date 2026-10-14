@@ -4,7 +4,7 @@ import { createFlikRuntime } from "@/server/payments/flik-runtime";
 import { createFlikReconciliation } from "@/server/payments/flik-reconciliation";
 import { createDrizzlePaymentRepository } from "@/server/payments/drizzle-payment-repository";
 import { getDatabase } from "@/server/db/client";
-import { createMetaPaidOrderObserver } from "@/server/analytics/meta-purchase";
+import { createPaidOrderMeasurementObserver } from "@/server/analytics/paid-order-measurement";
 import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 
 const headers = { "Cache-Control": "no-store" };
@@ -21,7 +21,7 @@ export function createFlikReconciliationRoute(dependencies?: {
       const deadlineMs = Date.now() + 45_000;
       const runtime = await createFlikRuntime({ deadlineMs });
       if (!runtime) return Response.json({ disabled: true }, { headers });
-      const paidObserver = createMetaPaidOrderObserver((task) => after(task));
+      const paidObserver = createPaidOrderMeasurementObserver((task) => after(task));
       const notificationObserver = createImmediateNotificationDeliveryObserver({ scheduleAfter: (task) => after(task) });
       const worker = createFlikReconciliation({ ...runtime, testMode: runtime.config.testMode, deadlineMs,
         async canRecoverCreation() {

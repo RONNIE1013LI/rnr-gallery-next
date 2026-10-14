@@ -11,7 +11,7 @@ import {
   type PaymentReconciliationSummary,
 } from "@/server/payments/payment-service";
 import { selectPaymentProviders } from "@/server/payments/provider-registry";
-import { createMetaPaidOrderObserver } from "@/server/analytics/meta-purchase";
+import { createPaidOrderMeasurementObserver } from "@/server/analytics/paid-order-measurement";
 import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 
 export const runtime = "nodejs";
@@ -94,7 +94,7 @@ export function createInternalPaymentReconciliationService() {
     checkoutAuthority: createDrizzleCheckoutRepository(database),
     providers: selectPaymentProviders(config),
     returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
-    onVerifiedPaidOrder: createMetaPaidOrderObserver((task) => after(task)),
+    onVerifiedPaidOrder: createPaidOrderMeasurementObserver((task) => after(task)),
     onNotificationOutboxAvailable: createImmediateNotificationDeliveryObserver({
       scheduleAfter: (task) => after(task),
     }),

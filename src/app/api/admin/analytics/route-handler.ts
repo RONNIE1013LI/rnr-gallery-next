@@ -53,7 +53,7 @@ const forbiddenResponseKeys = new Set([
   "token",
   "cookie",
 ]);
-const forbiddenClickIdKeys = new Set(["gclid", "gbraid", "wbraid", "fbclid", "fbp", "fbc"]);
+const forbiddenClickIdKeys = new Set(["gclid", "gbraid", "wbraid", "fbclid", "fbp", "fbc", "oppref"]);
 const allowedAggregateIdentityKeys = new Set([
   "visitors",
   "sessions",

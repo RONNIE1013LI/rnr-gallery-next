@@ -11,10 +11,13 @@ export const ATTRIBUTION_FIELDS = [
   "gbraid",
   "wbraid",
   "fbclid",
+  "oppref",
 ] as const;
 
 export type AttributionField = typeof ATTRIBUTION_FIELDS[number];
-export type OrderAttribution = Readonly<Partial<Record<AttributionField, string>>>;
+export type OrderAttribution = Readonly<Partial<Record<AttributionField, string>> & {
+  opprefCapturedAt?: string;
+}>;
 export type StoredOrderAttribution = OrderAttribution & Readonly<{
   touches?: AttributionHistory;
   measurement?: Readonly<{
@@ -23,6 +26,7 @@ export type StoredOrderAttribution = OrderAttribution & Readonly<{
     decidedAt: string;
     fbp?: string;
     fbc?: string;
+    opprefCapturedAt?: string;
   }>;
 }>;
 
@@ -30,17 +34,33 @@ const PREFIX = "rnr:analytics:v1";
 const MAX_VALUE_LENGTH = 200;
 const META_COOKIE_PATTERN = /^fb\.1\.\d{10,13}\.[A-Za-z0-9._-]{1,200}$/;
 
+function isCanonicalCaptureTime(value: unknown): value is string {
+  if (typeof value !== "string" || value.length !== 24) return false;
+  const capturedAt = Date.parse(value);
+  return Number.isFinite(capturedAt) && new Date(capturedAt).toISOString() === value;
+}
+
 export function buildStoredOrderAttribution(
   attribution: OrderAttribution | null,
   consent: AdvertisingConsent | null,
   identifiers: Readonly<{ fbp?: string; fbc?: string }>,
   now = new Date(),
   clickCapturedAt?: string,
+  openAIClickCapturedAt?: string,
 ): StoredOrderAttribution | null {
-  const { fbclid, ...nonMetaCampaign } = attribution ?? {};
-  const campaign = consent?.advertising && fbclid
+  const { fbclid, oppref, opprefCapturedAt, ...nonMetaCampaign } = attribution ?? {};
+  const openAICaptureTime = openAIClickCapturedAt ?? opprefCapturedAt;
+  const openAICapturedAt = isCanonicalCaptureTime(openAICaptureTime)
+    ? Date.parse(openAICaptureTime) : Number.NaN;
+  const validOpenAICapture = Number.isFinite(openAICapturedAt) && openAICapturedAt <= now.getTime()
+    && now.getTime() - openAICapturedAt <= 30 * 86_400_000;
+  const metaCampaign = consent?.advertising && fbclid
     ? { ...nonMetaCampaign, fbclid }
     : nonMetaCampaign;
+  const campaign = consent?.advertising && oppref
+    && (openAICaptureTime === undefined || validOpenAICapture)
+    ? { ...metaCampaign, oppref }
+    : metaCampaign;
   if (!consent) {
     return Object.keys(campaign).length ? Object.freeze(campaign) : null;
   }
@@ -60,6 +80,10 @@ export function buildStoredOrderAttribution(
     ...(consent.advertising && fbc
       ? { fbc }
       : {}),
+    ...(consent.advertising && oppref && oppref.length <= MAX_VALUE_LENGTH && !/\s/.test(oppref)
+      && validOpenAICapture
+      ? { opprefCapturedAt: openAICaptureTime }
+      : {}),
   };
   return Object.freeze({ ...campaign, measurement: Object.freeze(measurement) });
 }
@@ -75,7 +99,9 @@ export function getAttributionStorageKey(customerId: string | null) {
 export function parseAttribution(params: Pick<URLSearchParams, "get">): OrderAttribution | null {
   const attribution: Partial<Record<AttributionField, string>> = {};
   for (const field of ATTRIBUTION_FIELDS) {
-    const value = params.get(field)?.trim();
+    const raw = params.get(field);
+    const value = field === "oppref" ? raw : raw?.trim();
+    if (field === "oppref" && value && /\s/.test(value)) continue;
     if (value && value.length <= MAX_VALUE_LENGTH) attribution[field] = value;
   }
   return Object.keys(attribution).length > 0 ? Object.freeze(attribution) : null;
@@ -84,9 +110,13 @@ export function parseAttribution(params: Pick<URLSearchParams, "get">): OrderAtt
 export function isOrderAttribution(value: unknown): value is OrderAttribution {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const entries = Object.entries(value);
-  return entries.length > 0 && entries.every(([field, fieldValue]) =>
+  return entries.length > 0 && entries.every(([field, fieldValue]) => field === "opprefCapturedAt"
+    ? isCanonicalCaptureTime(fieldValue) && typeof (value as OrderAttribution).oppref === "string"
+      && Boolean((value as OrderAttribution).oppref)
+    :
     ATTRIBUTION_FIELDS.includes(field as AttributionField) &&
-    typeof fieldValue === "string" && fieldValue.length > 0 && fieldValue.length <= MAX_VALUE_LENGTH,
+    typeof fieldValue === "string" && fieldValue.length > 0 && fieldValue.length <= MAX_VALUE_LENGTH
+      && (field !== "oppref" || !/\s/.test(fieldValue)),
   );
 }
 
@@ -98,7 +128,13 @@ export function saveAttribution(storage: Pick<Storage, "setItem">, customerId: s
 export function readAttribution(storage: Pick<Storage, "getItem">, customerId: string | null): OrderAttribution | null {
   try {
     const value = JSON.parse(storage.getItem(getAttributionStorageKey(customerId)) ?? "null");
-    return isOrderAttribution(value) ? Object.freeze(value) : null;
+    if (isOrderAttribution(value)) return Object.freeze(value);
+    if (value && typeof value === "object" && !Array.isArray(value) && "opprefCapturedAt" in value) {
+      const { opprefCapturedAt: ignoredCaptureTime, ...campaign } = value;
+      void ignoredCaptureTime;
+      if (isOrderAttribution(campaign)) return Object.freeze(campaign);
+    }
+    return null;
   } catch {
     return null;
   }
