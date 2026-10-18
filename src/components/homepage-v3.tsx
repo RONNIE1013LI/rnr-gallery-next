@@ -1,6 +1,7 @@
 import { ShowroomHero } from "./showroom/showroom-hero";
 import Image from "next/image";
 import Link from "next/link";
+import { ROLL_UP_BANNER_PACKAGE_SUMMARY } from "@/domain/catalogue/products";
 import { FaFacebookMessenger } from "react-icons/fa";
 import { StructuredData } from "@/components/structured-data";
 import {
@@ -394,7 +395,7 @@ export function HomepageV3({
             {hasActiveProduct("roll-up-banner") ? (
               <article className={styles.productVertical}>
                 <Artwork slot={homepageV3ImageSlots.rollupProductImage} tone="blue" ratio="four-five" people={2} className={styles.productMedia} productRatio="roll-up-4-5" sizes="(max-width: 412px) calc(100vw - 2rem), 380px" />
-                <div className={styles.productCopy}><h3>Roll-up Banner</h3><p>A custom-designed 85 × 200 cm printed roll-up banner supplied with its stand, carry bag, pegs and box.</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("roll-up-banner")}>Shop Roll-up Banners <Arrow /></Link><Link className={styles.textLink} href={productHref("roll-up-banner")}>Roll-up banner details <Arrow /></Link></div></div>
+                <div className={styles.productCopy}><h3>Roll-up Banner</h3><p>{ROLL_UP_BANNER_PACKAGE_SUMMARY}</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("roll-up-banner")}>Shop Roll-up Banners <Arrow /></Link><Link className={styles.textLink} href={productHref("roll-up-banner")}>Roll-up banner details <Arrow /></Link></div></div>
               </article>
             ) : null}
             {hasActiveProduct("grave-cover") ? (

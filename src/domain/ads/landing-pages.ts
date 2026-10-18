@@ -1,3 +1,5 @@
+import { ROLL_UP_BANNER_SPECIFICATIONS } from "@/domain/catalogue/products";
+
 export type AdLandingPageContent = Readonly<{
   path: `/${string}`;
   productSlug: string;
@@ -16,7 +18,7 @@ export const adLandingPages = Object.freeze({
     productSlug: "roll-up-banner",
     eyebrow: "Custom roll-up banners NZ",
     heading: "Custom Roll-Up Banners for New Zealand Events",
-    description: "A complete portable display with your photos, wording and custom design, ready for birthdays, celebrations and business events.",
+    description: `A complete portable display with your photos, wording and custom design, ready for birthdays, celebrations and business events. ${ROLL_UP_BANNER_SPECIFICATIONS}`,
     sizeSummary: "85 × 200 cm finished banner",
     included: ["Custom design", "Printed roll-up banner", "Display stand", "Carry bag", "Pegs", "Protective box"],
     examples: [

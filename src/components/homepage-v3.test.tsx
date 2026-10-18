@@ -701,7 +701,7 @@ describe("HomepageV3", () => {
     expect(screen.getByRole("link", { name: "Shop Roll-up Banners" }))
       .toHaveAttribute("href", "/products/roll-up-banner/configure");
     expect(screen.getByText(
-      "A custom-designed 85 × 200 cm printed roll-up banner supplied with its stand, carry bag, pegs and box.",
+      "Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box. Printed on grey-backed PET with a premium thick aluminium alloy hook-style stand. Total weight: 3 kg. Supplied with a three-layer carry backpack with an inner compartment and a long zip.",
     )).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Shop Grave Covers" }))
       .toHaveAttribute("href", "/products/grave-cover/configure");

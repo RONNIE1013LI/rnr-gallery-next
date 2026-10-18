@@ -1,6 +1,7 @@
 import { fabricBannerDefaults } from "@/components/fabric-banner-3d/defaults";
 import { FabricBannerPreview } from "@/components/fabric-banner-preview";
 import type { Metadata } from "next";
+import { ROLL_UP_BANNER_SPECIFICATIONS } from "@/domain/catalogue/products";
 import Image from "next/image";
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
@@ -187,6 +188,9 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
           <p className={styles.eyebrow}>{productType} · {occasion}</p>
           <h1>{title}</h1>
           <p className={styles.productDetailLead}>{design.intro}</p>
+          {product.key === "roll-up-banner" ? (
+            <p className={styles.productDetailLead}>{ROLL_UP_BANNER_SPECIFICATIONS}</p>
+          ) : null}
           <dl className={styles.designDetailFacts}>
             <div><dt>Product type</dt><dd>{productType}</dd></div>
             <div><dt>Occasion</dt><dd>{occasion}</dd></div>

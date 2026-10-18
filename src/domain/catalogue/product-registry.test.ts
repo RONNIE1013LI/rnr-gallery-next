@@ -206,6 +206,7 @@ describe("authoritative product registry", () => {
     for (const legacySummary of [
       "A portable personalised display with stand, carry bag and custom artwork.",
       "A custom 85 cm × 200 cm roll-up banner with its display hardware.",
+      "Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box.",
     ]) {
       const legacy = structuredClone(defaultProductRegistry);
       const rollUp = legacy.products.find((product) => product.key === "roll-up-banner");
@@ -217,7 +218,7 @@ describe("authoritative product registry", () => {
           (product) => product.key === "roll-up-banner",
         )?.summary,
       ).toBe(
-        "Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box.",
+        "Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box. Printed on grey-backed PET with a premium thick aluminium alloy hook-style stand. Total weight: 3 kg. Supplied with a three-layer carry backpack with an inner compartment and a long zip.",
       );
     }
 

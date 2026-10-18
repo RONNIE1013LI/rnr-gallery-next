@@ -1,5 +1,11 @@
 import type { Product, ProductCategory } from "./types";
 
+export const ROLL_UP_BANNER_SPECIFICATIONS =
+  "Printed on grey-backed PET with a premium thick aluminium alloy hook-style stand. Total weight: 3 kg. Supplied with a three-layer carry backpack with an inner compartment and a long zip.";
+
+export const ROLL_UP_BANNER_PACKAGE_SUMMARY =
+  `Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box. ${ROLL_UP_BANNER_SPECIFICATIONS}`;
+
 export const PRODUCT_SHOP_IMAGES = {
   "photo-print-canvas": {
     src: "/media/products/photo-print-canvas-shop.webp",
@@ -78,7 +84,7 @@ export const products = Object.freeze([
     category: "banners",
     workflowKey: "roll_up_banner",
     title: "Roll-Up Banner",
-    summary: "Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box.",
+    summary: ROLL_UP_BANNER_PACKAGE_SUMMARY,
     image: PRODUCT_SHOP_IMAGES["roll-up-banner"],
     startingPriceExGstCents: 23_000,
     active: true,

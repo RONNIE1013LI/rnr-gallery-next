@@ -88,7 +88,7 @@ export function getProductPagePresentation(product: Product, market: Market = "N
   if (product.key === "roll-up-banner") {
     return {
       title: market === "AU" ? "Personalised Roll-Up Banner" : "Personalised Roll-Up Banner NZ",
-      summary: "Create a personalised 85 × 200 cm roll-up banner with your photos and wording, supplied with stand, carry bag, pegs and box.",
+      summary: product.summary,
       eyebrow: "Custom roll-up banners",
       prioritizeMobileAction: false,
     };
