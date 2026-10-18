@@ -56,7 +56,7 @@ function publicItem(row: GalleryPublicCandidate): PublicGalleryItem {
     occasionSlug: classification.occasionSlug,
     subOccasion: classification.subOccasion,
     themeSlugs: row.themeSlugs,
-    altText: row.altText,
+    altText: classification.imageAlt ?? row.altText,
     productSlug: row.productSlug,
     contentHash: row.contentHash,
     mimeType: row.mimeType,

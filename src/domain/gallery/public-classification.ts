@@ -19,6 +19,7 @@ export type PublicDesignClassification = Readonly<{
   displayTitle: string;
   seoTitle: string;
   seoDescription: string;
+  imageAlt?: string;
   intro: string;
   seoIndex: boolean;
   hiddenFromListings: boolean;
@@ -37,6 +38,7 @@ type RawClassification = Readonly<{
   displayTitle: string;
   seoTitle: string;
   seoDescription: string;
+  imageAlt?: string;
   intro: string;
   seoIndex: boolean;
   hiddenFromListings: boolean;

@@ -42,6 +42,31 @@ function repository(rows: readonly GalleryPublicCandidate[]): GalleryRepository 
 }
 
 describe("public gallery service", () => {
+  it("uses reviewed artwork descriptions across detail and gallery feeds without changing other image text", async () => {
+    const reviewed = candidate(1, {
+      id: "260235cc91d6115b02dbb875f1bb5d3b5b5195df362a77cfee8a89842cc0cb01",
+      altText: "Wall Hanging Banners design example – Birthday",
+    });
+    const unchanged = candidate(2);
+    const service = createPublicGalleryService({
+      repository: repository([reviewed, unchanged]),
+      imageAvailable: async () => true,
+    });
+    const expected = "First birthday wall banner with a seated baby, four circular photos, cartoon lions and a blue-sky landscape";
+    const [detail, items] = await Promise.all([
+      service.findByPublicSlug("wall-hanging-banners-design-example-birthday-260235cc"),
+      service.findByIds([reviewed.id, unchanged.id]),
+    ]);
+    expect(detail?.altText).toBe(expected);
+    expect(items[0]?.altText).toBe(expected);
+    expect(items[1]?.altText).toBe(unchanged.altText);
+    expect(detail).toMatchObject({
+      publicSlug: "wall-hanging-banners-design-example-birthday-260235cc",
+      seoIndex: true,
+      canonicalPublicSlug: null,
+    });
+  });
+
   it("keeps only indexable, visible designs with available images in the sitemap feed", async () => {
     const indexable = candidate(1, {
       id: "88e63ad4c403d5bcdb37f2ee2f142d63100c970b43808f82f5b6ca21a1aea5aa",
