@@ -91,7 +91,7 @@ export function ConfigurePageContent({
   });
 
   return (
-    <main id="main-content" className={styles.configurePage}>
+    <main id="main-content" className={styles.configurePage} data-product={product.key}>
       <AnalyticsEventTracker
         event={analyticsEvent}
         scopeKey={`${market}:configure:${product.key}:${analyticsSizeKey}`}

@@ -1,7 +1,7 @@
 import type { Product, ProductCategory } from "./types";
 
 export const ROLL_UP_BANNER_SPECIFICATIONS =
-  "Printed on grey-backed PET with a premium thick aluminium alloy hook-style stand. Total weight: 3 kg. Supplied with a three-layer carry backpack with an inner compartment and a long zip.";
+  "Printed on grey-backed PET with a premium thick aluminium alloy hook-style stand. Total weight: 3\u00a0kg. Supplied with a three-layer carry backpack with an inner compartment and a long zip.";
 
 export const ROLL_UP_BANNER_PACKAGE_SUMMARY =
   `Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box. ${ROLL_UP_BANNER_SPECIFICATIONS}`;

@@ -285,6 +285,7 @@ const LEGACY_ROLL_UP_BANNER_SUMMARIES = new Set([
   "A portable personalised display with stand, carry bag and custom artwork.",
   "A custom 85 cm × 200 cm roll-up banner with its display hardware.",
   "Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box.",
+  ROLL_UP_BANNER_PACKAGE_SUMMARY.replace("\u00a0", " "),
 ]);
 
 const LEGACY_PRODUCT_IMAGE_SOURCES: Record<
