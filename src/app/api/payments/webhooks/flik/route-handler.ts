@@ -1,10 +1,17 @@
 import { createHash } from "node:crypto";
+import { after } from "next/server";
 import { verifyFlikWebhook } from "@/server/payments/flik-webhook";
 import { createFlikRuntime } from "@/server/payments/flik-runtime";
+import { createFlikReconciliationWorker } from "@/server/payments/flik-reconciliation-runtime";
 import type { FlikWebhookInput } from "@/server/payments/flik-repository";
 
 const headers = { "Cache-Control": "no-store" };
-type Dependencies = { secret: string; receive: (event: FlikWebhookInput) => Promise<"accepted" | "duplicate" | "conflict"> };
+type Dependencies = {
+  secret: string;
+  receive: (event: FlikWebhookInput) => Promise<"accepted" | "duplicate" | "conflict">;
+  reconcile: (event: FlikWebhookInput) => Promise<boolean>;
+  scheduleAfter: (task: () => Promise<void>) => void;
+};
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers });
 async function rawBody(request: Request) {
   const reader = request.body?.getReader();
@@ -26,9 +33,12 @@ export function createFlikWebhookRoute(dependencies?: Dependencies) {
   return async function POST(request: Request) {
     let deps = dependencies;
     if (!deps) {
-      const runtime = await createFlikRuntime();
+      const deadlineMs = Date.now() + 45_000;
+      const runtime = await createFlikRuntime({ deadlineMs });
       if (!runtime) return json({ error: "Flik is unavailable" }, 404);
-      deps = { secret: runtime.config.webhookSecret, receive: runtime.repository.receiveWebhook };
+      const scheduleAfter = (task: () => Promise<void>) => after(task);
+      deps = { secret: runtime.config.webhookSecret, receive: runtime.repository.receiveWebhook, scheduleAfter,
+        reconcile: (event) => createFlikReconciliationWorker(runtime, scheduleAfter, deadlineMs).reconcileWebhook(event) };
     }
     let bytes: Uint8Array;
     let event;
@@ -37,14 +47,23 @@ export function createFlikWebhookRoute(dependencies?: Dependencies) {
       event = verifyFlikWebhook(bytes, request.headers.get("Flik-Signature"), deps.secret);
     } catch { return json({ error: "Webhook verification failed" }, 400); }
     if (!event) return json({ received: true });
-    try {
-      const result = await deps.receive({ transactionId: event.transactionId,
+    const received: FlikWebhookInput = { transactionId: event.transactionId,
         payloadSha256: createHash("sha256").update(bytes).digest("hex"),
-        checkoutSessionId: event.checkoutSessionId, foreignTransactionId: event.foreignTransactionId });
+        checkoutSessionId: event.checkoutSessionId, foreignTransactionId: event.foreignTransactionId };
+    try {
+      const result = await deps.receive(received);
       if (result === "conflict") return json({ error: "Webhook conflicts with stored data" }, 409);
-      // Durable inbox is committed before ACK. The scheduled worker performs API confirmation.
-      return json({ received: true });
     } catch { return json({ error: "Webhook could not be recorded" }, 503); }
+    // Commit before ACK; after() keeps provider I/O off the response path. A duplicate
+    // can retry interrupted work, and the durable inbox survives a lost after() task.
+    const reconcile = deps.reconcile;
+    try {
+      deps.scheduleAfter(async () => {
+        try { await reconcile(received); }
+        catch { /* Durable inbox/session remains available to the recovery Cron. */ }
+      });
+    } catch { /* Persistence succeeded; the recovery Cron still owns the event. */ }
+    return json({ received: true });
   };
 }
 export const POST = createFlikWebhookRoute();

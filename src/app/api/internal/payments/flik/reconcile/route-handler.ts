@@ -1,11 +1,7 @@
 import { after } from "next/server";
 import { timingSafeSecretEqual } from "../../reconcile/route-handler";
 import { createFlikRuntime } from "@/server/payments/flik-runtime";
-import { createFlikReconciliation } from "@/server/payments/flik-reconciliation";
-import { createDrizzlePaymentRepository } from "@/server/payments/drizzle-payment-repository";
-import { getDatabase } from "@/server/db/client";
-import { createPaidOrderMeasurementObserver } from "@/server/analytics/paid-order-measurement";
-import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
+import { createFlikReconciliationWorker } from "@/server/payments/flik-reconciliation-runtime";
 
 const headers = { "Cache-Control": "no-store" };
 export function createFlikReconciliationRoute(dependencies?: {
@@ -21,25 +17,7 @@ export function createFlikReconciliationRoute(dependencies?: {
       const deadlineMs = Date.now() + 45_000;
       const runtime = await createFlikRuntime({ deadlineMs });
       if (!runtime) return Response.json({ disabled: true }, { headers });
-      const paidObserver = createPaidOrderMeasurementObserver((task) => after(task));
-      const notificationObserver = createImmediateNotificationDeliveryObserver({ scheduleAfter: (task) => after(task) });
-      const worker = createFlikReconciliation({ ...runtime, testMode: runtime.config.testMode, deadlineMs,
-        async canRecoverCreation() {
-          if (runtime.config.testMode) return true;
-          const { getFlikFeatureSnapshot } = await import("@/server/payments/flik-feature");
-          const feature = await getFlikFeatureSnapshot();
-          return feature.ready && feature.status === "live";
-        },
-        async applyLiveResult(attemptId, result) {
-          // Test runtime never instantiates or invokes the commerce completion repository.
-          if (runtime.config.testMode || result.testMode !== false) throw new Error("Live payment required");
-          const applied = await createDrizzlePaymentRepository(getDatabase()).applyVerifiedResult({ attemptId, result, source: "reconciliation" });
-          if (applied.order.paymentStatus === "paid") {
-            paidObserver(applied.order.orderNumber);
-            notificationObserver();
-          }
-        },
-      });
+      const worker = createFlikReconciliationWorker(runtime, (task) => after(task), deadlineMs);
       return Response.json(await worker.run(), { headers });
     } catch { return Response.json({ error: "Reconciliation unavailable; payments remain pending" }, { status: 503, headers }); }
   };

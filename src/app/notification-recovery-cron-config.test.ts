@@ -8,6 +8,14 @@ const halfHourlyRecoveryPaths = [
 ] as const;
 
 describe("notification and recovery Cron topology", () => {
+  it("runs only five daily payment fallback scans, at most five hours apart", async () => {
+    const config = JSON.parse(await readFile(resolve(process.cwd(), "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    for (const path of ["/api/internal/payment-requests/expire", "/api/internal/payments/flik/reconcile"]) {
+      expect(config.crons.filter(entry => entry.path === path)).toEqual([{ path, schedule: "0 0,5,10,15,20 * * *" }]);
+    }
+  });
   it("runs customer notification recovery every 12 hours", async () => {
     const config = JSON.parse(
       await readFile(resolve(process.cwd(), "vercel.json"), "utf8"),

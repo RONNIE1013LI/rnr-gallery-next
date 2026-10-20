@@ -38,6 +38,66 @@ function fixture(overrides: Partial<FlikSessionRecord> = {}) {
 }
 
 describe("Flik session and completion integration", () => {
+  const event = { transactionId: "txn", foreignTransactionId: id, checkoutSessionId: "cs_fixture" };
+  it("confirms the newly received webhook without a customer return or scanning older work", async () => {
+    const { repository, sessions } = fixture();
+    const applyLiveResult = vi.fn();
+    const worker = createFlikReconciliation({ repository, sessions, testMode: false, applyLiveResult });
+    expect(await worker.reconcileWebhook(event)).toBe(true);
+    expect(applyLiveResult).toHaveBeenCalledWith(id, expect.objectContaining({ status: "paid" }));
+    expect(repository.markWebhookProcessed).toHaveBeenCalledWith("txn");
+    expect(repository.listPendingSessions).not.toHaveBeenCalled();
+    expect(repository.listPendingWebhooks).not.toHaveBeenCalled();
+  });
+  it("retains an immediate API failure for a later periodic recovery", async () => {
+    const { repository, sessions, client } = fixture();
+    const applyLiveResult = vi.fn();
+    const worker = createFlikReconciliation({ repository, sessions, testMode: false, applyLiveResult });
+    client.retrieveSession.mockRejectedValueOnce(new Error("timeout"));
+    expect(await worker.reconcileWebhook(event)).toBe(false);
+    expect(repository.markSessionApplied).not.toHaveBeenCalled();
+    expect(repository.markWebhookProcessed).not.toHaveBeenCalled();
+    expect(await worker.run()).toMatchObject({ confirmed: 1 });
+    expect(applyLiveResult).toHaveBeenCalledOnce();
+    expect(client.createSession).not.toHaveBeenCalled();
+  });
+  it.each([null, "cs_other"])("does not create or confirm a callback with unbound/mismatched session %s", async providerReference => {
+    const { repository, sessions, client } = fixture({ providerReference });
+    const applyLiveResult = vi.fn();
+    expect(await createFlikReconciliation({ repository, sessions, testMode: false, applyLiveResult }).reconcileWebhook(event)).toBe(false);
+    expect(client.createSession).not.toHaveBeenCalled();
+    expect(client.retrieveSession).not.toHaveBeenCalled();
+    expect(applyLiveResult).not.toHaveBeenCalled();
+    expect(repository.markWebhookProcessed).not.toHaveBeenCalled();
+  });
+  it("leaves an interrupted webhook pending for a fresh worker after restart", async () => {
+    const { repository, sessions, client } = fixture();
+    const applyLiveResult = vi.fn();
+    const expired = createFlikReconciliation({ repository, sessions, testMode: false, applyLiveResult, deadlineMs: 100, now: () => 100 });
+    expect(await expired.reconcileWebhook(event)).toBe(false);
+    expect(client.retrieveSession).not.toHaveBeenCalled();
+    expect(repository.markWebhookProcessed).not.toHaveBeenCalled();
+    expect(await createFlikReconciliation({ repository, sessions, testMode: false, applyLiveResult }).reconcileWebhook(event)).toBe(true);
+  });
+  it("never acknowledges a webhook as processed when its commerce commit fails", async () => {
+    const { repository, sessions } = fixture();
+    const applyLiveResult = vi.fn().mockRejectedValueOnce(new Error("commit failed"));
+    const worker = createFlikReconciliation({ repository, sessions, testMode: false, applyLiveResult });
+    expect(await worker.reconcileWebhook(event)).toBe(false);
+    expect(repository.markSessionApplied).not.toHaveBeenCalled();
+    expect(repository.markWebhookProcessed).not.toHaveBeenCalled();
+    expect(await worker.reconcileWebhook(event)).toBe(true);
+  });
+  it("rejects test/live mismatches and unknown sessions on the immediate path", async () => {
+    const { repository, sessions } = fixture({ testMode: true });
+    const applyLiveResult = vi.fn();
+    const worker = createFlikReconciliation({ repository, sessions, testMode: false, applyLiveResult });
+    expect(await worker.reconcileWebhook(event)).toBe(false);
+    repository.findSession.mockResolvedValueOnce(null);
+    expect(await worker.reconcileWebhook(event)).toBe(false);
+    expect(applyLiveResult).not.toHaveBeenCalled();
+    expect(repository.markWebhookProcessed).not.toHaveBeenCalled();
+  });
   it("does not create an unbound payment from the worker without current creation permission", async () => {
     const { repository, sessions, client } = fixture({ providerReference: null, hostedUrl: null });
     const applyLiveResult = vi.fn();

@@ -1,4 +1,4 @@
-import type { FlikRepository, FlikSessionRecord } from "./flik-repository";
+import type { FlikRepository, FlikSessionRecord, FlikWebhookInput } from "./flik-repository";
 import type { createFlikSessionService } from "./flik-session-service";
 import { flikPaymentResult } from "./flik-session-service";
 import type { VerifiedPaymentResult } from "./types";
@@ -34,7 +34,25 @@ export function createFlikReconciliation({ repository, sessions, testMode, apply
     }
     return true;
   }
+  // Both callers pass a durably received event. Never create a payment from a callback.
+  async function reconcileWebhook(event: Pick<FlikWebhookInput, "transactionId" | "foreignTransactionId" | "checkoutSessionId">) {
+    if (now() >= deadlineMs) return false;
+    try {
+      const row = await repository.findSession(event.foreignTransactionId);
+      if (!row?.providerReference || row.providerReference !== event.checkoutSessionId) {
+        await repository.deferWebhook(event.transactionId);
+        return false;
+      }
+      if (!await reconcile(row)) return false;
+      await repository.markWebhookProcessed(event.transactionId);
+      return true;
+    } catch {
+      await repository.deferWebhook(event.transactionId);
+      return false;
+    }
+  }
   return {
+    reconcileWebhook,
     async run() {
       const result = { processed: 0, confirmed: 0, pending: 0 };
       const visited = new Set<string>();

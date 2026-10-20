@@ -6,6 +6,9 @@ import { flikCheckoutSessions } from "@/server/db/schema/flik";
 import { createDrizzleFlikRepository, type FlikSessionSnapshot } from "./flik-repository";
 import type { VerifiedPaymentResult } from "./types";
 import { createDrizzlePaymentRepository } from "./drizzle-payment-repository";
+import { createFlikReconciliation } from "./flik-reconciliation";
+import { createFlikSessionService } from "./flik-session-service";
+import type { EnabledFlikConfig } from "./flik-config";
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error("TEST_DATABASE_URL is required");
@@ -133,7 +136,26 @@ describe("Flik repository against disposable PostgreSQL", () => {
     await repository.recoverLiveAttemptBinding(row.id);
     const result: VerifiedPaymentResult = { providerReference: row.providerReference!, providerStatus: "completed", amountCents: 100,
       currency: "NZD", orderNumber: order.reference, foreignTransactionId: row.id, testMode: false, status: "paid" };
-    const outcomes = await Promise.all(Array.from({ length: 8 }, () => payments.applyVerifiedResult({ attemptId: row.id, source: "reconciliation", result })));
+    const event = { transactionId: randomUUID(), checkoutSessionId: row.providerReference!, foreignTransactionId: row.id, payloadSha256: "c".repeat(64) };
+    await repository.receiveWebhook(event);
+    const config: EnabledFlikConfig = { enabled: true, mode: "live", testMode: false, deployment: "production",
+      clientId: "flik_live_cid_fixture", clientSecret: "flik_live_sk_fixture", webhookSecret: "whsec_fixture" };
+    const sessions = createFlikSessionService({ config, repository, client: {
+      createSession: async () => { throw new Error("Webhook must never create another payment"); },
+      retrieveSession: async () => ({ id: row.providerReference!, status: "completed", amountCents: 100, currency: "NZD",
+        foreignTransactionId: row.id, testMode: false, expiresAt: row.expiresAt!.toISOString(), transactionType: "open_banking" }),
+    } });
+    const worker = createFlikReconciliation({ repository, sessions, testMode: false, applyLiveResult: async (attemptId, verified) => {
+      await payments.applyVerifiedResult({ attemptId, source: "reconciliation", result: verified });
+    } });
+    // Duplicate webhook after() callbacks can overlap the existing customer-return apply.
+    const [outcomes, callbacks] = await Promise.all([
+      Promise.all(Array.from({ length: 4 }, () => payments.applyVerifiedResult({ attemptId: row.id, source: "reconciliation", result }))),
+      Promise.all(Array.from({ length: 4 }, () => worker.reconcileWebhook(event))),
+    ]);
+    expect(callbacks).toEqual([true, true, true, true]);
+    expect((await repository.findSession(row.id))?.appliedAt).toBeInstanceOf(Date);
+    expect((await repository.listPendingWebhooks(50)).some(pending => pending.transactionId === event.transactionId)).toBe(false);
     expect(new Set(outcomes.map((outcome) => outcome.order.orderNumber)).size).toBe(1);
     const counts = await pool.query(`SELECT (SELECT count(*) FROM payment_ledger_entries WHERE order_id=$1 AND entry_type='online_payment')::int AS receipts,
       (SELECT count(*) FROM production_jobs WHERE order_id=$1)::int AS jobs,
