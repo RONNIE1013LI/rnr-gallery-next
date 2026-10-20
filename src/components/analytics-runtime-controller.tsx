@@ -8,6 +8,7 @@ import {
   endGaHistorySuppression,
   markGaTransportReady,
   resetGaTransport,
+  sendControlledAdsPageView,
   sendControlledGaEvent,
   suppressGaCollection,
 } from "@/domain/analytics/client";
@@ -252,9 +253,12 @@ export function AnalyticsRuntimeController({
   const [ready, setReady] = useState(false);
   const tagLoaded = useRef(false);
   const lastPageView = useRef<string | null>(null);
+  const lastAdsPageView = useRef<string | null>(null);
 
   useLayoutEffect(() => {
     let active = true;
+    let adsInitialized = false;
+    let googleScriptLoaded = false;
     const prepareLocation = (url: URL) => {
       applyGa4LocationPolicy(url, googleAllowed, analyticsAllowed, advertisingAllowed, false);
     };
@@ -274,10 +278,15 @@ export function AnalyticsRuntimeController({
           debugMode: storedDebugMode(),
           policy: classifyGa4Location(url.pathname, url.searchParams),
         };
-      if (!analyticsAllowed || state.policy !== "public" || !tagLoaded.current) return;
+      if (state.policy !== "public") return;
 
       const pageLocation = safeGa4PageLocation(url, advertisingAllowed);
-      if (lastPageView.current === pageLocation) return;
+      if (advertisingAllowed && adsInitialized && googleScriptLoaded && isCurrentLocation
+        && lastAdsPageView.current !== pageLocation) {
+        lastAdsPageView.current = pageLocation;
+        sendControlledAdsPageView(pageLocation);
+      }
+      if (!analyticsAllowed || !tagLoaded.current || lastPageView.current === pageLocation) return;
       lastPageView.current = pageLocation;
       sendControlledGaEvent("page_view", {
         page_location: pageLocation,
@@ -285,13 +294,13 @@ export function AnalyticsRuntimeController({
         ...(state.debugMode ? { debug_mode: true } : {}),
       });
     };
-    let adsInitialized = false;
     const activateAds = () => {
       if (!active || !advertisingAllowed || adsInitialized) return;
       const dataLayer = (window as Ga4Window & { dataLayer?: unknown[] }).dataLayer;
       if (!Array.isArray(dataLayer)) return;
       dataLayer.push(googleTagCommand("config", GOOGLE_ADS_TAG_ID, { send_page_view: false }));
       adsInitialized = true;
+      if (googleScriptLoaded) settleLocation(new URL(window.location.href));
       setReady(true);
     };
     const prepareHistoryLocation = (url: URL) => {
@@ -341,6 +350,7 @@ export function AnalyticsRuntimeController({
       const target = event.target;
       if (target instanceof HTMLScriptElement
         && (target.id === "_next-ga" || target.id === "rnr-google-ads")) {
+        googleScriptLoaded = true;
         tagLoaded.current = true;
         document.documentElement.dataset.ga4Loaded = "true";
         settleLocation(new URL(window.location.href));
@@ -403,6 +413,7 @@ export function AnalyticsRuntimeController({
       document.documentElement.removeAttribute("data-google-ads-enabled");
       tagLoaded.current = false;
       lastPageView.current = null;
+      lastAdsPageView.current = null;
       resetGaTransport();
     };
   }, [advertisingAllowed, analyticsAllowed, googleAllowed]);

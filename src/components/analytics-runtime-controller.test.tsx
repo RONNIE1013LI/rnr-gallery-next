@@ -106,6 +106,13 @@ function loadGoogleTagScriptOnly(script: HTMLElement) {
   act(() => script.dispatchEvent(new Event("load")));
 }
 
+function adsPageViews() {
+  return ((window as unknown as { dataLayer?: unknown[] }).dataLayer ?? [])
+    .map((command) => Array.from(command as ArrayLike<unknown>))
+    .filter((command) => command[0] === "event" && command[1] === "page_view"
+      && (command[2] as Record<string, unknown>)?.send_to === GOOGLE_ADS_TAG_ID);
+}
+
 describe("AnalyticsRuntimeController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -250,6 +257,7 @@ describe("AnalyticsRuntimeController", () => {
     };
     const view = render(<AnalyticsRuntimeController production />);
     const script = await view.findByTestId("google-ads-script");
+    expect(adsPageViews()).toEqual([]);
 
     act(() => script.dispatchEvent(new Event("load")));
 
@@ -269,8 +277,174 @@ describe("AnalyticsRuntimeController", () => {
     });
     expect(adsConfig).toBeDefined();
     expect(Array.isArray(adsConfig)).toBe(false);
+    expect(Array.from(adsConfig as ArrayLike<unknown>)).toEqual([
+      "config", GOOGLE_ADS_TAG_ID, { send_page_view: false },
+    ]);
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect(document.documentElement.dataset.googleAdsEnabled).toBe("true");
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect(adsPageViews()).toEqual([["event", "page_view", {
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
+      send_to: GOOGLE_ADS_TAG_ID,
+    }]]);
+    const pageView = (window as unknown as { dataLayer: unknown[] }).dataLayer
+      .find((command) => Array.from(command as ArrayLike<unknown>)[0] === "event");
+    expect(Array.isArray(pageView)).toBe(false);
+  });
+
+  it("sends the Ads pageview when its deferred config follows the Google script load", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+    vi.stubGlobal("requestIdleCallback", vi.fn((callback: IdleRequestCallback) => {
+      callback({ didTimeout: false, timeRemaining: () => 20 });
+      return 1;
+    }));
+    setLocation("/shop", "utm_source=google&gclid=example-click&search=private-search");
+    const view = render(<AnalyticsRuntimeController production />);
+    act(() => window.dispatchEvent(new Event("load")));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    loadGoogleTagScriptOnly(view.getByTestId("official-google-analytics"));
+    expect(adsPageViews()).toEqual([]);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+
+    expect(adsPageViews()).toEqual([["event", "page_view", {
+      page_location: "http://localhost:3000/shop?utm_source=google&gclid=example-click",
+      page_referrer: "",
+      send_to: GOOGLE_ADS_TAG_ID,
+    }]]);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    markGoogleTagReady();
+    expect(vi.mocked(sendGAEvent).mock.calls.filter((call) => call[1] === "page_view"))
+      .toHaveLength(1);
+    act(() => view.getByTestId("official-google-analytics").dispatchEvent(new Event("load")));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(adsPageViews()).toHaveLength(1);
+  });
+
+  it("deduplicates Ads-only public pageviews and skips sensitive SPA locations", async () => {
+    consentState.value = { ...consentState.value!, analytics: false };
+    setLocation("/shop", "utm_source=google&gclid=example-click&search=private-search");
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("google-ads-script");
+    act(() => script.dispatchEvent(new Event("load")));
+    vi.useFakeTimers();
+
+    for (const pathname of [
+      "/shop?utm_source=google&gclid=example-click&search=another-private-search",
+      "/orders/private?access=private-order-token",
+      "/shop?email=private%40example.test",
+      "/products/roll-up-banner?utm_source=google&search=private-search#private-fragment",
+      "/products/roll-up-banner?utm_source=google",
+    ]) {
+      await act(async () => {
+        window.history.pushState({}, "", pathname);
+        await vi.advanceTimersByTimeAsync(1100);
+      });
+    }
+
+    expect(adsPageViews()).toEqual([
+      ["event", "page_view", {
+        page_location: "http://localhost:3000/shop?utm_source=google&gclid=example-click",
+        page_referrer: "",
+        send_to: GOOGLE_ADS_TAG_ID,
+      }],
+      ["event", "page_view", {
+        page_location: "http://localhost:3000/products/roll-up-banner?utm_source=google",
+        page_referrer: "",
+        send_to: GOOGLE_ADS_TAG_ID,
+      }],
+    ]);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    consentState.value = { ...consentState.value!, advertising: false };
+    view.rerender(<AnalyticsRuntimeController production />);
+    await act(async () => {
+      window.history.pushState({}, "", "/");
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(adsPageViews()).toHaveLength(2);
+  });
+
+  it("keeps Ads pageviews working after the GA4 readiness callback times out", async () => {
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("official-google-analytics");
+    vi.useFakeTimers();
+    loadGoogleTagScriptOnly(script);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    await act(async () => {
+      window.history.pushState({}, "", "/shop");
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+
+    expect(adsPageViews()).toEqual([
+      ["event", "page_view", {
+        page_location: "http://localhost:3000/",
+        page_referrer: "",
+        send_to: GOOGLE_ADS_TAG_ID,
+      }],
+      ["event", "page_view", {
+        page_location: "http://localhost:3000/shop",
+        page_referrer: "",
+        send_to: GOOGLE_ADS_TAG_ID,
+      }],
+    ]);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("ignores stale history timers around Ads activation and private navigation", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "readyState", "get").mockReturnValue("loading");
+    vi.spyOn(performance, "getEntriesByType").mockReturnValue([]);
+    vi.stubGlobal("requestIdleCallback", vi.fn((callback: IdleRequestCallback) => {
+      callback({ didTimeout: false, timeRemaining: () => 20 });
+      return 1;
+    }));
+    const view = render(<AnalyticsRuntimeController production />);
+    act(() => window.dispatchEvent(new Event("load")));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    loadGoogleTag(view.getByTestId("official-google-analytics"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2800);
+      window.history.pushState({}, "", "/shop");
+      await vi.advanceTimersByTimeAsync(100);
+      window.history.pushState({}, "", "/products/roll-up-banner");
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+
+    expect(adsPageViews()).toEqual([["event", "page_view", {
+      page_location: "http://localhost:3000/products/roll-up-banner",
+      page_referrer: "",
+      send_to: GOOGLE_ADS_TAG_ID,
+    }]]);
+
+    await act(async () => {
+      window.history.pushState({}, "", "/shop");
+      await vi.advanceTimersByTimeAsync(100);
+      window.history.pushState({}, "", "/orders/private?access=private-order-token");
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(adsPageViews()).toHaveLength(1);
+  });
+
+  it.each([
+    "/admin",
+    "/checkout?client_secret=private-checkout-token",
+    "/orders/private?access=private-order-token",
+    "/shop?email=private%40example.test",
+  ])("does not send an Ads pageview on direct private location %s", async (pathname) => {
+    consentState.value = { ...consentState.value!, analytics: false };
+    setLocation(pathname);
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("google-ads-script");
+    act(() => script.dispatchEvent(new Event("load")));
+
+    expect(adsPageViews()).toEqual([]);
     expect(sendGAEvent).not.toHaveBeenCalled();
   });
 
@@ -342,6 +516,7 @@ describe("AnalyticsRuntimeController", () => {
       ad_user_data: "denied",
       ad_personalization: "denied",
     }]);
+    expect(adsPageViews()).toEqual([]);
     view.unmount();
   });
 
@@ -370,6 +545,7 @@ describe("AnalyticsRuntimeController", () => {
         );
         processedCommands += 1;
         if (command[0] === "event"
+          && (command[2] as Record<string, unknown>)?.send_to === GA4_MEASUREMENT_ID
           && (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] !== true) {
           collected.push(command);
         }
@@ -590,6 +766,7 @@ describe("AnalyticsRuntimeController", () => {
         );
         processedCommands += 1;
         if (command[0] === "event"
+          && (command[2] as Record<string, unknown>)?.send_to === GA4_MEASUREMENT_ID
           && (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] !== true) {
           collected.push(command);
         }
@@ -961,6 +1138,7 @@ describe("AnalyticsRuntimeController", () => {
     expect(sessionStorage.getItem(GA4_DEBUG_SESSION_KEY)).toBeNull();
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    expect(adsPageViews()).toEqual([]);
   });
 
   it("marks the official script ready from its load event", async () => {

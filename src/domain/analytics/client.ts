@@ -249,6 +249,14 @@ export function sendControlledGaEvent(
   sendControlledDestinationEvent(eventName, payload, GA4_MEASUREMENT_ID);
 }
 
+export function sendControlledAdsPageView(pageLocation: string): void {
+  const dataLayer = (window as Window & { dataLayer?: unknown[] }).dataLayer;
+  if (!Array.isArray(dataLayer)) return;
+  dataLayer.push(googleTagCommand("event", "page_view", safePageContext({
+    page_location: pageLocation,
+  }, GOOGLE_ADS_TAG_ID)));
+}
+
 export function markGaTransportReady(): void {
   gaTransportReady = true;
   flushPendingGaEvents();
