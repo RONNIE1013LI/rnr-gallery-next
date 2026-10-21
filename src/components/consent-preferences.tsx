@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   parseAdvertisingConsent,
   type AdvertisingConsent,
@@ -8,6 +8,7 @@ import {
 
 type AdvertisingConsentContextValue = Readonly<{
   consent: AdvertisingConsent | null;
+  explicitAdvertising: boolean;
   openPreferences: () => void;
 }>;
 
@@ -15,6 +16,20 @@ const AdvertisingConsentContext = createContext<AdvertisingConsentContextValue |
 
 export function useAdvertisingConsent(): AdvertisingConsent | null {
   return useContext(AdvertisingConsentContext)?.consent ?? null;
+}
+
+const TIKTOK_CHOICE_KEY = "rnr:tiktok:explicit-consent:v1";
+const subscribeTikTokChoice = (notify: () => void) => {
+  window.addEventListener("rnr:tiktok:consent", notify);
+  return () => window.removeEventListener("rnr:tiktok:consent", notify);
+};
+export function useExplicitAdvertisingConsent(): boolean | null {
+  const context = useContext(AdvertisingConsentContext);
+  return useSyncExternalStore(subscribeTikTokChoice, () => {
+    if (!context?.consent?.advertising) return false;
+    try { return context.explicitAdvertising || sessionStorage.getItem(TIKTOK_CHOICE_KEY) === context.consent.decidedAt; }
+    catch { return context.explicitAdvertising; }
+  }, () => null);
 }
 
 export function CookiePreferencesTrigger() {
@@ -46,6 +61,7 @@ export function ConsentPreferences({
   initialConsent: AdvertisingConsent | null;
   children: React.ReactNode;
 }>) {
+  const [explicitAdvertising, setExplicitAdvertising] = useState(false);
   const [consent, setConsent] = useState(initialConsent);
   const [open, setOpen] = useState(false);
   const [managing, setManaging] = useState(false);
@@ -62,7 +78,12 @@ export function ConsentPreferences({
     setOpen(true);
   }
 
-  const save = useCallback(async (next: Choice) => {
+  const save = useCallback(async (next: Choice, explicit = true) => {
+    if (explicit && !next.advertising) {
+      setExplicitAdvertising(false);
+      try { sessionStorage.removeItem(TIKTOK_CHOICE_KEY); } catch { /* Storage may be unavailable. */ }
+      window.dispatchEvent(new Event("rnr:tiktok:consent"));
+    }
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
@@ -71,7 +92,7 @@ export function ConsentPreferences({
       const response = await fetch("/api/consent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(next),
+        body: JSON.stringify({ ...next, ...(explicit ? { tiktokAdvertising: next.advertising } : {}) }),
       });
       if (!response.ok) throw new Error("Consent save failed");
       const payload = await response.json() as { consent?: unknown };
@@ -80,6 +101,14 @@ export function ConsentPreferences({
       );
       if (!saved) throw new Error("Invalid consent response");
       setConsent(saved);
+      if (explicit) {
+        setExplicitAdvertising(saved.advertising);
+        try {
+          if (saved.advertising) sessionStorage.setItem(TIKTOK_CHOICE_KEY, saved.decidedAt);
+          else sessionStorage.removeItem(TIKTOK_CHOICE_KEY);
+        } catch { /* Explicit choice still works for this document. */ }
+        window.dispatchEvent(new Event("rnr:tiktok:consent"));
+      }
       setChoice(choicesFromConsent(saved));
       setManaging(false);
       setOpen(false);
@@ -95,11 +124,11 @@ export function ConsentPreferences({
   useEffect(() => {
     if (initialConsent || defaultSaved.current) return;
     defaultSaved.current = true;
-    void save({ analytics: true, advertising: true });
+    void save({ analytics: true, advertising: true }, false);
   }, [initialConsent, save]);
 
   return (
-    <AdvertisingConsentContext value={{ consent, openPreferences }}>
+    <AdvertisingConsentContext value={{ consent, explicitAdvertising, openPreferences }}>
       {children}
       {open ? <section className="consent-preferences" aria-label="Cookie preferences">
         <div className="consent-preferences__content">

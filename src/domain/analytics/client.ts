@@ -1,5 +1,6 @@
 "use client";
 
+import { emitTikTokAnalyticsEvent } from "./tiktok";
 import { sendGAEvent } from "@next/third-parties/google";
 import { isMeaningfulAnalyticsAction, requestThirdPartyTransport } from "./deferred-third-party";
 import type { AnalyticsEvent, AnalyticsItem } from "./events";
@@ -372,6 +373,9 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
       return false;
     }
 
+    if (["view_item", "add_to_cart", "begin_checkout"].includes(event.event)) {
+      try { emitTikTokAnalyticsEvent(event); } catch { /* Optional tracking must not affect the business action. */ }
+    }
     const metaRequired = isMetaAnalyticsRequired();
     if (metaRequired) {
       metaSent = emitMetaAnalyticsEvent(event);

@@ -127,7 +127,7 @@ describe("ConsentPreferences", () => {
 
     await waitFor(() => expect(screen.getByText("false:false")).toBeInTheDocument());
     expect(fetch).toHaveBeenLastCalledWith("/api/consent", expect.objectContaining({
-      body: JSON.stringify({ analytics: false, advertising: false }),
+      body: JSON.stringify({ analytics: false, advertising: false, tiktokAdvertising: false }),
     }));
   });
 

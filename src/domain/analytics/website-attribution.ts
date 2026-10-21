@@ -95,6 +95,9 @@ export function classifyWebsiteAttribution(input: AttributionInput): WebsiteAttr
   ) {
     return result("meta_ads", source ?? "meta", medium, campaign);
   }
+  if (key === "tiktok" || key === "tiktok_ads") {
+    return result("other", key === "tiktok_ads" || (medium && META_PAID_MEDIA.has(medium)) ? "tiktok_ads" : "tiktok", medium, campaign);
+  }
   if (medium && (GOOGLE_PAID_MEDIA.has(medium) || META_PAID_MEDIA.has(medium))) {
     return result("other", source ?? "unknown", medium, campaign);
   }
@@ -107,6 +110,7 @@ export function classifyWebsiteAttribution(input: AttributionInput): WebsiteAttr
     return result("google_organic", source ?? "google", medium ?? "organic", campaign);
   }
   if (source) return result("other", source, medium, campaign);
+  if (host === "tiktok.com" || host?.endsWith(".tiktok.com")) return result("other", "tiktok", "referral", campaign);
   if (host) return result("other", host, "referral", campaign);
   return result("direct", "direct", null, campaign);
 }

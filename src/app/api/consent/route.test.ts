@@ -93,6 +93,18 @@ describe("consent route", () => {
     expect(response.status).toBe(200);
     expect(cookie).toContain("ra_vid_v1=");
     expect(cookie).toContain("ra_sid_v1=");
-    expect(cookie.match(/Max-Age=0/g)).toHaveLength(2);
+    expect(cookie.match(/Max-Age=0/g)).toHaveLength(3);
   });
+});
+
+it('sets a separate HttpOnly TikTok decision only for explicit choices and clears it on refusal',async()=>{
+ const route=createConsentRoute({trustedOrigin:origin,now:()=>now,environment:'production'});
+ const automatic=await route.POST(consentRequest({analytics:true,advertising:true}));
+ expect(automatic.headers.get('set-cookie')).not.toContain('rnr-tiktok-choice-v1=');
+ const explicit=await route.POST(consentRequest({analytics:true,advertising:true,tiktokAdvertising:true}));
+ expect(explicit.status).toBe(200);
+ expect(explicit.headers.get('set-cookie')).toContain('rnr-tiktok-choice-v1='+encodeURIComponent(now.toISOString()));
+ expect(explicit.headers.get('set-cookie')).toContain('HttpOnly');
+ const refused=await route.POST(consentRequest({analytics:false,advertising:false,tiktokAdvertising:false}));
+ expect(refused.headers.get('set-cookie')).toContain('rnr-tiktok-choice-v1=;');
 });

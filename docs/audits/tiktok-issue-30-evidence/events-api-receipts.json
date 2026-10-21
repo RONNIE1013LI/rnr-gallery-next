@@ -1,0 +1,116 @@
+[
+  {
+    "event": "Pageview",
+    "properties": [],
+    "page": "https://rnrgallery.com/products/test-canvas",
+    "userFields": [],
+    "httpStatus": 200,
+    "code": 0,
+    "message": "OK"
+  },
+  {
+    "event": "ViewContent",
+    "currency": "NZD",
+    "value": 25,
+    "properties": [
+      "currency",
+      "value",
+      "content_type",
+      "contents"
+    ],
+    "page": "https://rnrgallery.com/products/test-canvas",
+    "userFields": [],
+    "httpStatus": 200,
+    "code": 0,
+    "message": "OK"
+  },
+  {
+    "event": "AddToCart",
+    "currency": "NZD",
+    "value": 25,
+    "properties": [
+      "currency",
+      "value",
+      "content_type",
+      "contents"
+    ],
+    "page": "https://rnrgallery.com/products/test-canvas",
+    "userFields": [],
+    "httpStatus": 200,
+    "code": 0,
+    "message": "OK"
+  },
+  {
+    "event": "Pageview",
+    "properties": [],
+    "page": "https://rnrgallery.com/checkout",
+    "userFields": [],
+    "httpStatus": 200,
+    "code": 0,
+    "message": "OK"
+  },
+  {
+    "event": "InitiateCheckout",
+    "currency": "NZD",
+    "value": 25,
+    "properties": [
+      "currency",
+      "value",
+      "content_type",
+      "contents"
+    ],
+    "page": "https://rnrgallery.com/checkout",
+    "userFields": [],
+    "httpStatus": 200,
+    "code": 0,
+    "message": "OK"
+  },
+  {
+    "event": "ViewContent",
+    "currency": "AUD",
+    "value": 25,
+    "properties": [
+      "currency",
+      "value",
+      "content_type",
+      "contents"
+    ],
+    "page": "https://rnrgallery.com/products/test-canvas",
+    "userFields": [],
+    "httpStatus": 200,
+    "code": 0,
+    "message": "OK"
+  },
+  {
+    "event": "AddToCart",
+    "currency": "AUD",
+    "value": 25,
+    "properties": [
+      "currency",
+      "value",
+      "content_type",
+      "contents"
+    ],
+    "page": "https://rnrgallery.com/products/test-canvas",
+    "userFields": [],
+    "httpStatus": 200,
+    "code": 0,
+    "message": "OK"
+  },
+  {
+    "event": "InitiateCheckout",
+    "currency": "AUD",
+    "value": 25,
+    "properties": [
+      "currency",
+      "value",
+      "content_type",
+      "contents"
+    ],
+    "page": "https://rnrgallery.com/checkout",
+    "userFields": [],
+    "httpStatus": 200,
+    "code": 0,
+    "message": "OK"
+  }
+]

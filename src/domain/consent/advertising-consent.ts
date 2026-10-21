@@ -67,3 +67,13 @@ export function advertisingConsentCookieHeader(
     ...(secure ? ["Secure"] : []),
   ].join("; ");
 }
+
+export const TIKTOK_CONSENT_COOKIE = "rnr-tiktok-choice-v1";
+export function tiktokConsentCookieHeader(consent: AdvertisingConsent, environment: string | undefined) {
+  const secure = process.env.NODE_ENV === "production" || environment === "production";
+  return [
+    `${TIKTOK_CONSENT_COOKIE}=${consent.advertising ? encodeURIComponent(consent.decidedAt) : ""}`,
+    "Path=/", `Max-Age=${consent.advertising ? ADVERTISING_CONSENT_MAX_AGE_SECONDS : 0}`,
+    "HttpOnly", "SameSite=Lax", ...(secure ? ["Secure"] : []),
+  ].join("; ");
+}

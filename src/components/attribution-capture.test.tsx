@@ -4,7 +4,7 @@ import { buildStoredOrderAttribution, getAttributionStorageKey, readAttribution 
 import { readAttributionHistory, handoffAttributionHistory } from "@/domain/analytics/attribution-history";
 const preferences = vi.hoisted(() => ({ available: true, analytics: true, advertising: true }));
 vi.mock("next/navigation", () => ({ usePathname: () => window.location.pathname, useSearchParams: () => new URLSearchParams(window.location.search) }));
-vi.mock("./consent-preferences", () => ({ useAdvertisingConsent: () => preferences.available ? { ...preferences } : null }));
+vi.mock("./consent-preferences", () => ({ useExplicitAdvertisingConsent: () => false, useAdvertisingConsent: () => preferences.available ? { ...preferences } : null }));
 import { AttributionCapture } from "./attribution-capture";
 
 describe("AttributionCapture", () => {

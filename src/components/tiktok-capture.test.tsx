@@ -1,0 +1,21 @@
+import { render } from '@testing-library/react';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { AttributionCapture } from './attribution-capture';
+import { readAttribution } from '@/domain/analytics/attribution';
+import { readAttributionHistory } from '@/domain/analytics/attribution-history';
+const choice=vi.hoisted(()=>({explicit:false}));
+vi.mock('next/navigation',()=>({usePathname:()=>'/canvas',useSearchParams:()=>new URLSearchParams(window.location.search)}));
+vi.mock('./consent-preferences',()=>({useAdvertisingConsent:()=>({version:1,analytics:true,advertising:true,decidedAt:'2026-10-21T00:00:00.000Z'}),useExplicitAdvertisingConsent:()=>choice.explicit}));
+beforeEach(()=>{sessionStorage.clear();localStorage.clear();choice.explicit=false;history.replaceState({},'', '/canvas?utm_source=tiktok&ttclid=click_123');});
+it('keeps UTM but captures ttclid only with explicit permission and clears both stores on revocation',()=>{
+ const view=render(<AttributionCapture customerId={null}/>);
+ expect(readAttribution(sessionStorage,null)).toEqual({utm_source:'tiktok'});
+ expect(readAttributionHistory(localStorage,null)?.firstTouch.campaign.ttclid).toBeUndefined();
+ choice.explicit=true;view.rerender(<AttributionCapture customerId={null}/>);
+ expect(readAttribution(sessionStorage,null)?.ttclid).toBe('click_123');
+ expect(readAttributionHistory(localStorage,null)?.lastTouch.campaign.ttclid).toBe('click_123');
+ choice.explicit=false;view.rerender(<AttributionCapture customerId={null}/>);
+ expect(readAttribution(sessionStorage,null)).toEqual({utm_source:'tiktok'});
+ const h=readAttributionHistory(localStorage,null)!;
+ for(const touch of [h.firstTouch,h.lastTouch,h.lastNonDirectTouch]) expect(touch?.campaign.ttclid).toBeUndefined();
+});

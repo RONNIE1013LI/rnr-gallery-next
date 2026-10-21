@@ -7,7 +7,8 @@ const MAX_AGE = 90 * 86_400_000;
 const SESSION_GAP = 30 * 60_000;
 const OWN_HOSTS = new Set(["rnrgallery.com", "www.rnrgallery.com", "rrgallery.co.nz", "www.rrgallery.co.nz"]);
 const campaignSchema = z.record(z.string(), z.string().min(1).max(200)).refine(value =>
-  Object.keys(parseAttribution(new URLSearchParams(value)) ?? {}).length === Object.keys(value).length);
+  Object.keys(parseAttribution(new URLSearchParams(value)) ?? {}).length === Object.keys(value).length
+  && (!value.ttclid || /^[A-Za-z0-9_-]{1,200}$/.test(value.ttclid)));
 const touchSchema = z.object({
   at: z.iso.datetime(),
   landingPath: z.string().max(512).refine(path => isTrackableWebsitePath(path) && !/[?#]/.test(path)),
@@ -54,7 +55,7 @@ export function readAttributionHistory(storage: StorageReader, customerId: strin
 export function classifyAttributionTouch(touch: AttributionTouch) {
   const c = touch.campaign;
   const openAI = Boolean(c.oppref) && !c.utm_source && !c.utm_medium;
-  return classifyWebsiteAttribution({ advertisingConsent: true, utmSource: c.utm_source ?? (openAI ? "chatgpt" : null), utmMedium: c.utm_medium ?? (openAI ? "paid" : null),
+  return classifyWebsiteAttribution({ advertisingConsent: true, utmSource: c.utm_source ?? (c.ttclid ? "tiktok_ads" : null) ?? (openAI ? "chatgpt" : null), utmMedium: c.utm_medium ?? (c.ttclid ? "paid_social" : null) ?? (openAI ? "paid" : null),
     utmCampaign: c.utm_campaign ?? null, referrerOrigin: touch.referrerOrigin,
     clickIdTypes: ["gclid", "gbraid", "wbraid", "fbclid"].filter(k => Boolean(c[k])),
   });
@@ -62,10 +63,10 @@ export function classifyAttributionTouch(touch: AttributionTouch) {
 export function acquisitionAttribution(history: AttributionHistory) {
   return classifyAttributionTouch(history.lastNonDirectTouch ?? history.firstTouch);
 }
-export function consentedAttributionHistory(history: AttributionHistory, advertising: boolean): AttributionHistory {
-  if (advertising) return history;
+export function consentedAttributionHistory(history: AttributionHistory, advertising: boolean, tiktokAdvertising = advertising): AttributionHistory {
+  if (advertising && tiktokAdvertising) return history;
   const strip = (touch: AttributionTouch): AttributionTouch => {
-    const campaign = Object.fromEntries(Object.entries(touch.campaign).filter(([key]) => !["fbclid", "gclid", "gbraid", "wbraid", "oppref"].includes(key)));
+    const campaign = Object.fromEntries(Object.entries(touch.campaign).filter(([key]) => !(advertising ? ["ttclid"] : ["fbclid", "gclid", "gbraid", "wbraid", "oppref", "ttclid"]).includes(key)));
     return { ...touch, campaign };
   };
   const firstTouch = strip(history.firstTouch);
@@ -78,6 +79,7 @@ export function consentedAttributionHistory(history: AttributionHistory, adverti
 export function captureAttributionHistory(storage: HistoryStorage, customerId: string | null, input: Readonly<{
   url: string; referrer: string; now: Date; consent: Readonly<{ analytics: boolean; advertising: boolean }>;
   opprefCapturedAt?: string | null;
+  tiktokAdvertising?: boolean;
 }>): AttributionHistory | null {
   if (!input.consent.analytics) { clearAttributionHistory(storage, customerId); return null; }
   try {
@@ -85,7 +87,7 @@ export function captureAttributionHistory(storage: HistoryStorage, customerId: s
     if (!isTrackableWebsitePath(url.pathname)) {
       const saved = readAttributionHistory(storage, customerId, input.now);
       if (!saved) return null;
-      const filtered = consentedAttributionHistory(saved, input.consent.advertising);
+      const filtered = consentedAttributionHistory(saved, input.consent.advertising, input.tiktokAdvertising === true);
       storage.setItem(attributionHistoryKey(customerId), JSON.stringify(filtered));
       return filtered;
     }
@@ -97,12 +99,13 @@ export function captureAttributionHistory(storage: HistoryStorage, customerId: s
       if (!ownReferrer && /^https?:$/.test(referrer.protocol)) referrerOrigin = referrer.origin.slice(0,255);
     } catch { /* Empty referrer is a Direct entry. */ }
     const campaign = { ...parseAttribution(url.searchParams) };
+    if (!input.tiktokAdvertising) delete campaign.ttclid;
     if (input.opprefCapturedAt === null) delete campaign.oppref;
     if (!input.consent.advertising) {
-      for (const key of ["fbclid", "gclid", "gbraid", "wbraid", "oppref"] as const) delete campaign[key];
+      for (const key of ["fbclid", "gclid", "gbraid", "wbraid", "oppref", "ttclid"] as const) delete campaign[key];
     }
     const saved = readAttributionHistory(storage, customerId, input.now);
-    const previous = saved ? consentedAttributionHistory(saved, input.consent.advertising) : null;
+    const previous = saved ? consentedAttributionHistory(saved, input.consent.advertising, input.tiktokAdvertising === true) : null;
     const originalClickTime = campaign.oppref
       && !(["gclid", "gbraid", "wbraid", "fbclid"] as const).some(key => campaign[key])
       ? [input.opprefCapturedAt,
@@ -123,7 +126,7 @@ export function captureAttributionHistory(storage: HistoryStorage, customerId: s
       : { version: 1 as const, firstTouch: previous && Date.parse(previous.firstTouch.at) <= Date.parse(touch.at) ? previous.firstTouch : touch, lastTouch: touch,
         lastNonDirectTouch: classifyAttributionTouch(touch).channel !== "direct" ? touch : previous?.lastNonDirectTouch ?? null,
         lastSeenAt: input.now.toISOString() };
-    const filtered = consentedAttributionHistory(next, input.consent.advertising);
+    const filtered = consentedAttributionHistory(next, input.consent.advertising, input.tiktokAdvertising === true);
     storage.setItem(attributionHistoryKey(customerId), JSON.stringify(filtered));
     return filtered;
   } catch { return null; }

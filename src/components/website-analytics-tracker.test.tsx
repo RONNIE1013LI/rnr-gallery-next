@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebsiteAnalyticsTracker } from "./website-analytics-tracker";
 
 const state = vi.hoisted(() => ({
+  explicit: false as boolean | null,
   pathname: "/products/photo-print-canvas",
   search: "utm_source=google&utm_medium=cpc&utm_campaign=canvas&gclid=click",
   consent: { analytics: true, advertising: false } as null | {
@@ -16,6 +17,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(state.search),
 }));
 vi.mock("./consent-preferences", () => ({
+  useExplicitAdvertisingConsent: () => state.explicit,
   useAdvertisingConsent: () => state.consent,
 }));
 
@@ -45,6 +47,7 @@ function clearWebLocks() {
 
 describe("website analytics tracker", () => {
   beforeEach(() => {
+    state.explicit = false;
     state.pathname = "/products/photo-print-canvas";
     state.search = "utm_source=google&utm_medium=cpc&utm_campaign=canvas&gclid=click";
     state.consent = { analytics: true, advertising: false };
@@ -239,4 +242,17 @@ describe("website analytics tracker", () => {
     render(<WebsiteAnalyticsTracker enabled />);
     expect(fetch).not.toHaveBeenCalled();
   });
+});
+
+it("waits for explicit-consent hydration before classifying a ttclid-only landing", async () => {
+  state.pathname = "/canvas"; state.search = "ttclid=synthetic_click";
+  state.consent = { analytics: true, advertising: true }; state.explicit = null;
+  const fetcher = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+  vi.stubGlobal("fetch", fetcher); clearWebLocks();
+  const view = render(<WebsiteAnalyticsTracker enabled />);
+  expect(fetcher).not.toHaveBeenCalled();
+  state.explicit = true; view.rerender(<WebsiteAnalyticsTracker enabled />);
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ utmSource: "tiktok_ads", utmMedium: "paid_click" });
+  expect(JSON.stringify(fetcher.mock.calls)).not.toContain("synthetic_click");
 });

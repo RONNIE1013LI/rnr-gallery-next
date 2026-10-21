@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { WEBSITE_CLICK_ID_TYPES } from "@/domain/analytics/website-analytics";
 import { isTrackableWebsitePageviewPath, normalizeWebsitePathname } from "@/domain/analytics/website-path-policy";
-import { useAdvertisingConsent } from "./consent-preferences";
+import { parseAttribution } from "@/domain/analytics/attribution";
+import { useAdvertisingConsent, useExplicitAdvertisingConsent } from "./consent-preferences";
 
 const WEBSITE_ANALYTICS_PAGEVIEW_LOCK = "rnr:website-analytics:pageview";
 
@@ -65,6 +66,7 @@ export function WebsiteAnalyticsTracker({ enabled }: Readonly<{ enabled: boolean
   const pathname = usePathname();
   const search = useSearchParams().toString();
   const consent = useAdvertisingConsent();
+  const explicitAdvertising = useExplicitAdvertisingConsent();
   const lastLocation = useRef<string | null>(null);
   const referrerOrigin = useRef<string | null>(null);
 
@@ -73,6 +75,7 @@ export function WebsiteAnalyticsTracker({ enabled }: Readonly<{ enabled: boolean
   }, []);
 
   useEffect(() => {
+    if (explicitAdvertising === null) return;
     if (!enabled || !consent?.analytics || !isTrackableWebsitePageviewPath(pathname)) {
       lastLocation.current = null;
       return;
@@ -85,19 +88,21 @@ export function WebsiteAnalyticsTracker({ enabled }: Readonly<{ enabled: boolean
     const clickIdTypes = consent.advertising
       ? WEBSITE_CLICK_ID_TYPES.filter((key) => params.has(key))
       : [];
+    const tiktokClick = consent.advertising && explicitAdvertising && clickIdTypes.length === 0
+      && Boolean(parseAttribution(params)?.ttclid);
     const body = {
       version: 1,
       eventId: window.crypto.randomUUID(),
       pathname,
-      utmSource: params.get("utm_source"),
-      utmMedium: params.get("utm_medium"),
+      utmSource: tiktokClick ? "tiktok_ads" : params.get("utm_source"),
+      utmMedium: tiktokClick ? "paid_click" : params.get("utm_medium"),
       utmCampaign: params.get("utm_campaign"),
       clickIdTypes,
       referrerOrigin: referrerOrigin.current,
     };
 
     void sendWebsiteAnalyticsPageview(body).catch(() => undefined);
-  }, [consent?.advertising, consent?.analytics, enabled, pathname, search]);
+  }, [consent?.advertising, consent?.analytics, explicitAdvertising, enabled, pathname, search]);
 
   return null;
 }

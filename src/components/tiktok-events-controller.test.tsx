@@ -1,0 +1,80 @@
+import { StrictMode } from 'react';
+import { act, render } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { TikTokEventsController } from './tiktok-events-controller';
+import { emitTikTokAnalyticsEvent, clearTikTokContext } from '@/domain/analytics/tiktok';
+const state=vi.hoisted(()=>({path:'/canvas',explicit:true,advertising:true}));
+vi.mock('next/navigation',()=>({usePathname:()=>state.path}));
+vi.mock('./consent-preferences',()=>({useAdvertisingConsent:()=>({advertising:state.advertising}),useExplicitAdvertisingConsent:()=>state.explicit}));
+const props={production:true,enabled:true};
+const fetcher=vi.fn();
+beforeEach(()=>{clearTikTokContext();sessionStorage.clear();state.path='/canvas';state.explicit=true;state.advertising=true;fetcher.mockReset().mockImplementation(async()=>Response.json({accepted:true}));vi.stubGlobal('fetch',fetcher);});
+afterEach(()=>vi.unstubAllGlobals());
+it('stays inert without execution, production, or explicit advertising consent',()=>{
+ const view=render(<TikTokEventsController {...props} enabled={false}/>);
+ view.rerender(<TikTokEventsController {...props} production={false}/>);
+ state.explicit=false;view.rerender(<TikTokEventsController {...props}/>);
+ expect(fetcher).not.toHaveBeenCalled();
+});
+it('deduplicates Strict Mode and acknowledged reloads, keeps distinct cart actions, strips private fields',async()=>{
+ const view=render(<StrictMode><TikTokEventsController {...props}/></StrictMode>);
+ await act(async()=>{});
+ expect(fetcher).toHaveBeenCalledTimes(1);
+ const event={event:'add_to_cart' as const,currency:'AUD' as const,value:40,items:[{item_id:'canvas',item_name:'PRIVATE',price:40,quantity:1}]};
+ await act(async()=>{emitTikTokAnalyticsEvent(event);emitTikTokAnalyticsEvent(event);emitTikTokAnalyticsEvent({...event});});
+ expect(fetcher).toHaveBeenCalledTimes(3);
+ expect(JSON.stringify(fetcher.mock.calls)).not.toContain('PRIVATE');
+ state.path='/banners';view.rerender(<StrictMode><TikTokEventsController {...props}/></StrictMode>);
+ await act(async()=>{});expect(fetcher).toHaveBeenCalledTimes(4);
+ view.unmount();render(<TikTokEventsController {...props}/>);
+ await act(async()=>{});expect(fetcher).toHaveBeenCalledTimes(4);
+});
+it('blocks private routes and aborts pending requests on revocation',async()=>{
+ const view=render(<TikTokEventsController {...props}/>);
+ await act(async()=>{});
+ const signal=fetcher.mock.calls[0][1].signal as AbortSignal;
+ state.advertising=false;view.rerender(<TikTokEventsController {...props}/>);
+ expect(signal.aborted).toBe(true);
+ state.advertising=true;state.path='/account';view.rerender(<TikTokEventsController {...props}/>);
+ await act(async()=>{});expect(fetcher).toHaveBeenCalledTimes(1);
+});
+it('sends validated click IDs only in JSON, and restricts checkout events to checkout',async()=>{
+ window.history.replaceState({},'', '/canvas?ttclid=valid_123&email=PRIVATE');
+ const view=render(<TikTokEventsController {...props}/>);
+ await act(async()=>{emitTikTokAnalyticsEvent({event:'begin_checkout',currency:'NZD',value:25,items:[]});});
+ expect(fetcher).toHaveBeenCalledTimes(1);
+ expect(fetcher.mock.calls[0][0]).toBe('/api/analytics/tiktok');
+ expect(JSON.parse(fetcher.mock.calls[0][1].body)).toMatchObject({ttclid:'valid_123',pathname:'/canvas',name:'PageView'});
+ expect(JSON.stringify(fetcher.mock.calls)).not.toContain('PRIVATE');
+ state.path='/checkout';view.rerender(<TikTokEventsController {...props}/>);
+ await act(async()=>{emitTikTokAnalyticsEvent({event:'begin_checkout',currency:'NZD',value:25,items:[]});});
+ expect(fetcher.mock.calls.map(call=>JSON.parse(call[1].body).name)).toContain('InitiateCheckout');
+ window.history.replaceState({},'', '/');
+});
+it('retains a consent-qualified click ID across navigation using the active attribution scope',async()=>{
+ const {saveAttribution}=await import('@/domain/analytics/attribution');
+ saveAttribution(sessionStorage,null,{ttclid:'saved_click_123'});
+ window.history.replaceState({},'', '/canvas');
+ render(<TikTokEventsController {...props}/>);
+ await act(async()=>{});
+ expect(JSON.parse(fetcher.mock.calls[0][1].body).ttclid).toBe('saved_click_123');
+});
+it('reuses an event ID after an uncertain response so server deduplication survives reload',async()=>{
+ fetcher.mockResolvedValue(new Response(null,{status:204}));
+ const view=render(<TikTokEventsController {...props}/>);await act(async()=>{});
+ const first=JSON.parse(fetcher.mock.calls[0][1].body).eventId;view.unmount();
+ render(<TikTokEventsController {...props}/>);await act(async()=>{});
+ expect(JSON.parse(fetcher.mock.calls[1][1].body).eventId).toBe(first);
+});
+it('replays only current view context after late explicit consent, never past cart actions',async()=>{
+ state.explicit=false;
+ window.history.replaceState({},'', '/products/test-canvas');state.path='/products/test-canvas';
+ const view=render(<TikTokEventsController {...props}/>);
+ const item={currency:'NZD' as const,value:25,items:[{item_id:'canvas',item_name:'PRIVATE',price:25,quantity:1}]};
+ act(()=>{emitTikTokAnalyticsEvent({event:'view_item',...item});emitTikTokAnalyticsEvent({event:'add_to_cart',...item});});
+ expect(fetcher).not.toHaveBeenCalled();
+ state.explicit=true;view.rerender(<TikTokEventsController {...props}/>);await act(async()=>{});
+ const names=fetcher.mock.calls.map(call=>JSON.parse(call[1].body).name);
+ expect(names).toContain('ViewContent');expect(names).not.toContain('AddToCart');
+ window.history.replaceState({},'', '/');
+});

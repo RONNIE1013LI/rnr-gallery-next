@@ -1,5 +1,6 @@
 import {
   advertisingConsentCookieHeader,
+  tiktokConsentCookieHeader,
   type AdvertisingConsent,
 } from "@/domain/consent/advertising-consent";
 import {
@@ -24,13 +25,16 @@ function failure(status: number) {
   );
 }
 
-function parseChoice(input: unknown): Readonly<{ analytics: boolean; advertising: boolean }> | null {
+function parseChoice(input: unknown): Readonly<{ analytics: boolean; advertising: boolean; tiktokAdvertising?: boolean }> | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const record = input as Record<string, unknown>;
   const keys = Object.keys(record).sort();
-  if (keys.length !== 2 || keys[0] !== "advertising" || keys[1] !== "analytics") return null;
+  if (keys.length < 2 || keys.length > 3 || keys[0] !== "advertising" || keys[1] !== "analytics"
+    || (keys.length === 3 && (keys[2] !== "tiktokAdvertising" || typeof record.tiktokAdvertising !== "boolean"))) return null;
+  if (record.tiktokAdvertising === true && record.advertising !== true) return null;
   if (typeof record.analytics !== "boolean" || typeof record.advertising !== "boolean") return null;
-  return { analytics: record.analytics, advertising: record.advertising };
+  return { analytics: record.analytics, advertising: record.advertising,
+    ...(typeof record.tiktokAdvertising === "boolean" ? { tiktokAdvertising: record.tiktokAdvertising } : {}) };
 }
 
 export function createConsentRoute(dependencies: Dependencies = {}) {
@@ -52,6 +56,12 @@ export function createConsentRoute(dependencies: Dependencies = {}) {
           consent,
           dependencies.environment ?? process.env.VERCEL_ENV,
         ));
+        if (choice.tiktokAdvertising !== undefined || !choice.advertising) {
+          headers.append("Set-Cookie", tiktokConsentCookieHeader(
+            { ...consent, advertising: choice.advertising && choice.tiktokAdvertising === true },
+            dependencies.environment ?? process.env.VERCEL_ENV,
+          ));
+        }
         if (!choice.analytics) {
           for (const cookie of clearWebsiteAnalyticsCookieHeaders(
             dependencies.environment ?? process.env.VERCEL_ENV,

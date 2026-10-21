@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AnalyticsRuntimeController } from "@/components/analytics-runtime-controller";
 import { WebsiteAnalyticsTracker } from "@/components/website-analytics-tracker";
+import { TikTokEventsController } from "@/components/tiktok-events-controller";
+import { tiktokConfig } from "@/domain/analytics/tiktok";
 import { MetaPixelController } from "@/components/meta-pixel-controller";
 import { ConsentPreferences } from "@/components/consent-preferences";
 import { CustomerReviewsSection } from "@/components/customer-reviews/customer-reviews-section";
@@ -100,6 +102,11 @@ export default async function RootLayout({
     >
       <body>
         <ConsentPreferences initialConsent={consent}>
+          <Suspense fallback={null}>
+            <TikTokEventsController production={ga4Enabled}
+              enabled={!!tiktokConfig(process.env.TIKTOK_PIXEL_ID, process.env.TIKTOK_PIXEL_ENABLED) && !!process.env.TIKTOK_EVENTS_API_TOKEN}
+              />
+          </Suspense>
           <a className="skip-link" href="#main-content">Skip to content</a>
           <Suspense fallback={null}>
             <MetaPixelController

@@ -11,6 +11,7 @@ export const ATTRIBUTION_FIELDS = [
   "gbraid",
   "wbraid",
   "fbclid",
+  "ttclid",
   "oppref",
 ] as const;
 
@@ -48,7 +49,8 @@ export function buildStoredOrderAttribution(
   clickCapturedAt?: string,
   openAIClickCapturedAt?: string,
 ): StoredOrderAttribution | null {
-  const { fbclid, oppref, opprefCapturedAt, ...nonMetaCampaign } = attribution ?? {};
+  const { fbclid, ttclid, oppref, opprefCapturedAt, ...baseCampaign } = attribution ?? {};
+  const nonMetaCampaign = consent?.advertising && ttclid && /^[A-Za-z0-9_-]{1,200}$/.test(ttclid) ? { ...baseCampaign, ttclid } : baseCampaign;
   const openAICaptureTime = openAIClickCapturedAt ?? opprefCapturedAt;
   const openAICapturedAt = isCanonicalCaptureTime(openAICaptureTime)
     ? Date.parse(openAICaptureTime) : Number.NaN;
@@ -102,7 +104,7 @@ export function parseAttribution(params: Pick<URLSearchParams, "get">): OrderAtt
     const raw = params.get(field);
     const value = field === "oppref" ? raw : raw?.trim();
     if (field === "oppref" && value && /\s/.test(value)) continue;
-    if (value && value.length <= MAX_VALUE_LENGTH) attribution[field] = value;
+    if (value && value.length <= MAX_VALUE_LENGTH && (field !== "ttclid" || /^[A-Za-z0-9_-]+$/.test(value))) attribution[field] = value;
   }
   return Object.keys(attribution).length > 0 ? Object.freeze(attribution) : null;
 }
@@ -116,7 +118,8 @@ export function isOrderAttribution(value: unknown): value is OrderAttribution {
     :
     ATTRIBUTION_FIELDS.includes(field as AttributionField) &&
     typeof fieldValue === "string" && fieldValue.length > 0 && fieldValue.length <= MAX_VALUE_LENGTH
-      && (field !== "oppref" || !/\s/.test(fieldValue)),
+      && (field !== "oppref" || !/\s/.test(fieldValue))
+      && (field !== "ttclid" || /^[A-Za-z0-9_-]+$/.test(fieldValue)),
   );
 }
 
