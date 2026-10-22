@@ -1,5 +1,9 @@
 -- PayID-only migration exception authorized 23 October 2026. Other migration work remains frozen.
 -- Existing data and payment channels preserved; transaction rollback restores prior constraints on failure.
+SET LOCAL lock_timeout = '5s';
+--> statement-breakpoint
+SET LOCAL statement_timeout = '30s';
+--> statement-breakpoint
 CREATE TABLE "wise_payid_audit" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"receipt_id" uuid,
