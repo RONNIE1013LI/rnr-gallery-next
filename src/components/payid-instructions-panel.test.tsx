@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { PayIdInstructionsPanel } from "./payid-instructions-panel";
 import { parsePaymentStartResponse } from "./order-payment-panel";
 import { parsePaymentMethodsResponse } from "./payment-methods";
@@ -19,4 +19,17 @@ describe("PayID customer instructions", () => {
     expect(parsePaymentStartResponse(response, "payid", context).action).toEqual(instructions);
     for (const change of [{ payId: "other@example.test" }, { amountCents: 0 }, { currency: "NZD" }, { reference: "bad" }]) expect(() => parsePaymentStartResponse({ ...response, action: { ...instructions, ...change } }, "payid", context)).toThrow();
   });
+  it("copies exact bank fields without changing payment status", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<PayIdInstructionsPanel instructions={instructions} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy PayID" }));
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(instructions.payId));
+    fireEvent.click(screen.getByRole("button", { name: "Copy amount" }));
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith("123.40"));
+    fireEvent.click(screen.getByRole("button", { name: "Copy reference" }));
+    await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(instructions.reference));
+    expect(screen.getByText(/pending payment/)).toBeVisible();
+  });
+
 });
