@@ -1,15 +1,15 @@
 // @vitest-environment node
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ enabled: false, error: null as unknown, cacheReads: 0, recoveryReads: 0, adminChecks: 0, adminError: null as unknown }));
+const state = vi.hoisted(() => ({ enabled: false, error: null as unknown, cacheReads: 0, recoveryReads: 0, adminChecks: 0, adminError: null as unknown, databaseReads: 0, displayCache: undefined as boolean | undefined }));
 vi.mock("./reservation-expiry", () => ({ releaseAbandonedSupplyReservations: async () => { state.recoveryReads++; return 0; } }));
-vi.mock("@/server/db/client", () => ({ getDatabase: () => ({ select: () => ({ from: () => ({ where: () => ({ limit: async () => { if (state.error) throw state.error; return [{ enabled: state.enabled }]; } }) }) }) }) }));
-vi.mock("@/server/cache/public-cache-tags", () => ({ PUBLIC_CACHE_TAGS: { content: "content", products: "products", sitemap: "sitemap" }, cachePublicData: () => async () => { state.cacheReads++; return { settings: { enabled: true }, products: [{ id: "stale-public-product" }], categories: [] }; } }));
+vi.mock("@/server/db/client", () => ({ getDatabase: () => ({ select: () => ({ from: () => ({ where: () => ({ limit: async () => { state.databaseReads++; if (state.error) throw state.error; return [{ enabled: state.enabled }]; } }) }) }) }) }));
+vi.mock("@/server/cache/public-cache-tags", () => ({ PUBLIC_CACHE_TAGS: { content: "content", products: "products", sitemap: "sitemap" }, cachePublicData: (load: () => Promise<boolean>, key: string) => key !== "supplies-catalogue-v1" ? async () => { if (state.displayCache === undefined) state.displayCache = await load(); return state.displayCache; } : async () => { state.cacheReads++; return { settings: { enabled: true }, products: [{ id: "stale-public-product" }], categories: [] }; } }));
 vi.mock("@/server/auth/require-admin", () => ({ requireAdminPermission: async () => { state.adminChecks++; if (state.adminError) throw state.adminError; } }));
-import { getAdminSuppliesCatalogue, getPublicSuppliesCatalogue, loadSuppliesCatalogue } from "./catalogue";
+import { getAdminSuppliesCatalogue, getPublicSuppliesCatalogue, isSuppliesStoreEnabled, loadSuppliesCatalogue } from "./catalogue";
 import { SuppliesSchemaPendingError } from "./errors";
 
-beforeEach(() => { state.enabled = false; state.error = null; state.cacheReads = 0; state.recoveryReads = 0; state.adminChecks = 0; state.adminError = null; vi.stubEnv("DATABASE_URL", "postgres://synthetic.invalid/synthetic_test"); });
+beforeEach(() => { state.enabled = false; state.error = null; state.cacheReads = 0; state.recoveryReads = 0; state.adminChecks = 0; state.adminError = null; state.databaseReads = 0; state.displayCache = undefined; vi.stubEnv("DATABASE_URL", "postgres://synthetic.invalid/synthetic_test"); });
 afterEach(() => vi.unstubAllEnvs());
 
 it("fresh OFF overrides an old ON catalogue without consuming its cached data", async () => {
@@ -42,4 +42,28 @@ it("admin preview data enforces authorization on every call and never reads publ
   await expect(getAdminSuppliesCatalogue(true)).rejects.toThrow("Synthetic unauthorized");
   expect(state.adminChecks).toBe(2);
   expect(state.cacheReads).toBe(0);
+});
+
+it.each([false, true])("reuses display switch across requests when enabled is %s", async (enabled) => {
+  state.enabled = enabled;
+  expect(await isSuppliesStoreEnabled()).toBe(enabled);
+  expect(await isSuppliesStoreEnabled()).toBe(enabled);
+  expect(state.databaseReads).toBe(1);
+});
+it("refreshes display after invalidation and keeps the catalogue guard fresh", async () => {
+  state.enabled = true;
+  expect(await isSuppliesStoreEnabled()).toBe(true);
+  state.enabled = false;
+  expect(await isSuppliesStoreEnabled()).toBe(true);
+  expect(await getPublicSuppliesCatalogue()).toBeNull();
+  expect(state.recoveryReads).toBe(0);
+  state.displayCache = undefined;
+  expect(await isSuppliesStoreEnabled()).toBe(false);
+});
+it("retries a failed display lookup instead of caching success", async () => {
+  state.error = new Error("Synthetic database failure");
+  await expect(isSuppliesStoreEnabled()).rejects.toThrow("Synthetic database failure");
+  state.error = null;
+  state.enabled = true;
+  expect(await isSuppliesStoreEnabled()).toBe(true);
 });

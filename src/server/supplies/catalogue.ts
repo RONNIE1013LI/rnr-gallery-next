@@ -54,13 +54,16 @@ async function loadPublicCatalogue() {
 
 // Only filtered public data enters shared cache. Admin and checkout reads never use this function.
 const cachedPublicCatalogue = cachePublicData(loadPublicCatalogue, "supplies-catalogue-v1", SUPPLIES_PUBLIC_CACHE_TAGS);
-const readCurrentPublicEnabled = cache(async () => {
+async function loadCurrentPublicEnabled() {
   if (!process.env.DATABASE_URL?.trim()) return false;
   try {
     const [settings] = await getDatabase().select({ enabled: suppliesSettings.enabled }).from(suppliesSettings).where(eq(suppliesSettings.key, "primary")).limit(1);
     return settings?.enabled === true;
   } catch (error) { if (isMissingSuppliesSchema(error)) return false; throw error; }
-});
+}
+const readCurrentPublicEnabled = cache(loadCurrentPublicEnabled);
+// Display data is shared across requests; catalogue and checkout guards remain fresh.
+const readPublicDisplayEnabled = cachePublicData(loadCurrentPublicEnabled, "supplies-display-enabled-v1", SUPPLIES_PUBLIC_CACHE_TAGS);
 const recoverPublicReservations = cache(releaseAbandonedSupplyReservations);
 export async function getPublicSuppliesCatalogue() {
   // The fresh switch guard makes an OFF change effective even if catalogue invalidation failed.
@@ -68,7 +71,7 @@ export async function getPublicSuppliesCatalogue() {
   await recoverPublicReservations();
   return cachedPublicCatalogue();
 }
-export async function isSuppliesStoreEnabled() { return readCurrentPublicEnabled(); }
+export async function isSuppliesStoreEnabled() { return readPublicDisplayEnabled(); }
 export async function getPublicSupplyProduct(slug: string) { return (await getPublicSuppliesCatalogue())?.products.find((product) => product.slug === slug) ?? null; }
 export async function getPublicSupplyCategory(slug: string) { return (await getPublicSuppliesCatalogue())?.categories.find((category) => category.slug === slug) ?? null; }
 export async function getPublicSupplyImage(id: string) {
