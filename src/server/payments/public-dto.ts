@@ -2,9 +2,10 @@ import type {
   PaymentAttemptStatus,
   PaymentMethodKey,
 } from "@/server/db/schema/payments";
-import type { ProviderSession } from "./types";
+import type { PayIdInstructions, ProviderSession } from "./types";
 
 export type PaymentActionDTO =
+  | PayIdInstructions
   | Readonly<{
       kind: "elements";
       method: "card";
@@ -56,6 +57,8 @@ export function toImmediatePaymentActionDTO(
   session: ProviderSession,
 ): PaymentActionDTO {
   switch (session.kind) {
+    case "bank_transfer":
+      return Object.freeze({ kind: session.kind, method: "payid", payId: session.payId, amountCents: session.amountCents, currency: "AUD", reference: session.reference });
     case "elements":
       return Object.freeze({
         kind: "elements",

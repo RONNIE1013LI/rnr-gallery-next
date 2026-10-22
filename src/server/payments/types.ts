@@ -98,7 +98,10 @@ type ProviderSessionBase = Readonly<{
   providerStatus: string;
 }>;
 
+export type PayIdInstructions = Readonly<{ kind: "bank_transfer"; method: "payid"; payId: string; amountCents: number; currency: "AUD"; reference: string }>;
+
 export type ProviderSession =
+  | (ProviderSessionBase & PayIdInstructions)
   | (ProviderSessionBase &
       Readonly<{
         kind: "elements";
@@ -135,6 +138,8 @@ export type VerifiedPaymentResult = Readonly<{
   /** Required for Flik before any order or ledger mutation. */
   testMode?: boolean;
   foreignTransactionId?: string;
+  wiseReceiptId?: string;
+  wiseReceiptDigest?: string;
 }>;
 
 export type ProviderRetrievalAuthority =

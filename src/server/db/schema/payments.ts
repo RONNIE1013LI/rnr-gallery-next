@@ -18,8 +18,8 @@ import type { MarketCurrency } from "@/domain/markets/types";
 import { user } from "./auth";
 import { orders } from "./orders";
 
-export type PaymentProviderKey = "stripe" | "afterpay" | "local-test" | "flik";
-export type PaymentMethodKey = "card" | "afterpay" | "flik";
+export type PaymentProviderKey = "stripe" | "afterpay" | "local-test" | "flik" | "wise";
+export type PaymentMethodKey = "card" | "afterpay" | "flik" | "payid";
 export type PaymentAttemptStatus =
   | "created"
   | "requires_action"
@@ -294,23 +294,25 @@ export const paymentAttempts = pgTable(
     ),
     check(
       "payment_attempts_provider_valid",
-      sql`${table.provider} in ('stripe', 'afterpay', 'local-test', 'flik')`,
+      sql`${table.provider} in ('stripe', 'afterpay', 'local-test', 'flik', 'wise')`,
     ),
     check(
       "payment_attempts_method_valid",
-      sql`${table.method} in ('card', 'afterpay', 'flik')`,
+      sql`${table.method} in ('card', 'afterpay', 'flik', 'payid')`,
     ),
     check(
       "payment_attempts_provider_method_valid",
       sql`(
-        ${table.provider} NOT in ('stripe', 'afterpay', 'local-test', 'flik')
-        OR ${table.method} NOT in ('card', 'afterpay', 'flik')
+        ${table.provider} NOT in ('stripe', 'afterpay', 'local-test', 'flik', 'wise')
+        OR ${table.method} NOT in ('card', 'afterpay', 'flik', 'payid')
         OR (${table.provider} = 'stripe' AND ${table.method} = 'card')
         OR (${table.provider} = 'afterpay' AND ${table.method} = 'afterpay')
         OR (${table.provider} = 'flik' AND ${table.method} = 'flik')
+        OR (${table.provider} = 'wise' AND ${table.method} = 'payid')
         OR (${table.provider} = 'local-test' AND ${table.method} in ('card', 'afterpay'))
       )`,
     ),
+    check("payment_attempts_wise_checkout_only", sql`${table.provider} <> 'wise' OR (${table.orderId} IS NOT NULL AND ${table.paymentRequestId} IS NULL AND ${table.country} = 'AU' AND ${table.currency} = 'AUD')`),
     check(
       "payment_attempts_flik_checkout_only",
       sql`${table.provider} <> 'flik' OR (${table.orderId} IS NOT NULL AND ${table.paymentRequestId} IS NULL AND ${table.country} = 'NZ' AND ${table.currency} = 'NZD')`,

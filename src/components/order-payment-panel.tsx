@@ -24,6 +24,7 @@ import {
   readPendingCheckout,
   savePendingCheckout,
 } from "./pending-checkout";
+import { PayIdInstructionsPanel } from "./payid-instructions-panel";
 import { StripePaymentForm } from "./stripe-payment-form";
 import styles from "./storefront.module.css";
 
@@ -139,6 +140,12 @@ export function parsePaymentStartResponse(
       !trustedElementsReturnUrl(action.returnUrl, context)) {
       throw new Error("Payment response is invalid");
     }
+  } else if (action.kind === "bank_transfer") {
+    if (!hasExactKeys(action, ["kind", "method", "payId", "amountCents", "currency", "reference"]) ||
+      selectedMethod !== "payid" || payment.isTest !== false || payment.status !== "requires_action" ||
+      action.payId !== "payment@rnrgallery.com" || action.currency !== "AUD" ||
+      !Number.isSafeInteger(action.amountCents) || Number(action.amountCents) < 1 ||
+      typeof action.reference !== "string" || !/^RRA[0-9A-F]{16}$/.test(action.reference)) throw new Error("Payment response is invalid");
   } else if (action.kind === "redirect") {
     if (!hasExactKeys(action, ["kind", "method", "redirectUrl"]) ||
       selectedMethod === "card" ||
@@ -205,7 +212,7 @@ export async function followPaymentAction(
   orderHref: string,
   navigation: PaymentNavigation,
 ) {
-  if (action.kind === "elements") {
+  if (action.kind === "elements" || action.kind === "bank_transfer") {
     return;
   }
   navigation.assign(action.redirectUrl);
@@ -292,6 +299,7 @@ function paymentActionLabel(method: PaymentMethodKey | null, pending: boolean) {
   if (pending) return method === "card" ? "Preparing secure card payment…" : "Starting payment…";
   if (method === "card") return "Continue to secure card payment";
   if (method === "afterpay") return "Continue to Afterpay";
+  if (method === "payid") return "Show AUD PayID instructions";
   if (method === "flik") return "Continue to Pay by Bank";
   return "Continue to payment";
 }
@@ -511,6 +519,7 @@ function OrderPaymentPanelState({
         onClick={changeMethod}
       >Change payment method</button> : null}
     </> : null}
+    {paymentAction?.kind === "bank_transfer" ? <PayIdInstructionsPanel instructions={paymentAction} /> : null}
     {paymentAction?.kind === "elements" ? <StripePaymentForm
       key={paymentAction.clientSecret}
       clientSecret={paymentAction.clientSecret}

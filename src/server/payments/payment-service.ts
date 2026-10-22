@@ -169,6 +169,7 @@ const providerContracts: Readonly<Record<string, Readonly<{
     sessionKind: "elements",
     isTest: false,
   }),
+  wise: Object.freeze({ methods: ["payid"] as readonly PaymentMethodKey[], sessionKind: "bank_transfer", isTest: false }),
   flik: Object.freeze({
     methods: ["flik"] as readonly PaymentMethodKey[],
     sessionKind: "redirect",

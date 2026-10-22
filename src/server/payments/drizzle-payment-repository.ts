@@ -1,3 +1,5 @@
+import { consumeWiseReceipt } from "./wise-payid-repository";
+import { wisePayIdEligible } from "./wise-payid-config";
 import { supplyPaymentNeedsHold } from "@/server/supplies/inventory-transition";
 import { invalidateSuppliesInventory } from "@/server/supplies/inventory-cache";
 import { assertSupplyOrderPayable, settleSuppliesInventory, orderHasSupplies, bindSuppliesPaymentAttempt, suppliesFailureIsCurrent } from "@/server/supplies/inventory";
@@ -697,6 +699,21 @@ async function applyLockedVerifiedResult(
     input.attemptId,
   );
   assertVerifiedResult(order, attempt, input.result);
+  if (attempt.provider === "wise") {
+    if (input.source !== "reconciliation" || input.result.status !== "paid" || attempt.method !== "payid" ||
+      attempt.country !== "AU" || order.market !== "AU" || order.currency !== "AUD" || order.fulfilmentStatus === "cancelled" ||
+      !["created", "requires_action", "processing", "paid"].includes(attempt.status) || !input.result.wiseReceiptId || !input.result.wiseReceiptDigest ||
+      !["awaiting_payment", "processing", "paid"].includes(order.paymentStatus)) throw new PaymentVerificationMismatchError();
+    if (order.paymentStatus !== "paid") {
+      const priorLedger = await transaction.select({ id: paymentLedgerEntries.id }).from(paymentLedgerEntries)
+        .where(eq(paymentLedgerEntries.orderId, order.id)).limit(1);
+      if (priorLedger.length) throw new PaymentVerificationMismatchError();
+    }
+    await consumeWiseReceipt(transaction, attempt.id, input.result.wiseReceiptId, input.result.wiseReceiptDigest, {
+      orderId: order.id, reference: input.result.providerReference, merchantReference: order.paymentReference ?? order.orderNumber, amountCents: order.totalInclGstCents,
+      requireApplied: order.paymentStatus === "paid",
+    });
+  }
 
   if (order.paymentStatus === "refunded") {
     await ensurePaidWebOrderProductionJob(transaction, order, await databaseNow(transaction));
@@ -982,6 +999,8 @@ export function createDrizzlePaymentRepository(
         try {
           const addresses = await loadAddresses(transaction, order.id);
           country = addressFor(addresses, "delivery").country;
+          if (input.provider === "wise" && !wisePayIdEligible({ market: order.market, currency: order.currency, amountCents: order.totalInclGstCents,
+            billingAddress: addressFor(addresses, "billing"), deliveryAddress: addressFor(addresses, "delivery") })) throw new PaymentRepositoryConflictError("PayID is unavailable for this order");
           if (input.provider === "flik" && !flikEligibility({
             market: order.market, currency: order.currency, amountCents: order.totalInclGstCents,
             billingCountry: addressFor(addresses, "billing").country, deliveryCountry: country,
@@ -1311,8 +1330,8 @@ export function createDrizzlePaymentRepository(
             inner join ${orders} as candidate_orders
               on candidate_orders.id = attempts.order_id
             where attempts.status in ('requires_action', 'processing')
-              -- Flik's durable inbox/session worker owns its reconciliation.
-              and attempts.provider <> 'flik'
+              -- Dedicated bank-payment workers own their reconciliation.
+              and attempts.provider not in ('flik', 'wise')
               and attempts.provider_reference is not null
               and candidate_orders.payment_status not in ('paid', 'refunded', 'failed', 'cancelled')
               and (

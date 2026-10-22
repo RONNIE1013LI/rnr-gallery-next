@@ -14,6 +14,16 @@ export function createFlikReconciliationRoute(dependencies?: {
     if (!token || !timingSafeSecretEqual(token, secret)) return Response.json({ error: "Unauthorized" }, { status: 401, headers });
     try {
       if (dependencies) return Response.json(await dependencies.run(), { headers });
+      // Share the existing low-frequency schedule. Wise failure cannot change Flik's result.
+      if (process.env.ENABLE_WISE_PAYID === "true") {
+        const wiseTask = (async () => {
+        try {
+          const { createWisePayIdRuntime } = await import("@/server/payments/wise-payid-runtime");
+          await createWisePayIdRuntime((task) => after(task))?.worker.run();
+        } catch { console.warn("Wise statement reconciliation unavailable; orders remain pending"); }
+        })();
+        after(() => wiseTask);
+      }
       const deadlineMs = Date.now() + 45_000;
       const runtime = await createFlikRuntime({ deadlineMs });
       if (!runtime) return Response.json({ disabled: true }, { headers });

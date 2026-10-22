@@ -30,7 +30,7 @@ import { createImmediateNotificationDeliveryObserver } from "@/server/notificati
 export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
 const startInputSchema = z.object({
-  method: z.enum(["card", "afterpay", "flik"]),
+  method: z.enum(["card", "afterpay", "flik", "payid"]),
   idempotencyKey: z.uuid(),
 }).strict();
 const inputSchema = z.union([
@@ -41,7 +41,7 @@ const inputSchema = z.union([
 type PaymentStarter = {
   start(
     access: PaymentOrderAccess,
-    method: "card" | "afterpay" | "flik",
+    method: "card" | "afterpay" | "flik" | "payid",
     idempotencyKey: string,
   ): Promise<PaymentStartResult>;
   confirmPayment(
@@ -122,6 +122,7 @@ function publicAction(action: PaymentActionDTO | null): PaymentActionDTO | null 
       returnUrl: action.returnUrl,
     });
   }
+  if (action.kind === "bank_transfer") return Object.freeze({ kind: "bank_transfer", method: "payid", payId: action.payId, amountCents: action.amountCents, currency: "AUD", reference: action.reference });
   if (action.kind === "redirect") {
     return Object.freeze({
       kind: "redirect", method: action.method, redirectUrl: action.redirectUrl,

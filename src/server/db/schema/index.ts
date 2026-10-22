@@ -18,3 +18,4 @@ export * from "./staff-security";
 export * from "./flik";
 export * from "./supplies";
 export * from "./supplies-inventory";
+export * from "./wise-payid";

@@ -1,3 +1,5 @@
+import { parseWisePayIdConfig } from "./wise-payid-config";
+import { createWisePayIdProvider } from "./wise-payid-provider";
 import { createFlikProvider, type FlikProviderAuthorization } from "./flik-provider";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import { createAfterpayProvider } from "./afterpay-provider";
@@ -29,16 +31,18 @@ export type PaymentProviderRegistryOptions = Readonly<{
 }>;
 
 const methods = ["card", "afterpay"] as const;
-const localLabels: Record<Exclude<PaymentMethodKey, "flik">, string> = {
+const localLabels: Record<Exclude<PaymentMethodKey, "flik" | "payid">, string> = {
   card: "Test card — no real payment",
   afterpay: "Test Afterpay — no real payment",
 };
 const realLabels: Record<PaymentMethodKey, string> = {
+  payid: "PayID — AUD Bank Transfer",
   flik: "Pay by Bank",
   card: "Card",
   afterpay: "Afterpay",
 };
 const realProviderKeys: Record<PaymentMethodKey, PaymentProvider["key"]> = {
+  payid: "wise",
   flik: "flik",
   card: "stripe",
   afterpay: "afterpay",
@@ -63,7 +67,7 @@ function registration(
   }
   return Object.freeze({
     method,
-    label: isTest && method !== "flik" ? localLabels[method] : realLabels[method],
+    label: isTest && method !== "flik" && method !== "payid" ? localLabels[method] : realLabels[method],
     isTest,
     provider,
   });
@@ -116,7 +120,8 @@ export function selectPaymentProviders(
 // Only ordinary Checkout and its return path opt into this server authorization.
 // Payment links keep their existing provider selection and business rules.
 export function selectCheckoutPaymentProviders(config: PaymentConfig) {
-  return selectPaymentProviders(config, { flikAuthorization: {
+  const wise = parseWisePayIdConfig();
+  const selected = selectPaymentProviders(config, { flikAuthorization: {
     async canCreate(context) {
       const { canCreateFlikCheckoutPayment } = await import("./flik-checkout-access");
       return canCreateFlikCheckoutPayment(context);
@@ -126,4 +131,5 @@ export function selectCheckoutPaymentProviders(config: PaymentConfig) {
       return canReconcileFlikPayments();
     },
   } });
+  return wise ? Object.freeze([...selected, registration("payid", createWisePayIdProvider({ config: wise }), false)]) : selected;
 }

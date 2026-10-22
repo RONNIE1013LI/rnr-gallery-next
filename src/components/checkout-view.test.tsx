@@ -87,6 +87,24 @@ describe("CheckoutView", () => {
     expect(Boolean(screen.queryByRole("radio", { name: "Pay by Bank" }))).toBe(visible);
   });
 
+  it.each([
+    { market: "AU", currency: "AUD", visible: true },
+    { market: "NZ", currency: "NZD", visible: false },
+    { market: "AU", currency: "NZD", visible: false },
+    { market: "NZ", currency: "AUD", visible: false },
+    { market: undefined, currency: "AUD", visible: false },
+  ])("filters PayID using reviewed $market / $currency", async ({ market, currency, visible }) => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: { ...repriced, market, currency } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency, isTest: false } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ methods: [{ method: "card", label: "Card", isTest: false }, { method: "payid", label: "PayID — AUD Bank Transfer", isTest: false }] }) }));
+    render(<CheckoutView market={market === "AU" ? "AU" : "NZ"} savedAddresses={[address, australianSavedAddress]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByRole("radio", { name: "Card" });
+    expect(Boolean(screen.queryByRole("radio", { name: "PayID — AUD Bank Transfer" }))).toBe(visible);
+  });
+
   it("clears the selected Flik method when the market switches to AU", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
