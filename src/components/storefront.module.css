@@ -6002,3 +6002,79 @@
     margin-top: 0.5rem;
   }
 }
+
+.payidPending {
+  width: min(100%, 42rem);
+  margin: 2.5rem auto 0;
+  text-align: center;
+  color: var(--ink);
+}
+
+.payidPending h1 {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 400;
+}
+
+.payidPending > a {
+  display: inline-block;
+  margin-top: 1.25rem;
+  color: var(--gallery-green);
+}
+
+.payidInstructions {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.payidInstructions h2 {
+  margin: 1rem 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+
+.payidInstructions p {
+  margin: 0.75rem 0;
+}
+
+.payidInstructions dl {
+  margin: 1.5rem 0;
+}
+
+.payidInstructions dt {
+  margin-top: 1rem;
+}
+
+.payidInstructions dd {
+  margin: 0.35rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.payidInstructions strong {
+  color: var(--ink);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.payidInstructions .secondaryButton {
+  margin: 0;
+  font-family: inherit;
+  font-weight: 400;
+  background: transparent;
+  cursor: pointer;
+}
+
+.payidInstructions [role="status"]:empty {
+  display: none;
+}

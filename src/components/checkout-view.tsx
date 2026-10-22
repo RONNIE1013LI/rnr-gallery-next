@@ -487,7 +487,7 @@ export function CheckoutView({
   }, [billing, cart.items.length, delivery, different, draftChecked, market, paymentIntent, snapshot]);
 
   if (paymentIntent?.phase === "starting_payment" && paymentAction?.kind === "bank_transfer") {
-    return <section className={styles.checkoutPage}><h1>Pending payment</h1><PayIdInstructionsPanel instructions={paymentAction} /><a href={`/orders/${encodeURIComponent(paymentIntent.orderNumber)}#payment`}>View order and payment status</a></section>;
+    return <section className={styles.payidPending}><h1>Pending payment</h1><PayIdInstructionsPanel instructions={paymentAction} /><a href={`/orders/${encodeURIComponent(paymentIntent.orderNumber)}#payment`}>View order and payment status</a></section>;
   }
   if (paymentIntent?.phase === "starting_payment" && paymentAction?.kind === "elements") {
     return <section className={styles.orderPaymentPanel} id="payment">
