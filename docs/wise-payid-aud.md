@@ -1,6 +1,6 @@
 # Wise Business AUD PayID — local implementation and readiness
 
-Status: **NOT READY FOR PRODUCTION**. No push, deployment, Production environment change, Production database write, formal migration, fund transfer, conversion, or real payment test was performed.
+Status: **Production release in progress (23 October 2026)**. Read the latest release section for current state; earlier dated sections are historical. No real payment or funds operation was performed.
 
 ## Verified on 22 October 2026
 
@@ -146,3 +146,6 @@ Credential access gate verified: Vercel `DATABASE_URL_UNPOOLED` and `BETTER_AUTH
 - Rollback point: origin/main 31578895ce6edbeb21a59368604e03eed949e8b4 / existing READY deployment dpl_5dwzx7jviTyzjTaN9wiJJvNMyas8. Migration failure rolls back transactionally. After traffic begins, disable Wise and retain receipt/audit data rather than destructively dropping tables; any code rollback requires a guarded approved main-based release.
 
 Final SQL includes a 5-second lock timeout and 30-second statement timeout inside the migration transaction; contention aborts safely instead of waiting indefinitely. Production branch UI reconfirmed main with automatic custom-domain assignment enabled and all four required domains present. Wise token is now stored as a Production-only Secret through Vercel's masked input; only four dedicated config variables were added. Existing deployments do not receive those new variables until a new deployment.
+
+
+Production 0073 applied successfully through the existing `runMigration` identity/exact-prefix guards and Drizzle migrator. Exit 0; post-check exact prefix 74/74 PASS, four Wise tables present and runtime audit INSERT allowed / UPDATE+DELETE denied. No retry or history rewrite was needed. Existing main Production source and all aliases were verified before applying this backward-compatible migration. Next step is the single main Git deployment, whose build uses real platform-managed auth Secrets.
