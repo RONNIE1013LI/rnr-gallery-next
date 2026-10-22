@@ -112,12 +112,12 @@ describe("Production database runtime role security", () => {
     })).toThrow(/allowlist/i);
   });
 
-  it("restricts only the eight new Supplies tables while retaining old-table CRUD requirements", () => {
+  it("restricts Supplies and Wise tables while retaining old-table CRUD requirements", () => {
     const grantSql = buildRuntimeGrantStatements({
       databaseName: "neondb", schemaName: "public", runtimeRole: "rnr_app_runtime", migrationRole: "neondb_owner",
     }).join("\n");
     const inventorySql = runtimeInventorySql();
-    for (const table of ["supplies_audit_logs", "supplies_order_items"]) {
+    for (const table of ["supplies_audit_logs", "supplies_order_items", "wise_payid_audit", "wise_payid_intents"]) {
       expect(grantSql).toContain(`REVOKE UPDATE, DELETE ON TABLE "public"."${table}" FROM "rnr_app_runtime"`);
       expect(inventorySql).toContain(`'${table}'`);
     }
@@ -128,7 +128,7 @@ describe("Production database runtime role security", () => {
     expect(grantSql).toContain("to_regclass");
     expect(inventorySql).toContain("has_table_privilege(role.rolname, c.oid, 'SELECT')");
     expect(inventorySql).toContain("has_table_privilege(role.rolname, c.oid, 'INSERT')");
-    expect(inventorySql).toContain("and (c.relname in ('supplies_audit_logs', 'supplies_order_items') or has_table_privilege(role.rolname, c.oid, 'UPDATE'))");
+    expect(inventorySql).toContain("and (c.relname in ('supplies_audit_logs', 'supplies_order_items', 'wise_payid_audit', 'wise_payid_intents') or has_table_privilege(role.rolname, c.oid, 'UPDATE'))");
     expect(inventorySql).toContain("has_table_privilege(role.rolname, c.oid, 'UPDATE')");
     expect(inventorySql).toContain("has_table_privilege(role.rolname, c.oid, 'DELETE')");
     expect(grantSql).not.toMatch(/REVOKE (?:UPDATE, )?DELETE ON TABLE "public"\."(?:orders|order_items|admin_audit_logs)"/);

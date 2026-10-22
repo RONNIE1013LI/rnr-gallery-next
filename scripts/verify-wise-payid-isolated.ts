@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { pushSchema } from "drizzle-kit/api";
+import { generateDrizzleJson, generateMigration, pushSchema } from "drizzle-kit/api";
 import * as schema from "../src/server/db/schema";
 const docker = "/usr/local/bin/docker";
 const name = "rnr-wise-preflight-20261022";
@@ -25,15 +25,37 @@ async function main() {
   const admin = new pg.Pool({ connectionString: adminUrl });
   let pool: pg.Pool | undefined;
   try {
+    await admin.query("create role rnr_app_runtime login");
     await admin.query(`create database ${databaseName}`);
     await admin.query(`create database ${applicationName}`);
     const url = `postgresql://postgres@${mapped}/${databaseName}`;
     pool = new pg.Pool({ connectionString: url });
     const tables = await pool.query("select count(*)::int as count from information_schema.tables where table_schema='public'");
     if (tables.rows[0].count !== 0) throw new Error("Snapshot target must be empty");
-    const plan = await pushSchema(schema, drizzle(pool));
+    const migrationMode = process.argv.includes("--migration");
+    const baseline = migrationMode ? await generateMigration(generateDrizzleJson({}), JSON.parse(readFileSync("drizzle/meta/0072_snapshot.json", "utf8"))) : [];
+    const delta = migrationMode ? readFileSync("drizzle/0073_wise_payid_aud.sql", "utf8").split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean) : [];
+    const snapshotPlan = migrationMode ? undefined : await pushSchema(schema, drizzle(pool));
+    const plan = snapshotPlan ?? { hasDataLoss: false, warnings: [], statementsToExecute: [...baseline, ...delta], async apply() {
+      for (const statement of baseline) await pool!.query(statement);
+      await pool!.query("grant usage on schema public to rnr_app_runtime");
+      await pool!.query("grant select,insert,update,delete on all tables in schema public to rnr_app_runtime");
+      await pool!.query("alter default privileges grant select,insert,update,delete on tables to rnr_app_runtime");
+      await pool!.query("begin");
+      for (const statement of delta) await pool!.query(statement);
+      await pool!.query("rollback");
+      const afterRollback = await pool!.query("select count(*)::int as count from pg_tables where schemaname='public' and tablename like 'wise_payid_%'");
+      if (afterRollback.rows[0].count !== 0) throw new Error("Migration rollback failed");
+      await pool!.query("begin");
+      for (const statement of delta) await pool!.query(statement);
+      await pool!.query("commit");
+      const acl = await pool!.query("select has_table_privilege('rnr_app_runtime','wise_payid_audit','INSERT') as audit_insert,has_table_privilege('rnr_app_runtime','wise_payid_audit','UPDATE') as audit_update,has_table_privilege('rnr_app_runtime','wise_payid_audit','DELETE') as audit_delete,has_table_privilege('rnr_app_runtime','wise_payid_receipts','UPDATE') as receipt_update");
+      if (!acl.rows[0].audit_insert || acl.rows[0].audit_update || acl.rows[0].audit_delete || !acl.rows[0].receipt_update) throw new Error("Wise runtime ACL invalid");
+      console.log(JSON.stringify({runtimeAcl: "PASS",auditAppendOnly:true}));
+      console.log(JSON.stringify({ migrationUpgrade: "PASS", rollback: "PASS", productionWritten: false }));
+    } };
     if (plan.hasDataLoss || plan.warnings.length) throw new Error("Unexpected schema warning");
-    console.log(JSON.stringify({ stage: "snapshot_plan", statements: plan.statementsToExecute.length, hasDataLoss: false, formalMigrationExecuted: false }));
+    console.log(JSON.stringify({ stage: "snapshot_plan", statements: plan.statementsToExecute.length, hasDataLoss: false, formalMigrationExecuted: migrationMode }));
     await plan.apply();
     await pool.query("insert into business_number_counter(key,current_value) values('order_job',10000)");
     // drizzle-kit 0.31.10 drops params in pushSchema's non-empty introspection adapter.
@@ -58,6 +80,14 @@ async function main() {
       child.once("error", reject); child.once("exit", (value) => resolve(value ?? 1));
     });
     process.exitCode = code;
+    if (migrationMode && code === 0) {
+      const runtimeEnv = { ...safeEnv, TEST_DATABASE_URL: url.replace("postgres@", "rnr_app_runtime@") };
+      const runtimeCode = await new Promise<number>((resolve, reject) => {
+        const child = spawn(process.execPath, ["node_modules/vitest/vitest.mjs", "run", "src/server/payments/wise-payid-repository.integration.test.ts", "-t", "automatically processes a JSON statement"], { cwd: process.cwd(), env: runtimeEnv, stdio: "inherit" });
+        child.once("error", reject); child.once("exit", (value) => resolve(value ?? 1));
+      });
+      process.exitCode = runtimeCode;
+    }
   } finally {
     await pool?.end();
     await admin.query(`drop database if exists ${databaseName} with (force)`);

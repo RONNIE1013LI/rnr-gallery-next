@@ -9,6 +9,7 @@ export const orderPaymentStatusLabels = { awaiting_payment: "Payment required", 
 export const orderFulfilmentStatusLabels = { new: "Order confirmed", designing: "Artwork in progress", awaiting_customer: "Awaiting your design approval", ready_to_print: "Approved for production", printing: "In production", on_hold: "On hold", shipped: "Shipped", completed: "Completed", cancelled: "Cancelled" } as const;
 function paymentMethodLabel(method: NonNullable<PublicOrder["payment"]>["method"]) {
   if (method === "card") return "Card";
+  if (method === "payid") return "PayID — AUD Bank Transfer";
   if (method === "afterpay") return "Afterpay";
   return "Legacy payment";
 }

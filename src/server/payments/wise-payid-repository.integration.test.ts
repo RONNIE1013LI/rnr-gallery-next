@@ -16,7 +16,7 @@ const pool = new Pool({ connectionString: url, max: 16 });
 const database = drizzle(pool);
 const payments = createDrizzlePaymentRepository(database, { websiteAnalyticsV2Enabled: false, onNewInvoiceOrder: () => {} });
 afterAll(() => pool.end());
-let profile = 100;
+let profile = Number.parseInt(randomUUID().slice(0, 8), 16);
 async function fixture(account = { profileId: ++profile, balanceId: 222 }) {
   const sessionId = randomUUID(), orderId = randomUUID(), reference = `RNR-PENDING-${randomUUID()}`;
   await pool.query(`INSERT INTO checkout_sessions (id,token_digest,expires_at,completed_at) VALUES ($1,$2,now()+interval '1 day',now())`, [sessionId, randomUUID()]);

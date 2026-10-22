@@ -57,6 +57,7 @@ export function matchWiseCredit(credit: WiseCredit, intents: readonly WiseIntent
   const intent = candidates[0];
   if (intent.currency !== "AUD" || intent.amountCents !== credit.amountCents) return { kind: "review", reason: "amount_currency_mismatch" };
   if (credit.receivedAt < intent.createdAt) return { kind: "review", reason: "predates_order" };
+  if (credit.receivedAt.getTime() > intent.createdAt.getTime() + 30 * 86400_000) return { kind: "review", reason: "outside_payment_window" };
   if (intent.status !== "pending") return { kind: "review", reason: "order_not_pending" };
   return { kind: "matched", intentId: intent.id };
 }

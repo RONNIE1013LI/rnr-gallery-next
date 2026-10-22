@@ -39,7 +39,7 @@ describe("Wise PayID safety", () => {
   });
   it("requires one exact reference, amount and AUD credit after intent creation", () => {
     expect(matchWiseCredit(credit(), [intent])).toEqual({ kind: "matched", intentId: intent.id });
-    for (const change of [{ reference: null }, { reference: intent.reference.toLowerCase() }, { amountCents: 12341 }, { currency: "NZD" }, { eligible: false }, { receivedAt: new Date("2026-10-20T00:00:00Z") }]) expect(matchWiseCredit({ ...credit(), ...change }, [intent]).kind).toBe("review");
+    for (const change of [{ reference: null }, { reference: intent.reference.toLowerCase() }, { amountCents: 12341 }, { currency: "NZD" }, { eligible: false }, { receivedAt: new Date("2026-10-20T00:00:00Z") }, { receivedAt: new Date("2026-11-21T00:00:00Z") }]) expect(matchWiseCredit({ ...credit(), ...change }, [intent]).kind).toBe("review");
     expect(matchWiseCredit(credit(), [intent, { ...intent, id: "another" }])).toEqual({ kind: "review", reason: "ambiguous_reference" });
     expect(matchWiseCredit(credit(), [{ ...intent, status: "paid" }]).kind).toBe("review");
   });

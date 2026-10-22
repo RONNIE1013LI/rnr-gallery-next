@@ -15,7 +15,7 @@ export function PayIdInstructionsPanel({ instructions }: { instructions: PayIdIn
       <dt>Amount</dt><dd><strong>AUD {(instructions.amountCents / 100).toFixed(2)}</strong> <button type="button" onClick={() => copy((instructions.amountCents / 100).toFixed(2), "Amount")}>Copy amount</button></dd>
       <dt>Payment reference</dt><dd><strong>{instructions.reference}</strong> <button type="button" onClick={() => copy(instructions.reference, "Reference")}>Copy reference</button></dd></dl>
     <p role="status" aria-live="polite">{message}</p>
-    <p>Enter this reference exactly. Missing or changed references and different amounts require manual review.</p>
+    <p>Transfer within 30 days and enter this reference exactly. Missing or changed references and different amounts require manual review.</p>
     <p>Confirmation follows a bank statement check and may take several hours. Please do not pay twice.</p>
   </section>;
 }

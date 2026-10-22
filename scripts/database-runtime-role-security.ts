@@ -111,11 +111,12 @@ export const RUNTIME_FUNCTION_ALLOWLIST = Object.freeze([
   "customer_service_mark_ui_row_change()",
 ]);
 
-const SUPPLIES_RUNTIME_TABLES = Object.freeze([
+const RESTRICTED_RUNTIME_TABLES = Object.freeze([
   "supplies_audit_logs", "supplies_categories", "supplies_images", "supplies_order_items",
   "supplies_products", "supplies_settings", "supplies_stock_reservations", "supplies_variants",
+  "wise_payid_audit", "wise_payid_intents", "wise_payid_receipts", "wise_payid_poll_state",
 ]);
-const APPEND_ONLY_RUNTIME_TABLES = Object.freeze(["supplies_audit_logs", "supplies_order_items"]);
+const APPEND_ONLY_RUNTIME_TABLES = Object.freeze(["supplies_audit_logs", "supplies_order_items", "wise_payid_audit", "wise_payid_intents"]);
 
 export function runtimeRoleAttributesAreSafe(input: RuntimeRoleAttributes) {
   return input.canLogin && !input.inherit && !input.superuser && !input.createRole &&
@@ -153,7 +154,7 @@ export function buildRuntimeGrantStatements(input: Readonly<{
     `REVOKE CREATE ON SCHEMA ${schema} FROM ${runtime}`,
     `REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schema} FROM ${runtime}`,
     `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${schema} TO ${runtime}`,
-    ...SUPPLIES_RUNTIME_TABLES.map((name) => {
+    ...RESTRICTED_RUNTIME_TABLES.map((name) => {
       const table = `${schema}.${quoteIdentifier(name)}`;
       const privileges = APPEND_ONLY_RUNTIME_TABLES.includes(name) ? "UPDATE, DELETE" : "DELETE";
       return `DO $rnr_supplies$ BEGIN IF to_regclass(${quoteLiteral(table)}) IS NOT NULL THEN REVOKE ${privileges} ON TABLE ${table} FROM ${runtime}; END IF; END $rnr_supplies$`;
@@ -246,7 +247,7 @@ export function summarizeRuntimeRole(input: RuntimeRoleInventory) {
 }
 
 export function runtimeInventorySql() {
-  const suppliesTables = SUPPLIES_RUNTIME_TABLES.map(quoteLiteral).join(", ");
+  const suppliesTables = RESTRICTED_RUNTIME_TABLES.map(quoteLiteral).join(", ");
   const appendOnlyTables = APPEND_ONLY_RUNTIME_TABLES.map(quoteLiteral).join(", ");
   return `
     select role.rolsuper as superuser,

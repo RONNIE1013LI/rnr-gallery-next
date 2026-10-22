@@ -117,3 +117,8 @@ describe("customer order detail", () => {
     expect(container.innerHTML).not.toMatch(/uploadReferences|mainPhotoUploadId|upload-private/);
   });
 });
+
+it("labels a confirmed PayID order correctly", () => {
+  render(<OrderDetail order={{ ...order, currency: "AUD", payment: { method: "payid", status: "paid", isTest: false, canRetry: false } }} />);
+  expect(screen.getByText("PayID — AUD Bank Transfer")).toBeVisible();
+});
