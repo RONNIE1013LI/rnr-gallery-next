@@ -15,28 +15,46 @@ async function load(): Promise<Snapshot> {
 export function WisePayIdPanel() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
     void load().then((value) => { if (active) setSnapshot(value); }).catch(() => { if (active) setError("Wise reconciliation unavailable"); });
     return () => { active = false; };
   }, []);
-  async function submit(body: Record<string, unknown>) {
-    setBusy(true); setError("");
+  async function submit(body: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+    setBusy(true); setError(""); setNotice("");
     try {
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Review was not confirmed");
       setSnapshot(await load());
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Review was not confirmed"); }
+      return result;
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Review was not confirmed"); return null; }
     finally { setBusy(false); }
+  }
+  async function syncConfirmedReceipt() {
+    const result = await submit({ action: "sync_confirmed_receipt" });
+    if (!result) return;
+    if (result.skipped === "cooldown") setNotice("A Wise sync just ran. Please wait 30 seconds before trying again.");
+    else if (result.skipped === "no_pending") setNotice("No pending PayID orders need synchronization.");
+    else {
+      const applied = typeof result.applied === "number" ? result.applied : 0;
+      setNotice(applied === 1 ? "Sync complete. 1 payment was automatically confirmed."
+        : applied > 1 ? `Sync complete. ${applied} payments were automatically confirmed.`
+          : "Sync complete. No exact Wise receipt matched a pending order.");
+    }
   }
   return <>
     {error ? <p role="alert">{error}</p> : null}
+    {notice ? <p role="status">{notice}</p> : null}
     {!snapshot ? <p>Loading reconciliation…</p> : !snapshot.enabled ? <p>Wise PayID is disabled. Configure the server securely after verification and database approval.</p> : <>
       <section className={styles.panel}><h2>Statement reconciliation</h2>
         <p>Automatic confirmation: {snapshot.autoMatch ? "enabled" : "disabled — manual review required"}. Statement checks run at most once per hour.</p>
-        <button type="button" disabled={busy} className={styles.primaryAdminButton} onClick={() => void submit({ action: "poll" })}>Check AUD statement</button>
+        <div className={styles.headerActions}>
+          <button type="button" disabled={busy} className={styles.secondaryAdminButton} onClick={() => void submit({ action: "poll" })}>Check AUD statement</button>
+          <button type="button" disabled={busy} className={styles.primaryAdminButton} onClick={() => void syncConfirmedReceipt()}>Confirmed in Wise — sync now</button>
+        </div>
       </section>
       <section className={styles.panel}><h2>Receipts requiring review</h2>
         {!snapshot.receipts?.length ? <p>No receipts require review.</p> : snapshot.receipts.map((receipt) => <section key={receipt.id} className={styles.panel}>

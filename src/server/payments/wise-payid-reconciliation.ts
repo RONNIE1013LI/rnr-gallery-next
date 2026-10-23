@@ -4,7 +4,7 @@ import type { ApplyVerifiedResultInput } from "./payment-repository";
 
 type Reserved = { receipt: { id: string; digest: string }; intent: { id: string; reference: string; merchantReference: string; amountCents: number } };
 type WorkerStore = {
-  hasPending(): Promise<boolean>; claimPoll(): Promise<boolean>; finishPoll(success: boolean): Promise<void>;
+  hasPending(): Promise<boolean>; claimPoll(force?: boolean): Promise<boolean>; finishPoll(success: boolean, actorId?: string): Promise<void>;
   holdForReview(): Promise<void>;
   ingest(credits: readonly WiseCredit[]): Promise<void>; candidates(): Promise<readonly { id: string; status: string }[]>;
   reserve(receiptId: string): Promise<Reserved | null>;
@@ -21,9 +21,9 @@ export function createWisePayIdWorker({ config, repository, client, apply, now =
   client: { statement(profileId: number, balanceId: number, start: Date, end: Date): Promise<unknown> };
   apply(input: ApplyVerifiedResultInput): Promise<unknown>; now?: () => Date;
 }) {
-  return { async run() {
+  return { async run(options: { force?: boolean; actorId?: string } = {}) {
     if (!await repository.hasPending()) return { skipped: "no_pending" };
-    if (!await repository.claimPoll()) return { skipped: "cooldown" };
+    if (!await (options.force ? repository.claimPoll(true) : repository.claimPoll())) return { skipped: "cooldown" };
     try {
       const end = now();
       const start = new Date(end.getTime() - 30 * 86400_000);
@@ -40,10 +40,10 @@ export function createWisePayIdWorker({ config, repository, client, apply, now =
         applied++;
       }
       if (!config.autoMatch) await repository.holdForReview();
-      await repository.finishPoll(true);
+      await (options.actorId ? repository.finishPoll(true, options.actorId) : repository.finishPoll(true));
       return { applied, autoMatch: config.autoMatch };
     } catch {
-      await repository.finishPoll(false);
+      await (options.actorId ? repository.finishPoll(false, options.actorId) : repository.finishPoll(false));
       throw new Error("Wise reconciliation unavailable; orders remain pending");
     }
   } };

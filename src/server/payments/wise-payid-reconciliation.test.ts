@@ -20,6 +20,12 @@ describe("Wise statement worker", () => {
     const ctx = setup(); ctx.repository.claimPoll.mockResolvedValue(false);
     expect(await ctx.worker.run()).toMatchObject({ skipped: "cooldown" }); expect(ctx.client.statement).not.toHaveBeenCalled();
   });
+  it("lets an authenticated admin request an immediate protected statement sync", async () => {
+    const ctx = setup();
+    expect(await ctx.worker.run({ force: true, actorId: "admin-1" })).toMatchObject({ applied: 1 });
+    expect(ctx.repository.claimPoll).toHaveBeenCalledWith(true);
+    expect(ctx.repository.finishPoll).toHaveBeenCalledWith(true, "admin-1");
+  });
   it("keeps orders pending until reference round trip is verified", async () => {
     const ctx = setup({ autoMatch: false }); ctx.repository.candidates.mockResolvedValue([{ ...receipt, status: "unmatched" }]);
     expect(await ctx.worker.run()).toMatchObject({ applied: 0, autoMatch: false }); expect(ctx.apply).not.toHaveBeenCalled(); expect(ctx.repository.reserve).not.toHaveBeenCalled();

@@ -39,17 +39,19 @@ export function createWisePayIdRepository(database: Database, config: Pick<WiseP
         return row;
       });
     },
-    async claimPoll(): Promise<boolean> {
+    async claimPoll(force = false): Promise<boolean> {
       const key = `${config.profileId}:${config.balanceId}`;
       const result = await database.insert(polls).values({ key, lastStartedAt: sql`clock_timestamp()` }).onConflictDoUpdate({ target: polls.key,
-        set: { lastStartedAt: sql`clock_timestamp()` }, where: sql`${polls.lastStartedAt} < clock_timestamp() - interval '1 hour'` }).returning();
+        set: { lastStartedAt: sql`clock_timestamp()` }, where: force
+          ? sql`${polls.lastStartedAt} < clock_timestamp() - interval '30 seconds'`
+          : sql`${polls.lastStartedAt} < clock_timestamp() - interval '1 hour'` }).returning();
       return result.length === 1;
     },
-    async finishPoll(success: boolean) {
+    async finishPoll(success: boolean, actorId = "system:wise") {
       await database.transaction(async (tx) => {
         await tx.update(polls).set(success ? { successfulAt: sql`clock_timestamp()`, consecutiveFailures: 0 }
           : { consecutiveFailures: sql`${polls.consecutiveFailures} + 1` }).where(eq(polls.key, `${config.profileId}:${config.balanceId}`));
-        await tx.insert(audit).values({ actorId: "system:wise", action: success ? "poll_completed" : "poll_failed", reason: success ? "statement_processed" : "statement_verification_or_application_failed" });
+        await tx.insert(audit).values({ actorId, action: success ? "poll_completed" : "poll_failed", reason: success ? "statement_processed" : "statement_verification_or_application_failed" });
       });
     },
     async hasPending(): Promise<boolean> {

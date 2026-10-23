@@ -10,6 +10,7 @@ import { wiseVerifiedResult } from "@/server/payments/wise-payid-reconciliation"
 const headers = { "Cache-Control": "no-store" };
 const inputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("poll") }).strict(),
+  z.object({ action: z.literal("sync_confirmed_receipt") }).strict(),
   z.object({ action: z.literal("ignore"), receiptId: z.uuid(), reason: z.string().trim().min(5).max(500) }).strict(),
   z.object({ action: z.literal("approve"), receiptId: z.uuid(), intentId: z.uuid(), expectedDigest: z.string().regex(/^[0-9a-f]{64}$/), reason: z.string().trim().min(5).max(500) }).strict(),
 ]);
@@ -44,6 +45,7 @@ export function createAdminWisePayIdRoute(dependencies?: Dependencies) {
         const runtime = deps.runtime();
         if (!runtime) return Response.json({ error: "Wise PayID is disabled" }, { status: 503, headers });
         if (input.action === "poll") return Response.json(await runtime.worker.run(), { headers });
+        if (input.action === "sync_confirmed_receipt") return Response.json(await runtime.worker.run({ force: true, actorId: access.user.id }), { headers });
         if (input.action === "ignore") {
           await runtime.repository.ignore(input.receiptId, access.user.id, input.reason);
           return Response.json({ ignored: true }, { headers });

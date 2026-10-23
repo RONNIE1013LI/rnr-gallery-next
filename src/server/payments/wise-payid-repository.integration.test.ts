@@ -80,6 +80,14 @@ describe("Wise AUD PayID against disposable PostgreSQL", () => {
     expect(slots.filter(Boolean)).toHaveLength(1);
     expect(await f.repository.claimPoll()).toBe(false);
   });
+  it("lets a manual sync bypass the hourly schedule while blocking rapid duplicate clicks", async () => {
+    const f = await fixture();
+    expect(await f.repository.claimPoll()).toBe(true);
+    expect(await f.repository.claimPoll()).toBe(false);
+    await pool.query("update wise_payid_poll_state set last_started_at=clock_timestamp()-interval '31 seconds' where key=$1", [`${f.account.profileId}:${f.account.balanceId}`]);
+    expect(await f.repository.claimPoll(true)).toBe(true);
+    expect(await f.repository.claimPoll(true)).toBe(false);
+  });
   it("confirms concurrent duplicate receipts exactly once with one formal number, ledger, job and notice", async () => {
     const f = await fixture(), saved = await binding(f), before = await counter();
     const results = await Promise.all(Array.from({ length: 12 }, () => payments.applyVerifiedResult(wiseVerifiedResult(saved))));
