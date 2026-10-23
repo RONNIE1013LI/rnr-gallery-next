@@ -6006,7 +6006,7 @@
 .payidPending {
   width: min(100%, 42rem);
   margin: 2.5rem auto 0;
-  text-align: center;
+  text-align: left;
   color: var(--ink);
 }
 
@@ -6028,7 +6028,7 @@
   font-size: 1rem;
   font-weight: 400;
   line-height: 1.6;
-  text-align: center;
+  text-align: left;
 }
 
 .payidInstructions h2 {
@@ -6056,7 +6056,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.5rem 0.75rem;
 }
 
@@ -6067,12 +6067,26 @@
   min-width: 0;
 }
 
-.payidInstructions .secondaryButton {
+.payidCopyButton {
+  min-height: 32px;
+  padding: 0.3rem 0.7rem;
   margin: 0;
-  font-family: inherit;
-  font-weight: 400;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-button);
   background: transparent;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1;
   cursor: pointer;
+}
+
+.payidCopyButton:hover {
+  color: var(--ink);
 }
 
 .payidInstructions [role="status"]:empty {

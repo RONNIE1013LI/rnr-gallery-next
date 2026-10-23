@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PayIdInstructionsPanel } from "./payid-instructions-panel";
 import { parsePaymentStartResponse } from "./order-payment-panel";
 import { parsePaymentMethodsResponse } from "./payment-methods";
+import styles from "./storefront.module.css";
 const instructions = { kind: "bank_transfer", method: "payid", payId: "payment@rnrgallery.com", amountCents: 12340, currency: "AUD", reference: "RRA0123456789ABCDEF" } as const;
 describe("PayID customer instructions", () => {
   it("shows exact AUD amount, reference, PayID and pending state", () => {
@@ -30,6 +31,13 @@ describe("PayID customer instructions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Copy reference" }));
     await waitFor(() => expect(writeText).toHaveBeenLastCalledWith(instructions.reference));
     expect(screen.getByText(/pending payment/)).toBeVisible();
+  });
+
+  it("uses the compact copy control for each bank field", () => {
+    render(<PayIdInstructionsPanel instructions={instructions} />);
+    for (const name of ["Copy PayID", "Copy amount", "Copy reference"]) {
+      expect(screen.getByRole("button", { name })).toHaveClass(styles.payidCopyButton);
+    }
   });
 
 });
