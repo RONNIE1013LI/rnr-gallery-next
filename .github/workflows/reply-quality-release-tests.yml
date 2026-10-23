@@ -22,7 +22,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          check-latest: true
           cache: npm
+
+      - name: Verify Node.js security baseline
+        shell: bash
+        run: |
+          node -v
+          node <<'NODE'
+          const [major, minor, patch] = process.versions.node.split(".").map(Number);
+          if (major !== 24 || !Number.isInteger(patch) || minor < 22 || (minor === 22 && patch < 1)) {
+            console.error("Node.js 24.22.1 or newer in the 24.x line is required");
+            process.exit(1);
+          }
+          NODE
       - name: Install test runtime prerequisites
         run: |
           brew install postgresql@16 ripgrep
