@@ -82,6 +82,11 @@ export function SiteFooter({
                   <Image src="/media/payments/flik-logo-black.png" alt="" aria-hidden="true" width={829} height={341} sizes="40px" />
                 </span>
               </li>}
+              {market === "AU" && <li className="site-footer__payment-logo site-footer__payment-logo--payid">
+                <span role="img" aria-label="PayID" className="site-footer__payment-mark site-footer__payment-mark--payid">
+                  <Image src="/media/payments/payid-brandmark.svg" alt="" aria-hidden="true" width={842} height={595} />
+                </span>
+              </li>}
             </ul>
           </section>
         </div>

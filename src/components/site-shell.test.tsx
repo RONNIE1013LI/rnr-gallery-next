@@ -536,6 +536,7 @@ describe("site shell", () => {
       "Google Pay",
       "Flik Pay",
     ]);
+    expect(within(payments).queryByRole("img", { name: "PayID" })).not.toBeInTheDocument();
     expect(payments.querySelectorAll("img")).toHaveLength(6);
     expect(Array.from(payments.querySelectorAll("img")).slice(0, 5).every((image) =>
       image.getAttribute("src")?.includes("/media/payments/footer-payment-methods.jpg"),
@@ -551,9 +552,12 @@ describe("site shell", () => {
       .toHaveClass("site-footer__legal");
   });
 
-  it("does not advertise Flik on the Australian storefront", () => {
+  it("shows PayID last on the Australian storefront instead of Flik", () => {
     render(<SiteFooter market="AU" />);
     expect(screen.queryByRole("img", { name: "Flik Pay" })).not.toBeInTheDocument();
+    const payments = screen.getByRole("region", { name: "Accepted payments" });
+    expect(within(payments).getAllByRole("img").map((logo) => logo.getAttribute("aria-label")))
+      .toEqual(["Visa", "Mastercard", "Afterpay", "Apple Pay", "Google Pay", "PayID"]);
   });
 
   it("places policies under Customer and links the footer brand to the page top", () => {
