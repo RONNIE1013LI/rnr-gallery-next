@@ -769,7 +769,7 @@ a:active {
 
 .site-footer__grid {
   display: grid;
-  grid-template-columns: minmax(19.125rem, 1.5fr) repeat(3, minmax(7rem, 1fr)) minmax(13rem, 1.25fr);
+  grid-template-columns: minmax(17.5rem, 1.5fr) repeat(3, minmax(7rem, 1fr)) minmax(13rem, 1.25fr);
   gap: clamp(1.75rem, 3.5vw, 3.5rem);
 }
 
@@ -940,24 +940,18 @@ a:active {
   height: auto;
 }
 
-.site-footer__payment-logo--payid {
-  width: 4.125rem;
-  aspect-ratio: auto;
-  height: 1.565rem;
-}
-
 .site-footer__payment-mark--payid {
   display: flex;
   align-items: center;
   justify-content: center;
-  aspect-ratio: auto;
   background: #fff;
 }
 
 .site-footer__payment-mark--payid img {
-  width: 100%;
+  width: 140%;
   height: auto;
   max-width: none;
+  flex-shrink: 0;
 }
 
 .site-footer__legal {
@@ -1318,13 +1312,6 @@ a:active {
     height: auto;
     aspect-ratio: 147 / 92;
     flex: 0 0 auto;
-  }
-
-  .site-footer__payment-logo--payid {
-    width: 4.125rem;
-    min-width: 4.125rem;
-    height: 1.4rem;
-    aspect-ratio: auto;
   }
 
 }
