@@ -769,7 +769,7 @@ a:active {
 
 .site-footer__grid {
   display: grid;
-  grid-template-columns: minmax(15rem, 1.5fr) repeat(3, minmax(7rem, 1fr)) minmax(13rem, 1.25fr);
+  grid-template-columns: minmax(17.5rem, 1.5fr) repeat(3, minmax(7rem, 1fr)) minmax(13rem, 1.25fr);
   gap: clamp(1.75rem, 3.5vw, 3.5rem);
 }
 
@@ -878,7 +878,7 @@ a:active {
   align-items: center;
   justify-content: center;
   flex-wrap: nowrap;
-  gap: 0.875rem;
+  gap: 0.5rem;
 }
 
 .site-footer .site-footer__payment-list li + li {
@@ -926,6 +926,18 @@ a:active {
 
 .site-footer__payment-mark--google-pay .site-footer__payment-sprite {
   left: -694.5578%;
+}
+
+.site-footer__payment-mark--flik {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+}
+
+.site-footer__payment-mark--flik img {
+  width: 80%;
+  height: auto;
 }
 
 .site-footer__legal {

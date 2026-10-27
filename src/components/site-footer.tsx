@@ -77,6 +77,11 @@ export function SiteFooter({
                   </span>
                 </li>
               ))}
+              {market === "NZ" && <li className="site-footer__payment-logo">
+                <span role="img" aria-label="Flik Pay" className="site-footer__payment-mark site-footer__payment-mark--flik">
+                  <Image src="/media/payments/flik-logo-black.png" alt="" aria-hidden="true" width={829} height={341} sizes="40px" />
+                </span>
+              </li>}
             </ul>
           </section>
         </div>

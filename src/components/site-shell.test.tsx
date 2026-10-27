@@ -534,11 +534,14 @@ describe("site shell", () => {
       "Afterpay",
       "Apple Pay",
       "Google Pay",
+      "Flik Pay",
     ]);
-    expect(payments.querySelectorAll("img")).toHaveLength(5);
-    expect(Array.from(payments.querySelectorAll("img")).every((image) =>
+    expect(payments.querySelectorAll("img")).toHaveLength(6);
+    expect(Array.from(payments.querySelectorAll("img")).slice(0, 5).every((image) =>
       image.getAttribute("src")?.includes("/media/payments/footer-payment-methods.jpg"),
     )).toBe(true);
+    expect(decodeURIComponent(within(payments).getByRole("img", { name: "Flik Pay" }).querySelector("img")?.getAttribute("src") ?? ""))
+      .toContain("/media/payments/flik-logo-black.png");
     expect(payments.querySelectorAll("svg")).toHaveLength(0);
 
     const intro = footer.querySelector(".site-footer__intro");
@@ -546,6 +549,11 @@ describe("site shell", () => {
     expect(payments.parentElement?.firstElementChild).toBe(intro);
     expect(footer.querySelector(".site-footer__grid")?.nextElementSibling)
       .toHaveClass("site-footer__legal");
+  });
+
+  it("does not advertise Flik on the Australian storefront", () => {
+    render(<SiteFooter market="AU" />);
+    expect(screen.queryByRole("img", { name: "Flik Pay" })).not.toBeInTheDocument();
   });
 
   it("places policies under Customer and links the footer brand to the page top", () => {
