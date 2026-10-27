@@ -65,6 +65,13 @@ async function binding(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("Wise AUD PayID against disposable PostgreSQL", () => {
+  it("shows the most recently received review receipts first, regardless of import order", async () => {
+    const f = await fixture();
+    const old = credit(null, { transactionId: "TRANSFER-OLD", receivedAt: new Date("2026-10-06T11:58:14Z"), eligible: false });
+    const newest = credit(null, { transactionId: "TRANSFER-NEW", receivedAt: new Date("2026-10-12T20:20:05Z"), eligible: false });
+    await f.repository.ingest([old, newest]);
+    expect((await f.repository.reviewQueue()).receipts.map((row) => row.transactionId)).toEqual(["TRANSFER-NEW", "TRANSFER-OLD"]);
+  });
   it("deduplicates concurrent intent creation without admitting unpaid orders", async () => {
     const f = await fixture();
     const rows = await Promise.all(Array.from({ length: 12 }, () => f.repository.createIntent(f.input)));

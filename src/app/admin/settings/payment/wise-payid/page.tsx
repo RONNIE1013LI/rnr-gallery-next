@@ -6,7 +6,7 @@ export const metadata = { title: "Wise PayID reconciliation | R&R Gallery Admin"
 export default async function WisePayIdPage() {
   await requireAdminPage("/admin/settings/payment/wise-payid", "manage_payment");
   return <section className={styles.pageSection}><header className={styles.pageHeader}><div>
-    <Link href="/admin/settings/payment">Payment settings</Link><h1>Wise AUD PayID reconciliation</h1>
+    <Link href="/admin/settings/payment">Payment settings</Link><h1 className={styles.wisePayIdTitle}>Wise AUD PayID reconciliation</h1>
     <p>Review received bank transfers and record payment decisions.</p>
   </div></header><WisePayIdPanel /></section>;
 }

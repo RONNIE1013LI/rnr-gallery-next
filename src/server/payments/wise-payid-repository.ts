@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { orders } from "@/server/db/schema/orders";
 import { paymentLedgerEntries, paymentAttempts } from "@/server/db/schema/payments";
@@ -144,7 +144,7 @@ export function createWisePayIdRepository(database: Database, config: Pick<WiseP
     },
     async reviewQueue() {
       const [queue, pending, history] = await Promise.all([
-        database.select().from(receipts).where(and(sameAccount(config), inArray(receipts.status, ["review", "reserved"]))).orderBy(asc(receipts.createdAt)).limit(100),
+        database.select().from(receipts).where(and(sameAccount(config), inArray(receipts.status, ["review", "reserved"]))).orderBy(desc(receipts.receivedAt), asc(receipts.transactionId)).limit(100),
         database.select({ intent: intents, status: paymentAttempts.status }).from(intents).innerJoin(paymentAttempts, eq(intents.id, paymentAttempts.id))
           .where(and(eq(intents.profileId, config.profileId), eq(intents.balanceId, config.balanceId), inArray(paymentAttempts.status, ["created", "requires_action", "processing"]))).limit(100),
         database.select().from(audit).orderBy(sql`${audit.createdAt} desc`).limit(100),
