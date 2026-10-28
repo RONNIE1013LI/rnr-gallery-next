@@ -21,8 +21,8 @@ const paymentLogos = Object.freeze([
   { name: "Visa", className: "visa" },
   { name: "Mastercard", className: "mastercard" },
   { name: "Afterpay", className: "afterpay" },
-  { name: "Apple Pay", className: "apple-pay" },
   { name: "Google Pay", className: "google-pay" },
+  { name: "Apple Pay", className: "apple-pay" },
 ] as const);
 
 function phoneHref(phone: string) {

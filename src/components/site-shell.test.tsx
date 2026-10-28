@@ -532,8 +532,8 @@ describe("site shell", () => {
       "Visa",
       "Mastercard",
       "Afterpay",
-      "Apple Pay",
       "Google Pay",
+      "Apple Pay",
       "Flik Pay",
     ]);
     expect(within(payments).queryByRole("img", { name: "PayID" })).not.toBeInTheDocument();
@@ -557,7 +557,7 @@ describe("site shell", () => {
     expect(screen.queryByRole("img", { name: "Flik Pay" })).not.toBeInTheDocument();
     const payments = screen.getByRole("region", { name: "Accepted payments" });
     expect(within(payments).getAllByRole("img").map((logo) => logo.getAttribute("aria-label")))
-      .toEqual(["Visa", "Mastercard", "Afterpay", "Apple Pay", "Google Pay", "PayID"]);
+      .toEqual(["Visa", "Mastercard", "Afterpay", "Google Pay", "Apple Pay", "PayID"]);
   });
 
   it("places policies under Customer and links the footer brand to the page top", () => {
