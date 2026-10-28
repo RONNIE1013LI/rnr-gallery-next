@@ -66,17 +66,35 @@ describe("serializeGoogleMerchantFeed", () => {
     });
 
     const blocks = shippingBlocks(xml);
-    expect(blocks).toHaveLength(2);
+    expect(blocks.length).toBeLessThanOrEqual(100);
     const standard = blocks.find((block) => block.includes("Standard Shipping"));
-    const dhl = blocks.find((block) => block.includes("DHL Express"));
+    const dhlBlocks = blocks.filter((block) => block.includes("DHL Express"));
+    const deliveryFor = (postcode: number) => dhlBlocks.filter((block) => {
+      const area = block.match(/<g:postal_code>(\d{4})(?:-(\d{4}))?<\/g:postal_code>/);
+      return area && postcode >= Number(area[1]) && postcode <= Number(area[2] ?? area[1]);
+    });
     expect(standard).toContain("<g:price>120.00 AUD</g:price>");
     expect(standard).toContain("<g:min_transit_time>7</g:min_transit_time>");
     expect(standard).toContain("<g:max_transit_time>14</g:max_transit_time>");
-    expect(dhl).toContain("<g:price>186.00 AUD</g:price>");
-    expect(dhl).toContain("<g:min_transit_time>2</g:min_transit_time>");
-    expect(dhl).toContain("<g:max_transit_time>14</g:max_transit_time>");
-    expect(blocks.every((block) => block.includes("<g:min_handling_time>5</g:min_handling_time>"))).toBe(true);
-    expect(blocks.every((block) => block.includes("<g:max_handling_time>5</g:max_handling_time>"))).toBe(true);
+    // Eastern city centres, including the regional cities, retain the express estimate.
+    for (const postcode of [2000, 2250, 2300, 2486, 2500, 2600, 2900, 3000, 3207, 3216, 4000, 4217, 4556]) {
+      const matches = deliveryFor(postcode);
+      expect(matches, `DHL coverage for ${postcode}`).toHaveLength(1);
+      expect(matches[0]).toContain("<g:min_transit_time>2</g:min_transit_time>");
+      expect(matches[0]).toContain("<g:max_transit_time>3</g:max_transit_time>");
+    }
+    // DHL's remote list overrides city geography; the nationwide fallback is retained.
+    for (const postcode of [2315, 2485, 2563, 2573, 2753, 2775, 3115, 3159, 3341, 4025, 4183, 4211, 4228, 4550, 4565, 4810, 6000]) {
+      const matches = deliveryFor(postcode);
+      expect(matches, `DHL conservative coverage for ${postcode}`).toHaveLength(1);
+      expect(matches[0]).toContain("<g:max_transit_time>14</g:max_transit_time>");
+    }
+    for (let postcode = 0; postcode <= 9999; postcode += 1) {
+      expect(deliveryFor(postcode), `DHL coverage for ${postcode}`).toHaveLength(1);
+    }
+    expect(dhlBlocks.every((block) => block.includes("<g:price>186.00 AUD</g:price>"))).toBe(true);
+    expect(blocks.every((block) => block.includes("<g:min_handling_time>3</g:min_handling_time>"))).toBe(true);
+    expect(blocks.every((block) => block.includes("<g:max_handling_time>3</g:max_handling_time>"))).toBe(true);
   });
 
   it("uses one conservative nationwide New Zealand rate without region codes", () => {

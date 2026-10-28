@@ -32,6 +32,51 @@ function formatPrice(cents: number, currency: MerchantProductData["currency"]): 
   return `${(cents / 100).toFixed(2)} ${currency}`;
 }
 
+// Eastern metro geography: https://auspost.com.au/personal/sending/delivery-speeds-and-coverage
+// Central Coast, Newcastle, Wollongong, Geelong and Sunshine Coast: Australia Post's
+// z9-pricing-guide-domestic-eparcel-contract.pdf. These define geography, not DHL transit times.
+// Excludes DHL's Remote Area Locations, effective 9 August 2026, checked 28 October 2026:
+// https://www.dhl.com/content/dam/dhl/global/dhl-express/documents/docs/dhl-express-remote-area-surcharge-locations.xlsx.coredownload.xlsx
+const australiaDhlMetroPostcodes = [
+  [2000, 2234], [2250, 2263], [2282, 2310], [2486, 2486], [2500, 2532],
+  [2555, 2562], [2564, 2572], [2600, 2620], [2740, 2752], [2755, 2756],
+  [2758, 2774], [2777, 2778], [2781, 2781], [2900, 2914], [3000, 3114],
+  [3116, 3138], [3140, 3158], [3160, 3207], [3211, 3220], [3340, 3340],
+  [3750, 3750], [3755, 3757], [4000, 4024], [4026, 4182], [4184, 4210],
+  [4212, 4227], [4229, 4269], [4273, 4274], [4500, 4513], [4517, 4518],
+  [4520, 4549], [4551, 4551], [4556, 4558], [4564, 4564], [4575, 4579],
+] as const;
+
+function australiaDhlShippingXml(price: number): string[] {
+  const areas: Array<{ from: number; to: number; maxTransitDays: number }> = [];
+  let nextPostcode = 0;
+  for (const [from, to] of australiaDhlMetroPostcodes) {
+    if (nextPostcode < from) {
+      areas.push({ from: nextPostcode, to: from - 1, maxTransitDays: 14 });
+    }
+    areas.push({ from, to, maxTransitDays: 3 });
+    nextPostcode = to + 1;
+  }
+  areas.push({ from: nextPostcode, to: 9999, maxTransitDays: 14 });
+
+  return areas.flatMap(({ from, to, maxTransitDays }) => {
+    const first = String(from).padStart(4, "0");
+    const last = String(to).padStart(4, "0");
+    return [
+      "      <g:shipping>",
+      "        <g:country>AU</g:country>",
+      `        <g:postal_code>${from === to ? first : `${first}-${last}`}</g:postal_code>`,
+      "        <g:service>DHL Express</g:service>",
+      `        <g:price>${formatPrice(price, "AUD")}</g:price>`,
+      "        <g:min_handling_time>3</g:min_handling_time>",
+      "        <g:max_handling_time>3</g:max_handling_time>",
+      "        <g:min_transit_time>2</g:min_transit_time>",
+      `        <g:max_transit_time>${maxTransitDays}</g:max_transit_time>`,
+      "      </g:shipping>",
+    ];
+  });
+}
+
 function australiaShippingXml(product: MerchantProductData): readonly string[] {
   const rates = getAustraliaFixedShippingRates(product.productKey, product.sizeKey);
   return [
@@ -39,20 +84,12 @@ function australiaShippingXml(product: MerchantProductData): readonly string[] {
     "        <g:country>AU</g:country>",
     "        <g:service>Standard Shipping</g:service>",
     `        <g:price>${formatPrice(rates.standard, "AUD")}</g:price>`,
-    "        <g:min_handling_time>5</g:min_handling_time>",
-    "        <g:max_handling_time>5</g:max_handling_time>",
+    "        <g:min_handling_time>3</g:min_handling_time>",
+    "        <g:max_handling_time>3</g:max_handling_time>",
     "        <g:min_transit_time>7</g:min_transit_time>",
     "        <g:max_transit_time>14</g:max_transit_time>",
     "      </g:shipping>",
-    "      <g:shipping>",
-    "        <g:country>AU</g:country>",
-    "        <g:service>DHL Express</g:service>",
-    `        <g:price>${formatPrice(rates.dhlExpress, "AUD")}</g:price>`,
-    "        <g:min_handling_time>5</g:min_handling_time>",
-    "        <g:max_handling_time>5</g:max_handling_time>",
-    "        <g:min_transit_time>2</g:min_transit_time>",
-    "        <g:max_transit_time>14</g:max_transit_time>",
-    "      </g:shipping>",
+    ...australiaDhlShippingXml(rates.dhlExpress),
   ];
 }
 
