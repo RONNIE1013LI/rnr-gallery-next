@@ -1,5 +1,8 @@
 import type { PurchasableSupply, SuppliesCatalogue, SupplyProduct } from "./types";
 
+// Keep public access asleep while the catalogue is prepared. Reactivate only on the owner's request.
+export const SUPPLIES_PUBLIC_STORE_DORMANT = true;
+
 function retainedVariants(product: SupplyProduct) {
   return product.variants.filter((variant) => !("archived" in variant && variant.archived === true));
 }

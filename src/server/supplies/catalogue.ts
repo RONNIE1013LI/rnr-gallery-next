@@ -1,7 +1,7 @@
 import { asc, eq, isNull } from "drizzle-orm";
 import { cache } from "react";
 import type { SuppliesCatalogue, SupplyImage } from "@/domain/supplies/types";
-import { publicSuppliesCatalogue, validateSupplyPurchase } from "@/domain/supplies/catalogue-policy";
+import { publicSuppliesCatalogue, SUPPLIES_PUBLIC_STORE_DORMANT, validateSupplyPurchase } from "@/domain/supplies/catalogue-policy";
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { cachePublicData, PUBLIC_CACHE_TAGS } from "@/server/cache/public-cache-tags";
 import { getDatabase } from "@/server/db/client";
@@ -66,12 +66,13 @@ const readCurrentPublicEnabled = cache(loadCurrentPublicEnabled);
 const readPublicDisplayEnabled = cachePublicData(loadCurrentPublicEnabled, "supplies-display-enabled-v1", SUPPLIES_PUBLIC_CACHE_TAGS);
 const recoverPublicReservations = cache(releaseAbandonedSupplyReservations);
 export async function getPublicSuppliesCatalogue() {
+  if (SUPPLIES_PUBLIC_STORE_DORMANT) return null;
   // The fresh switch guard makes an OFF change effective even if catalogue invalidation failed.
   if (!await readCurrentPublicEnabled()) return null;
   await recoverPublicReservations();
   return cachedPublicCatalogue();
 }
-export async function isSuppliesStoreEnabled() { return readPublicDisplayEnabled(); }
+export async function isSuppliesStoreEnabled() { return SUPPLIES_PUBLIC_STORE_DORMANT ? false : readPublicDisplayEnabled(); }
 export async function getPublicSupplyProduct(slug: string) { return (await getPublicSuppliesCatalogue())?.products.find((product) => product.slug === slug) ?? null; }
 export async function getPublicSupplyCategory(slug: string) { return (await getPublicSuppliesCatalogue())?.categories.find((category) => category.slug === slug) ?? null; }
 export async function getPublicSupplyImage(id: string) {
