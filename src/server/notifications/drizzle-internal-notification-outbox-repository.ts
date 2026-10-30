@@ -10,6 +10,7 @@ import type { InternalNotificationOutboxRepository } from "./internal-notificati
 import { isCanonicalInternalNotificationAdminPath } from "./internal-notification-email";
 import {
   INTERNAL_NOTIFICATION_TOPICS,
+  type InternalNotificationPayload,
   type InternalNotificationResourceType,
   type InternalNotificationTopic,
 } from "./internal-notification-types";
@@ -25,6 +26,34 @@ const INTERNAL_NOTIFICATION_RESOURCE_TYPES = Object.freeze([
 const payloadSchema = z.object({
   version: z.literal(1),
   adminPath: z.string().max(2048).refine(isCanonicalInternalNotificationAdminPath),
+  manualOrder: z.object({
+    customerName: z.string().max(190),
+    createdAt: z.string().datetime(),
+    status: z.string().max(80),
+    paymentStatus: z.string().max(80),
+    neededDate: z.string().max(10),
+    deliveryMethod: z.string().max(80),
+    urgent: z.boolean(),
+    currency: z.enum(["NZD", "AUD"]),
+    amountPayableCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    amountPaidCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    items: z.array(z.object({
+      productTitle: z.string().max(190),
+      sizeLabel: z.string().max(190),
+      quantity: z.number().int().min(1).max(100),
+    }).strict()).min(1).max(20),
+    invoice: z.object({
+      items: z.array(z.object({
+        description: z.string().max(500),
+        quantityMilli: z.number().int().min(1).max(1_000_000),
+        rateInclGstCents: z.number().int().min(0).max(100_000_000),
+      }).strict()).min(1).max(100),
+      grossCents: z.number().int().nonnegative(),
+      discountCents: z.number().int().nonnegative(),
+      gstCents: z.number().int().nonnegative(),
+      totalInclGstCents: z.number().int().nonnegative(),
+    }).strict().optional(),
+  }).strict().refine((order) => order.amountPaidCents <= order.amountPayableCents).optional(),
 }).strict();
 
 const eventSchema = z.object({
@@ -35,7 +64,7 @@ const eventSchema = z.object({
   resourceReference: z.string().trim().min(1).max(255),
   payload: payloadSchema,
   createdAt: z.date(),
-}).strict();
+}).strict().refine((event) => !event.payload.manualOrder || event.topic === "manual_order_created");
 
 export type InternalNotificationEvent = Readonly<{
   topic: InternalNotificationTopic;
@@ -43,7 +72,7 @@ export type InternalNotificationEvent = Readonly<{
   resourceType: InternalNotificationResourceType;
   resourceId: string;
   resourceReference: string;
-  payload: Readonly<{ version: 1; adminPath: string }>;
+  payload: InternalNotificationPayload;
   createdAt: Date;
 }>;
 

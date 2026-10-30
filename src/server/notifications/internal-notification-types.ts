@@ -40,3 +40,30 @@ export type InternalNotificationResourceType =
   | "payment_request"
   | "proof_review"
   | "customer_service_review";
+
+export type ManualOrderNotificationDetails = Readonly<{
+  customerName: string;
+  createdAt: string;
+  status: string;
+  paymentStatus: string;
+  neededDate: string;
+  deliveryMethod: string;
+  urgent: boolean;
+  currency: "NZD" | "AUD";
+  amountPayableCents: number;
+  amountPaidCents: number;
+  items: readonly Readonly<{ productTitle: string; sizeLabel: string; quantity: number }>[];
+  invoice?: Readonly<{
+    items: readonly Readonly<{ description: string; quantityMilli: number; rateInclGstCents: number }>[];
+    grossCents: number;
+    discountCents: number;
+    gstCents: number;
+    totalInclGstCents: number;
+  }>;
+}>;
+
+export type InternalNotificationPayload = Readonly<{
+  version: 1;
+  adminPath: string;
+  manualOrder?: ManualOrderNotificationDetails;
+}>;

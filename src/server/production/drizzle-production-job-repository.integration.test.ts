@@ -395,7 +395,30 @@ describe("drizzle production job repository", () => {
         resourceId: created.job.id,
         resourceReference: created.job.jobNumber,
         recipientEmail: notificationRecipientEmail,
-        payload: { version: 1, adminPath: `/admin/jobs/${created.job.id}` },
+        payload: {
+          version: 1,
+          adminPath: `/admin/jobs/${created.job.id}`,
+          manualOrder: {
+            customerName: "Manual Customer",
+            createdAt: "2026-08-04T10:00:00.000Z",
+            status: "new",
+            paymentStatus: "processing",
+            neededDate: "2026-08-12",
+            deliveryMethod: "post",
+            urgent: true,
+            currency: "NZD",
+            amountPayableCents: 23_000,
+            amountPaidCents: 10_000,
+            items: [{ productTitle: "Roll-Up Banner", sizeLabel: "85 × 200 cm", quantity: 1 }],
+            invoice: {
+              items: [{ description: "Roll-Up Banner", quantityMilli: 1_000, rateInclGstCents: 23_000 }],
+              grossCents: 23_000,
+              discountCents: 0,
+              gstCents: 3_000,
+              totalInclGstCents: 23_000,
+            },
+          },
+        },
       }),
     ]);
 

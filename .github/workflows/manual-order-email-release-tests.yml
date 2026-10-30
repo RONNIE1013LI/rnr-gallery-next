@@ -1,0 +1,65 @@
+name: Manual order email isolated release tests
+on:
+  push:
+    branches: [codex/manual-order-email-details-20261030]
+permissions:
+  contents: read
+concurrency:
+  group: manual-order-email-release-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolated-tests:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      PRODUCTION_DATABASE_TARGET_FINGERPRINTS: ${{ secrets.PRODUCTION_DATABASE_TARGET_FINGERPRINT }}
+      EXPECTED_PRODUCTION_DATABASE: ${{ secrets.EXPECTED_PRODUCTION_DATABASE }}
+      EXPECTED_PRODUCTION_HOST_FINGERPRINT: ${{ secrets.EXPECTED_PRODUCTION_HOST_FINGERPRINT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+          cache: npm
+
+      - name: Verify Node.js security baseline
+        shell: bash
+        run: |
+          node -v
+          node <<'NODE'
+          const [major, minor, patch] = process.versions.node.split(".").map(Number);
+          if (major !== 24 || !Number.isInteger(patch) || minor < 22 || (minor === 22 && patch < 1)) {
+            console.error("Node.js 24.22.1 or newer in the 24.x line is required");
+            process.exit(1);
+          }
+          NODE
+      - name: Install test runtime prerequisites
+        run: |
+          brew install postgresql@16 ripgrep
+          echo "$(brew --prefix postgresql@16)/bin" >> "$GITHUB_PATH"
+      - name: Start isolated PostgreSQL
+        run: |
+          initdb -D "$RUNNER_TEMP/manual-order-email-postgres" -U postgres -A trust
+          pg_ctl -D "$RUNNER_TEMP/manual-order-email-postgres" -l "$RUNNER_TEMP/manual-order-email-postgres.log" -o "-h 127.0.0.1 -p 5432 -k $RUNNER_TEMP" -w start
+          echo "RELEASE_TEST_DATABASE_ADMIN_URL=postgresql://postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run release:test:isolated
+      - name: Verify local optimized build with a disposable Test database
+        run: |
+          createdb -h 127.0.0.1 -U postgres rnr_gallery_test_manual_order_email_build
+          export TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/rnr_gallery_test_manual_order_email_build
+          npm run db:migrate -- --environment test
+          export DATABASE_URL="$TEST_DATABASE_URL"
+          export BETTER_AUTH_URL=https://localhost:3000
+          export BETTER_AUTH_SECRET=$(openssl rand -hex 32)
+          npm run build
+      - name: Stop isolated PostgreSQL
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/manual-order-email-postgres/postmaster.pid" ]; then
+            pg_ctl -D "$RUNNER_TEMP/manual-order-email-postgres" -m immediate -w stop
+          fi

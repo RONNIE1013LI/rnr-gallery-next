@@ -829,7 +829,32 @@ export function createDrizzleProductionJobRepository(
           resourceType: "production_job",
           resourceId: job.id,
           resourceReference: job.jobNumber,
-          payload: { version: 1, adminPath: `/admin/jobs/${job.id}` },
+          payload: {
+            version: 1,
+            adminPath: `/admin/jobs/${job.id}`,
+            manualOrder: {
+              customerName: input.customerName,
+              createdAt: input.createdAt.toISOString(),
+              status: input.manualStatus,
+              paymentStatus: input.manualPaymentStatus,
+              neededDate: input.neededDate,
+              deliveryMethod: input.deliveryMethod,
+              urgent: input.urgent,
+              currency: input.invoice?.currency ?? "NZD",
+              amountPayableCents: input.amountPayableCents,
+              amountPaidCents: input.amountPaidCents,
+              items: input.items.map(({ productTitle, sizeLabel, quantity }) => ({ productTitle, sizeLabel, quantity })),
+              ...(input.invoice ? {
+                invoice: {
+                  items: input.invoice.items.map(({ description, quantityMilli, rateInclGstCents }) => ({ description, quantityMilli, rateInclGstCents })),
+                  grossCents: input.invoice.grossCents,
+                  discountCents: input.invoice.discountCents,
+                  gstCents: input.invoice.gstCents,
+                  totalInclGstCents: input.invoice.totalInclGstCents,
+                },
+              } : {}),
+            },
+          },
           createdAt: input.createdAt,
         });
         if (!input.invoice) {

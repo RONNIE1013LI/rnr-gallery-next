@@ -1,12 +1,12 @@
 import type { CustomerEmailMessage } from "./customer-notification-service";
-import type { InternalNotificationTopic } from "./internal-notification-types";
+import type { InternalNotificationPayload, InternalNotificationTopic } from "./internal-notification-types";
 
 export type InternalNotificationEmailInput = Readonly<{
   topic: InternalNotificationTopic;
   resourceReference: string;
   recipientEmail: string;
   eventKey: string;
-  payload: Readonly<{ version: 1; adminPath: string }>;
+  payload: InternalNotificationPayload;
 }>;
 
 const subjects: Readonly<Record<InternalNotificationTopic, string>> =
@@ -75,14 +75,53 @@ export function renderInternalNotificationEmail(
   }
   const subject = subjects[event.topic];
   const adminUrl = new URL(event.payload.adminPath, siteUrl).toString();
+  const order = event.topic === "manual_order_created" ? event.payload.manualOrder : undefined;
+  const details: string[] = [];
+  if (order) {
+    const money = (cents: number) => `${order.currency} ${(cents / 100).toFixed(2)}`;
+    details.push(
+      `Customer: ${order.customerName}`,
+      `Created: ${new Intl.DateTimeFormat("en-NZ", {
+        dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland",
+      }).format(new Date(order.createdAt))} (Pacific/Auckland)`,
+      `Order status: ${order.status}`,
+      `Payment status: ${order.paymentStatus}`,
+      `Needed by: ${order.neededDate}`,
+      `Delivery method: ${order.deliveryMethod}`,
+      `Urgent: ${order.urgent ? "Yes" : "No"}`,
+      "",
+      "Items",
+      ...order.items.map((item) => `${item.productTitle} | ${item.sizeLabel} | Quantity: ${item.quantity}`),
+      "",
+    );
+    if (order.invoice) {
+      details.push(
+        "Invoice prices (including GST)",
+        ...order.invoice.items.map((item) => `${item.description} | Quantity: ${item.quantityMilli / 1000} | Unit price: ${money(item.rateInclGstCents)} | Line total: ${money(Math.round(item.quantityMilli * item.rateInclGstCents / 1000))}`),
+        `Before discount: ${money(order.invoice.grossCents)}`,
+        `Discount: ${money(order.invoice.discountCents)}`,
+        `GST included: ${money(order.invoice.gstCents)}`,
+        `Invoice total: ${money(order.invoice.totalInclGstCents)}`,
+        "",
+      );
+    }
+    details.push(
+      `Order total: ${money(order.amountPayableCents)}`,
+      `Amount paid: ${money(order.amountPaidCents)}`,
+      `Balance owing: ${money(order.amountPayableCents - order.amountPaidCents)}`,
+      "",
+    );
+  }
   const text = [
     subject,
     "",
     `Reference: ${event.resourceReference}`,
     "",
+    ...details,
     `View in Admin: ${adminUrl}`,
   ].join("\n");
-  const html = `<p><strong>${escapeHtml(subject)}</strong></p><p>Reference: ${escapeHtml(event.resourceReference)}</p><p><a href="${escapeHtml(adminUrl)}">View in Admin</a></p>`;
+  const detailsHtml = details.map((line) => line ? `<p>${escapeHtml(line)}</p>` : "").join("");
+  const html = `<p><strong>${escapeHtml(subject)}</strong></p><p>Reference: ${escapeHtml(event.resourceReference)}</p>${detailsHtml}<p><a href="${escapeHtml(adminUrl)}">View in Admin</a></p>`;
 
   return Object.freeze({
     to: event.recipientEmail,

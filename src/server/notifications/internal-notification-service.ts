@@ -3,7 +3,7 @@ import {
   type CustomerEmailProvider,
 } from "./customer-notification-service";
 import { renderInternalNotificationEmail } from "./internal-notification-email";
-import type { InternalNotificationTopic } from "./internal-notification-types";
+import type { InternalNotificationPayload, InternalNotificationTopic } from "./internal-notification-types";
 
 export type InternalNotificationDelivery = Readonly<{
   id: string;
@@ -12,7 +12,7 @@ export type InternalNotificationDelivery = Readonly<{
   resourceReference: string;
   recipientId: string;
   recipientEmail: string;
-  payload: Readonly<{ version: 1; adminPath: string }>;
+  payload: InternalNotificationPayload;
   attempts: number;
 }>;
 

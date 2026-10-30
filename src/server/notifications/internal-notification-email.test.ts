@@ -60,6 +60,57 @@ const aiHumanReviewEventWithPrivateContext = Object.freeze({
 });
 
 describe("internal notification email", () => {
+  it("includes manual order items, invoice prices and the payment balance in both formats", () => {
+    const event = {
+      topic: "manual_order_created" as const,
+      resourceReference: "08088",
+      recipientEmail: "ops@example.test",
+      eventKey: "manual_order_created:job:recipient",
+      payload: {
+        version: 1 as const,
+        adminPath: "/admin/jobs/test-order",
+        manualOrder: {
+          customerName: "Example <Customer>",
+          createdAt: "2026-10-30T08:39:00.000Z",
+          status: "new",
+          paymentStatus: "processing",
+          neededDate: "2026-11-05",
+          deliveryMethod: "post",
+          urgent: true,
+          currency: "NZD" as const,
+          amountPayableCents: 23000,
+          amountPaidCents: 10000,
+          items: [{ productTitle: "Canvas <Portrait>", sizeLabel: "60 × 90 cm", quantity: 2 }],
+          invoice: {
+            items: [{ description: "Canvas <Portrait>", quantityMilli: 2000, rateInclGstCents: 12000 }],
+            grossCents: 24000,
+            discountCents: 1000,
+            gstCents: 3000,
+            totalInclGstCents: 23000,
+          },
+        },
+      },
+    };
+    const message = renderInternalNotificationEmail(event, "https://rrgallery.co.nz");
+    for (const value of ["08088", "60 × 90 cm", "NZD 120.00", "NZD 240.00", "NZD 10.00", "NZD 230.00", "NZD 100.00", "NZD 130.00", "2026-11-05", "post"]) {
+      expect(message.text).toContain(value);
+      expect(message.html).toContain(value);
+    }
+    expect(message.text).toContain("Canvas <Portrait>");
+    expect(message.html).toContain("Canvas &lt;Portrait&gt;");
+    expect(message.html).toContain("Example &lt;Customer&gt;");
+    expect(message.html).not.toContain("<Customer>");
+    expect(message.text).toContain("https://rrgallery.co.nz/admin/jobs/test-order");
+
+    const withoutInvoice = renderInternalNotificationEmail({
+      ...event,
+      payload: { ...event.payload, manualOrder: { ...event.payload.manualOrder, invoice: undefined } },
+    }, "https://rrgallery.co.nz");
+    expect(withoutInvoice.text).toContain("NZD 230.00");
+    expect(withoutInvoice.text).toContain("60 × 90 cm");
+    expect(withoutInvoice.text).not.toContain("NZD 120.00");
+  });
+
   it("exposes the Website AI human-review topic label", () => {
     expect(
       INTERNAL_NOTIFICATION_TOPIC_LABELS.website_ai_human_review_required,
