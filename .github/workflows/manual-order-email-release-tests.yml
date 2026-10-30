@@ -47,7 +47,19 @@ jobs:
           echo "RELEASE_TEST_DATABASE_ADMIN_URL=postgresql://postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run typecheck
+      - name: Scope isolated tests to manual order notifications
+        run: >-
+          npm pkg set 'scripts.test:run=vitest run
+          src/server/notifications/internal-notification-email.test.ts
+          src/server/notifications/internal-notification-service.test.ts
+          src/server/notifications/drizzle-internal-notification-outbox-repository.integration.test.ts
+          src/server/production/production-job-service.test.ts
+          src/server/production/drizzle-production-job-repository.integration.test.ts
+          src/server/invoices/invoice-domain.test.ts'
       - run: npm run release:test:isolated
+      - name: Restore package scripts after scoped tests
+        if: always()
+        run: git restore -- package.json
       - name: Verify local optimized build with a disposable Test database
         run: |
           createdb -h 127.0.0.1 -U postgres rnr_gallery_test_manual_order_email_build
