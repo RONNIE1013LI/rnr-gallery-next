@@ -17,7 +17,7 @@ export function CustomerReviewsSection({ data, background = "ivory" }: Readonly<
   >
     <div className={styles.shell}>
       <header className={styles.sectionHeader}>
-        <div><p className={styles.eyebrow}>REAL CUSTOMER REVIEWS</p><h2 id="customer-reviews-title">Recommended by our customers.</h2><p>Selected public recommendations originally shared on our Facebook Page.</p></div>
+        <div><p className={styles.eyebrow}>REAL CUSTOMER REVIEWS</p><h2 id="customer-reviews-title">Recommended by our customers.</h2><p>Selected customer reviews originally shared on Facebook and Google.</p></div>
         {summary ? <div className={styles.facebookSummary}>
           <strong className={styles.facebookSummaryLabel}>EXCELLENT</strong>
           <span className={styles.facebookSummaryStars} aria-hidden="true">

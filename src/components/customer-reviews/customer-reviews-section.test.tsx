@@ -24,7 +24,7 @@ describe("CustomerReviewsSection", () => {
 
     expect(screen.getByText("REAL CUSTOMER REVIEWS")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recommended by our customers." })).toBeInTheDocument();
-    expect(screen.getByText("Selected public recommendations originally shared on our Facebook Page.")).toBeInTheDocument();
+    expect(screen.getByText("Selected customer reviews originally shared on Facebook and Google.")).toBeInTheDocument();
     expect(screen.getByText("EXCELLENT")).toBeInTheDocument();
     const decorativeStars = document.querySelector(`.${styles.facebookSummaryStars}`);
     expect(decorativeStars).toHaveAttribute("aria-hidden", "true");
