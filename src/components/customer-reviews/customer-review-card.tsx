@@ -9,6 +9,7 @@ import type { PublicCustomerReview } from "@/domain/customer-reviews/types";
 import { reviewTextCss } from "@/domain/customer-reviews/text-style";
 import { formatRelativeReviewDate } from "@/domain/customer-reviews/relative-date";
 import { useContainedDialog } from "@/components/forms/use-contained-dialog";
+import { ReviewText } from "./review-text";
 import styles from "./customer-reviews.module.css";
 
 function initials(name: string) {
@@ -67,7 +68,7 @@ export function CustomerReviewCard({ review, featured = false }: Readonly<{
     <p className={styles.recommendationLine}><FaHeart aria-hidden="true" /> recommends R&amp;R Gallery</p>
     {featured && review.editorialHeadline ? <p className={styles.editorialLabel}>Customer story</p> : null}
     {featured && review.editorialHeadline ? <h3>{review.editorialHeadline}</h3> : null}
-    <p style={reviewTextCss(review.textStyle)} ref={textRef} className={`${styles.reviewText} ${featured ? "" : styles.clampedText}`}>{review.originalReviewText}</p>
+    <p style={reviewTextCss(review.textStyle)} ref={textRef} className={`${styles.reviewText} ${featured ? "" : styles.clampedText}`}><ReviewText text={review.originalReviewText} style={review.textStyle} /></p>
     {featured && review.orderContext ? <p className={styles.orderContext}>{review.orderContext}</p> : null}
     <div className={styles.cardActions}>
       {!featured && overflows ? <button ref={triggerRef} type="button" onClick={() => setDialogOpen(true)} aria-label={`Read full recommendation from ${review.reviewerName}`}>Read full recommendation</button> : null}
@@ -79,7 +80,7 @@ export function CustomerReviewCard({ review, featured = false }: Readonly<{
         <p className={styles.dialogSource}>{isGoogle ? <FcGoogle aria-hidden="true" /> : <FaFacebookF aria-hidden="true" />} {sourceLabel} review</p>
         <h2 id={titleId}>Recommendation from {review.reviewerName}</h2>
         <time dateTime={date.dateTime} title={date.title}>{date.label} · {date.title}</time>
-        <p style={reviewTextCss(review.textStyle)} className={styles.dialogText}>{review.originalReviewText}</p>
+        <p style={reviewTextCss(review.textStyle)} className={styles.dialogText}><ReviewText text={review.originalReviewText} style={review.textStyle} /></p>
         {review.sourceReviewUrl ? <a href={review.sourceReviewUrl} target="_blank" rel="noopener noreferrer">View original on {sourceLabel}</a> : null}
       </div>
     </div> : null}

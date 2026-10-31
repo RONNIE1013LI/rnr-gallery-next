@@ -44,6 +44,17 @@ describe("CustomerReviewsSection", () => {
     expect(text).toHaveStyle({ fontSize: "22px", fontWeight: "700", fontStyle: "italic" });
   });
 
+  it("renders selected text with its own style and safely escapes markup", () => {
+    const text = "Customer says <script>hello</script>\n\nR&R reply";
+    const from = text.indexOf("R&R");
+    const base = { font: "default" as const, size: 16, bold: false, italic: false };
+    const { container } = render(<CustomerReviewsSection data={{ ...section, featured: { ...section.featured, originalReviewText: text, textStyle: { ...base, ranges: [{ ...base, from, to: text.length, font: "georgia", size: 14, bold: true }] } } }} />);
+    const paragraph = screen.getByText((_, element) => element?.tagName === "P" && element.textContent === text);
+    expect(paragraph.querySelector("span:first-child")).toHaveStyle({ fontSize: "16px", fontWeight: "400" });
+    expect(paragraph.querySelector("span:last-child")).toHaveStyle({ fontSize: "14px", fontWeight: "700" });
+    expect(container.querySelector("script")).toBeNull();
+  });
+
   it("uses the published recommendation count in the trust badge", () => {
     render(<CustomerReviewsSection data={{
       ...section,

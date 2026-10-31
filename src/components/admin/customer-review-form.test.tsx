@@ -1,4 +1,6 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { Editor } from "@tiptap/core";
+import { reviewEditorDocument } from "@/domain/customer-reviews/rich-text";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AdminCustomerReview } from "@/domain/customer-reviews/types";
@@ -34,6 +36,13 @@ const existingReview: AdminCustomerReview = {
   media: [],
 };
 
+function reviewEditor() {
+  return (screen.getByLabelText("Original review") as HTMLElement & { editor: Editor }).editor;
+}
+function changeReviewText(text: string) {
+  act(() => { reviewEditor().commands.setContent(reviewEditorDocument(text)); });
+}
+
 describe("CustomerReviewForm", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -67,7 +76,7 @@ describe("CustomerReviewForm", () => {
   it("keeps editorial wording separate and previews original line breaks as text", () => {
     render(<CustomerReviewForm canPublish products={[]} />);
     fireEvent.change(screen.getByLabelText("Reviewer name"), { target: { value: "Mereana" } });
-    fireEvent.change(screen.getByLabelText("Original review"), { target: { value: "Line one\n\nLine two" } });
+    changeReviewText("Line one\n\nLine two");
     fireEvent.change(screen.getByLabelText("R&R Gallery editorial heading (optional)"), { target: { value: "A studio heading" } });
 
     const preview = screen.getByRole("region", { name: "Public review card preview" });
@@ -90,9 +99,7 @@ describe("CustomerReviewForm", () => {
     fireEvent.change(screen.getByRole("combobox", { name: "Source" }), {
       target: { value: "GOOGLE" },
     });
-    fireEvent.change(screen.getByLabelText("Original review"), {
-      target: { value: "First line.\n\nSecond line exactly as written." },
-    });
+    changeReviewText("First line.\n\nSecond line exactly as written.");
     fireEvent.change(screen.getByLabelText("Review date"), { target: { value: "2026-08-20" } });
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
 
@@ -110,18 +117,19 @@ describe("CustomerReviewForm", () => {
   it("previews and submits typography separately from the original words", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
     render(<CustomerReviewForm review={existingReview} canPublish products={[]} />);
+    act(() => { reviewEditor().commands.selectAll(); });
     fireEvent.change(screen.getByLabelText("Review font"), { target: { value: "georgia" } });
     fireEvent.change(screen.getByLabelText("Review font size"), { target: { value: "20" } });
     fireEvent.click(screen.getByRole("button", { name: "Bold" }));
     fireEvent.click(screen.getByRole("button", { name: "Italic" }));
-    expect(screen.getByLabelText("Original review")).toHaveStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: "20px", fontWeight: "700", fontStyle: "italic" });
+    expect(screen.getByLabelText("Original review").querySelector("span")).toHaveStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: "20px", fontWeight: "700", fontStyle: "italic" });
     const preview = screen.getByRole("region", { name: "Public review card preview" }).querySelector("blockquote");
-    expect(preview).toHaveStyle({ fontSize: "20px", fontWeight: "700" });
+    expect(preview?.querySelector("span")).toHaveStyle({ fontSize: "20px", fontWeight: "700" });
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const body = fetchMock.mock.calls[0][1]?.body as FormData;
     expect(body.get("originalReviewText")).toBe(existingReview.originalReviewText);
-    expect(JSON.parse(String(body.get("textStyle")))).toEqual({ font: "georgia", size: 20, bold: true, italic: true });
+    expect(JSON.parse(String(body.get("textStyle")))).toEqual({ font: "default", size: 16, bold: false, italic: false, ranges: [{ from: 0, to: existingReview.originalReviewText.length, font: "georgia", size: 20, bold: true, italic: true }] });
   });
 
   it("allows an existing review to switch from Facebook to Google", async () => {

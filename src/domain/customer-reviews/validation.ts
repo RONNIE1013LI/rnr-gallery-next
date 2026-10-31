@@ -105,6 +105,9 @@ export const customerReviewMutationSchema = z.object({
   permissionNotes: trimmedOptional(2_000),
   lastVerifiedAt: optionalTimestamp,
 }).strict().superRefine((value, context) => {
+  if (value.textStyle?.ranges?.some((range) => range.to > value.originalReviewText.length)) {
+    context.addIssue({ code: "custom", path: ["textStyle"], message: "Text formatting must refer to the original review" });
+  }
   if (value.sourceReviewUrl) {
     const host = new URL(value.sourceReviewUrl).hostname.toLowerCase();
     const valid = value.sourcePlatform === "GOOGLE"
@@ -154,6 +157,17 @@ export function parseFacebookUrl(value: unknown): string {
 }
 
 export function parseCustomerReviewMutation(value: unknown): CustomerReviewMutationInput {
+  if (value && typeof value === "object" && "originalReviewText" in value && "textStyle" in value && typeof value.originalReviewText === "string") {
+    const text = value.originalReviewText;
+    const style = reviewTextStyleSchema.safeParse(value.textStyle);
+    if (style.success && style.data.ranges?.every((range) => range.to <= text.length)) {
+      const start = text.length - text.trimStart().length;
+      const length = text.trim().length;
+      value = { ...value, textStyle: { ...style.data, ranges: style.data.ranges.map((range) => ({
+        ...range, from: Math.max(0, range.from - start), to: Math.min(length, range.to - start),
+      })).filter((range) => range.to > range.from) } };
+    }
+  }
   return customerReviewMutationSchema.parse(value);
 }
 

@@ -46,6 +46,15 @@ describe("customer review validation", () => {
     }).originalReviewText).toBe("First line\n\nSecond line");
   });
 
+  it("aligns selected formatting when trimming field edges and rejects ranges outside the text", () => {
+    const base = { font: "default" as const, size: 16, bold: false, italic: false };
+    const textStyle = { ...base, ranges: [{ ...base, from: 9, to: 14, size: 22 }] };
+    const parsed = parseCustomerReviewMutation({ ...validReview, originalReviewText: "  Review Reply  ", textStyle });
+    expect(parsed.originalReviewText).toBe("Review Reply");
+    expect(parsed.textStyle?.ranges?.[0]).toMatchObject({ from: 7, to: 12, size: 22 });
+    expect(() => parseCustomerReviewMutation({ ...validReview, originalReviewText: "Short", textStyle })).toThrow();
+  });
+
   it("defaults legacy reviews to Facebook and accepts Google reviews", () => {
     const legacyReview = structuredClone(validReview);
     Reflect.deleteProperty(legacyReview, "sourcePlatform");

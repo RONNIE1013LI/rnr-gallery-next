@@ -6001,3 +6001,21 @@ button.paymentProofPreviewMedia {
   cursor: pointer;
 }
 .reviewTextToolbar button[aria-pressed="true"] { color: #fff; background: #365e49; }
+
+.reviewEditorLabel { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; font-weight: 600; color: #424248; }
+.reviewRichText {
+  min-height: 12rem;
+  padding: 0.875rem;
+  background: #fff;
+  border: 1px solid #c4c4c8;
+  border-radius: 0.5rem;
+  color: #202124;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.reviewRichText:focus { outline: 2px solid #365e49; outline-offset: 2px; }
+.reviewRichText p { margin: 0; }
