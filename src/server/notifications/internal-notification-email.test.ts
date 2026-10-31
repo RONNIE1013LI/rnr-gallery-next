@@ -96,6 +96,12 @@ describe("internal notification email", () => {
       expect(message.text).toContain(value);
       expect(message.html).toContain(value);
     }
+    const document = new DOMParser().parseFromString(message.html, "text/html");
+    expect(document.querySelector("h1")?.textContent).toBe("New manual order");
+    const labels = Array.from(document.querySelectorAll("th"));
+    expect(labels.find((label) => label.textContent === "Customer")?.getAttribute("style")).toContain("font-weight:600");
+    expect(document.querySelector("h2")?.textContent).toBe("Items");
+    expect(document.querySelector("td[data-balance]")?.textContent).toBe("NZD 130.00");
     expect(message.text).toContain("Canvas <Portrait>");
     expect(message.html).toContain("Canvas &lt;Portrait&gt;");
     expect(message.html).toContain("Example &lt;Customer&gt;");

@@ -62,12 +62,18 @@ export function parseCustomerReviewForm(form: FormData) {
   if (!actionValues.has(action)) {
     throw new CustomerReviewPolicyError("Choose a valid review action");
   }
+  let textStyle: unknown;
+  if (form.has("textStyle")) {
+    try { textStyle = JSON.parse(String(form.get("textStyle"))); }
+    catch { throw new CustomerReviewPolicyError("Choose valid review text formatting"); }
+  }
   return Object.freeze({
     action: action as "save_draft" | "publish",
     input: {
       sourcePlatform: String(form.get("sourcePlatform") ?? "FACEBOOK"),
       reviewerName: String(form.get("reviewerName") ?? ""),
       originalReviewText: String(form.get("originalReviewText") ?? ""),
+      ...(form.has("textStyle") ? { textStyle } : {}),
       sourceReviewUrl: String(form.get("sourceReviewUrl") ?? ""),
       reviewDate: String(form.get("reviewDate") ?? ""),
       recommendationStatus: String(form.get("recommendationStatus") ?? ""),

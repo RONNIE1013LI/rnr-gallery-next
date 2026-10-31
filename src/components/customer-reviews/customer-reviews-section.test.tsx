@@ -38,6 +38,12 @@ describe("CustomerReviewsSection", () => {
     expect(screen.getByText("Mereana K.")).toBeInTheDocument();
   });
 
+  it("applies saved typography to the published review text", () => {
+    render(<CustomerReviewsSection data={{ ...section, featured: { ...section.featured, textStyle: { font: "georgia", size: 22, bold: true, italic: true } } }} />);
+    const text = screen.getByText((_, element) => element?.tagName === "P" && element.textContent === section.featured.originalReviewText);
+    expect(text).toHaveStyle({ fontSize: "22px", fontWeight: "700", fontStyle: "italic" });
+  });
+
   it("uses the published recommendation count in the trust badge", () => {
     render(<CustomerReviewsSection data={{
       ...section,

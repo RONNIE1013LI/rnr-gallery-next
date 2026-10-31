@@ -9,6 +9,7 @@ import type {
   AdminCustomerReview,
   CustomerReviewSourcePlatform,
 } from "@/domain/customer-reviews/types";
+import { DEFAULT_REVIEW_TEXT_STYLE, REVIEW_FONTS, reviewTextCss, type ReviewTextStyle } from "@/domain/customer-reviews/text-style";
 import styles from "./admin.module.css";
 
 export type CustomerReviewProductOption = Readonly<{ key: string; title: string }>;
@@ -50,6 +51,7 @@ export function CustomerReviewForm({ review, products, canPublish }: Readonly<{
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [reviewerName, setReviewerName] = useState(review?.reviewerName ?? "");
+  const [textStyle, setTextStyle] = useState<ReviewTextStyle>(review?.textStyle ?? DEFAULT_REVIEW_TEXT_STYLE);
   const [reviewText, setReviewText] = useState(review?.originalReviewText ?? "");
   const [editorialHeadline, setEditorialHeadline] = useState(review?.editorialHeadline ?? "");
   const canPublishThisReview = canPublish && permissionStatus === "GRANTED" && recommendationStatus === "RECOMMENDS";
@@ -61,6 +63,7 @@ export function CustomerReviewForm({ review, products, canPublish }: Readonly<{
     setMessage("");
     const form = new FormData(formElement);
     form.set("action", action);
+    form.set("textStyle", JSON.stringify(textStyle));
     const productKey = String(form.get("productKey") ?? "");
     form.set("productDisplayLabel", products.find((product) => product.key === productKey)?.title ?? "");
     const lastVerifiedAt = String(form.get("lastVerifiedAt") ?? "");
@@ -110,7 +113,17 @@ export function CustomerReviewForm({ review, products, canPublish }: Readonly<{
         <label><span>Source</span><select aria-label="Source" name="sourcePlatform" value={sourcePlatform} onChange={(event) => setSourcePlatform(event.target.value as CustomerReviewSourcePlatform)}><option value="FACEBOOK">Facebook</option><option value="GOOGLE">Google</option></select></label>
         <label><span>Reviewer name</span><input aria-label="Reviewer name" name="reviewerName" value={reviewerName} onChange={(event) => setReviewerName(event.target.value)} maxLength={120} required /></label>
         <label><span>Review date</span><input aria-label="Review date" name="reviewDate" defaultValue={review?.reviewDate ?? ""} type="date" required /></label>
-        <label className={styles.fullField}><span>Original review</span><textarea aria-label="Original review" name="originalReviewText" value={reviewText} onChange={(event) => setReviewText(event.target.value)} rows={8} maxLength={10_000} required /></label>
+        <div className={styles.fullField}>
+          <div className={styles.reviewTextToolbar} role="group" aria-label="Review text formatting">
+            <label><span>Font</span><select aria-label="Review font" value={textStyle.font} onChange={(event) => setTextStyle({ ...textStyle, font: event.target.value as ReviewTextStyle["font"] })}>{Object.entries(REVIEW_FONTS).map(([key, font]) => <option key={key} value={key}>{font.label}</option>)}</select></label>
+            <label><span>Size</span><select aria-label="Review font size" value={textStyle.size} onChange={(event) => setTextStyle({ ...textStyle, size: Number(event.target.value) })}>{Array.from({ length: 21 }, (_, index) => index + 12).map((size) => <option key={size} value={size}>{size} px</option>)}</select></label>
+            <button type="button" aria-label="Bold" aria-pressed={textStyle.bold} onClick={() => setTextStyle({ ...textStyle, bold: !textStyle.bold })}><b>B</b></button>
+            <button type="button" aria-label="Italic" aria-pressed={textStyle.italic} onClick={() => setTextStyle({ ...textStyle, italic: !textStyle.italic })}><i>I</i></button>
+            <button type="button" onClick={() => setTextStyle(DEFAULT_REVIEW_TEXT_STYLE)}>Reset formatting</button>
+          </div>
+          <label><span>Original review</span><textarea style={reviewTextCss(textStyle)} aria-label="Original review" name="originalReviewText" value={reviewText} onChange={(event) => setReviewText(event.target.value)} rows={8} maxLength={10_000} required /></label>
+          <small>Formatting applies to the whole review, including the public card. Your original words stay unchanged.</small>
+        </div>
         <label className={styles.fullField}><span>Source review URL (optional)</span><input name="sourceReviewUrl" defaultValue={review?.sourceReviewUrl ?? ""} type="url" placeholder={sourcePlatform === "GOOGLE" ? "https://g.page/..." : "https://www.facebook.com/..."} /></label>
         <label><span>Recommendation status</span><select aria-label="Recommendation status" name="recommendationStatus" value={recommendationStatus} onChange={(event) => setRecommendationStatus(event.target.value as typeof recommendationStatus)}><option value="RECOMMENDS">Recommends</option><option value="DOES_NOT_RECOMMEND">Does not recommend</option><option value="LEGACY_STAR_REVIEW">Legacy star review</option></select></label>
         <label><span>Last verified (optional)</span><input name="lastVerifiedAt" defaultValue={toLocalDateTime(review?.lastVerifiedAt ?? null)} type="datetime-local" /></label>
@@ -128,7 +141,7 @@ export function CustomerReviewForm({ review, products, canPublish }: Readonly<{
       </div>
     </section>
 
-    <section className={styles.reviewPublicPreview} aria-label="Public review card preview"><p>PUBLIC CARD PREVIEW</p>{editorialHeadline ? <><small>R&amp;R Gallery editorial heading</small><h2>{editorialHeadline}</h2></> : null}<strong>{reviewerName || "Reviewer name"}</strong><blockquote>{reviewText || "The original review will appear here exactly as entered."}</blockquote><span>recommends R&amp;R Gallery</span></section>
+    <section className={styles.reviewPublicPreview} aria-label="Public review card preview"><p>PUBLIC CARD PREVIEW</p>{editorialHeadline ? <><small>R&amp;R Gallery editorial heading</small><h2>{editorialHeadline}</h2></> : null}<strong>{reviewerName || "Reviewer name"}</strong><blockquote style={reviewTextCss(textStyle)}>{reviewText || "The original review will appear here exactly as entered."}</blockquote><span>recommends R&amp;R Gallery</span></section>
 
     <section className={styles.formPanel}>
       <div className={styles.formSectionHeading}><div><span>3</span><h2>Images</h2></div><p>Review images are permanent business media and are excluded from the five-day checkout upload cleanup.</p></div>

@@ -107,6 +107,23 @@ describe("CustomerReviewForm", () => {
     expect(push).toHaveBeenCalledWith("/admin/customer-reviews");
   });
 
+  it("previews and submits typography separately from the original words", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}", { status: 200 }));
+    render(<CustomerReviewForm review={existingReview} canPublish products={[]} />);
+    fireEvent.change(screen.getByLabelText("Review font"), { target: { value: "georgia" } });
+    fireEvent.change(screen.getByLabelText("Review font size"), { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("button", { name: "Bold" }));
+    fireEvent.click(screen.getByRole("button", { name: "Italic" }));
+    expect(screen.getByLabelText("Original review")).toHaveStyle({ fontFamily: 'Georgia, "Times New Roman", serif', fontSize: "20px", fontWeight: "700", fontStyle: "italic" });
+    const preview = screen.getByRole("region", { name: "Public review card preview" }).querySelector("blockquote");
+    expect(preview).toHaveStyle({ fontSize: "20px", fontWeight: "700" });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = fetchMock.mock.calls[0][1]?.body as FormData;
+    expect(body.get("originalReviewText")).toBe(existingReview.originalReviewText);
+    expect(JSON.parse(String(body.get("textStyle")))).toEqual({ font: "georgia", size: 20, bold: true, italic: true });
+  });
+
   it("allows an existing review to switch from Facebook to Google", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ review: existingReview }), {

@@ -76,6 +76,7 @@ describe.runIf(enabled)("Drizzle customer review repository", () => {
 
   afterAll(async () => {
     if (createdReviewIds.length) {
+      await database.delete(contentEntries).where(inArray(contentEntries.key, createdReviewIds.map((id) => `customer_reviews.${id}.text_style`)));
       await database.delete(customerReviewMedia).where(
         inArray(customerReviewMedia.reviewId, createdReviewIds),
       );
@@ -90,6 +91,24 @@ describe.runIf(enabled)("Drizzle customer review repository", () => {
     );
     if (priorSettings.length) await database.insert(contentEntries).values(priorSettings);
     await database.delete(user).where(eq(user.id, actorId));
+  });
+
+  it("round-trips typography without changing original text or exposing draft styles", async () => {
+    const textStyle = { font: "georgia" as const, size: 20, bold: true, italic: false };
+    const created = await repository.create({ ...input(6), textStyle }, actor("typography-create"));
+    createdReviewIds.push(created.id);
+    expect(created.textStyle).toEqual(textStyle);
+    expect((await repository.findAdmin(created.id))?.textStyle).toEqual(textStyle);
+    expect((await repository.listPublic()).find((review) => review.id === created.id)?.textStyle).toEqual(textStyle);
+    const draft = await repository.update(created.id, { ...input(6), textStyle: { ...textStyle, size: 24 }, status: "DRAFT", publishedAt: null }, actor("typography-draft"));
+    expect(draft?.textStyle?.size).toBe(24);
+    expect((await repository.listPublic()).some((review) => review.id === created.id)).toBe(false);
+    const published = await repository.update(created.id, { ...input(6), textStyle: draft!.textStyle }, actor("typography-publish"));
+    expect(published?.originalReviewText).toBe(input(6).originalReviewText);
+    expect((await repository.listPublic()).find((review) => review.id === created.id)?.textStyle?.size).toBe(24);
+    await repository.update(created.id, input(6), actor("typography-legacy"));
+    expect((await repository.findAdmin(created.id))?.textStyle?.size).toBe(24);
+    expect((await repository.listAdmin()).find((review) => review.id === created.id)?.textStyle?.size).toBe(24);
   });
 
   it("orders eligible reviews and returns only the public allowlist", async () => {

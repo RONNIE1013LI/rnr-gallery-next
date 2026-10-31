@@ -18,6 +18,7 @@ import type {
   FacebookReviewSummaryInput,
   PublicCustomerReview,
 } from "@/domain/customer-reviews/types";
+import { decodeReviewTextStyle, type ReviewTextStyle } from "@/domain/customer-reviews/text-style";
 import { buildAuditRecord } from "@/server/admin/audit-service";
 import type { getDatabase } from "@/server/db/client";
 import {
@@ -110,6 +111,7 @@ function mediaKindSlug(kind: CustomerReviewMediaKind) {
 export function mapPublicCustomerReview(
   row: PublicReviewRow,
   media: readonly PublicMediaRow[],
+  textStyle?: ReviewTextStyle,
 ): PublicCustomerReview {
   function publicMedia(kind: "AVATAR" | "FEATURED_IMAGE") {
     const item = media.find((candidate) => candidate.kind === kind);
@@ -129,6 +131,7 @@ export function mapPublicCustomerReview(
     sourcePlatform: normalizeCustomerReviewSourcePlatform(row.sourcePlatform),
     reviewerName: row.reviewerName,
     originalReviewText: row.originalReviewText,
+    ...(textStyle ? { textStyle } : {}),
     sourceReviewUrl: row.sourceReviewUrl,
     reviewDate: row.reviewDate,
     recommendationStatus: "RECOMMENDS" as const,
@@ -154,12 +157,13 @@ function toAdminMedia(row: MediaRow): AdminCustomerReviewMedia {
   });
 }
 
-function toAdminReview(row: ReviewRow, media: readonly MediaRow[]): AdminCustomerReview {
+function toAdminReview(row: ReviewRow, media: readonly MediaRow[], textStyle?: ReviewTextStyle): AdminCustomerReview {
   return Object.freeze({
     id: row.id,
     sourcePlatform: normalizeCustomerReviewSourcePlatform(row.sourcePlatform),
     reviewerName: row.reviewerName,
     originalReviewText: row.originalReviewText,
+    ...(textStyle ? { textStyle } : {}),
     sourceReviewUrl: row.sourceReviewUrl,
     reviewDate: row.reviewDate,
     recommendationStatus: row.recommendationStatus,
@@ -251,6 +255,35 @@ function decodeSettings(
 export function createDrizzleCustomerReviewRepository(
   database: CustomerReviewDatabase,
 ): CustomerReviewRepository {
+  const textStyleKey = (id: string) => `customer_reviews.${id}.text_style`;
+
+  async function textStylesFor(ids: readonly string[], published = false) {
+    if (!ids.length) return new Map<string, ReviewTextStyle | undefined>();
+    const entries = await database.select({
+      key: contentEntries.key,
+      draftValue: contentEntries.draftValue,
+      publishedValue: contentEntries.publishedValue,
+    }).from(contentEntries).where(inArray(contentEntries.key, ids.map(textStyleKey)));
+    return new Map(entries.map((entry) => [entry.key, decodeReviewTextStyle(published ? entry.publishedValue : entry.draftValue)]));
+  }
+
+  async function saveTextStyle(transaction: TransactionDatabase, id: string, input: PersistedCustomerReviewInput, actor: ReviewActor) {
+    // Older callers omit typography: preserve the saved presentation.
+    if (!input.textStyle) return;
+    const value = JSON.stringify(input.textStyle);
+    const now = new Date();
+    const published = input.status === "PUBLISHED" ? {
+      publishedValue: value, publishedBy: actor.userId, publishedAt: now,
+    } : {};
+    await transaction.insert(contentEntries).values({
+      key: textStyleKey(id), groupName: "Customer review typography", label: "Review text formatting",
+      draftValue: value, draftUpdatedBy: actor.userId, ...published,
+    }).onConflictDoUpdate({
+      target: contentEntries.key,
+      set: { draftValue: value, draftUpdatedBy: actor.userId, updatedAt: now, ...published },
+    });
+  }
+
   async function mediaFor(reviewIds: readonly string[]) {
     if (reviewIds.length === 0) return [];
     return database.select().from(customerReviewMedia)
@@ -261,7 +294,8 @@ export function createDrizzleCustomerReviewRepository(
     const [row] = await database.select().from(customerReviews)
       .where(eq(customerReviews.id, id)).limit(1);
     if (!row) return null;
-    return toAdminReview(row, await mediaFor([id]));
+    const styles = await textStylesFor([id]);
+    return toAdminReview(row, await mediaFor([id]), styles.get(textStyleKey(id)));
   }
 
   async function settings(): Promise<AdminFacebookReviewSettings> {
@@ -302,7 +336,8 @@ export function createDrizzleCustomerReviewRepository(
           asc(customerReviews.id),
         );
       const media = await mediaFor(rows.map((row) => row.id));
-      return Object.freeze(rows.map((row) => toAdminReview(row, media)));
+      const styles = await textStylesFor(rows.map((row) => row.id));
+      return Object.freeze(rows.map((row) => toAdminReview(row, media, styles.get(textStyleKey(row.id)))));
     },
 
     findAdmin,
@@ -329,6 +364,7 @@ export function createDrizzleCustomerReviewRepository(
           result: "success",
           idempotencyKey: actor.idempotencyKey,
         }));
+        await saveTextStyle(transaction, created.id, input, actor);
         return created.id;
       });
       return (await findAdmin(id))!;
@@ -350,6 +386,7 @@ export function createDrizzleCustomerReviewRepository(
         await transaction.update(customerReviews)
           .set(databaseValues(input, actor))
           .where(eq(customerReviews.id, id));
+        await saveTextStyle(transaction, id, input, actor);
         await transaction.insert(adminAuditLogs).values(buildAuditRecord({
           actorUserId: actor.userId,
           actorEmail: actor.email,
@@ -444,9 +481,11 @@ export function createDrizzleCustomerReviewRepository(
         inArray(customerReviewMedia.reviewId, rows.map((row) => row.id)),
         inArray(customerReviewMedia.kind, ["AVATAR", "FEATURED_IMAGE"]),
       ));
+      const styles = await textStylesFor(rows.map((row) => row.id), true);
       return Object.freeze(rows.map((row) => mapPublicCustomerReview(
         row,
         media.filter((item) => item.reviewId === row.id),
+        styles.get(textStyleKey(row.id)),
       )));
     },
 

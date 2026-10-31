@@ -1,3 +1,5 @@
+import type { ReviewTextStyle } from "./text-style";
+
 export const CUSTOMER_REVIEW_STATUSES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
 export const CUSTOMER_REVIEW_SOURCE_PLATFORMS = ["FACEBOOK", "GOOGLE"] as const;
 export const CUSTOMER_REVIEW_PERMISSION_STATUSES = ["PENDING", "GRANTED", "REVOKED"] as const;
@@ -22,6 +24,7 @@ export type CustomerReviewMutationInput = Readonly<{
   sourcePlatform: CustomerReviewSourcePlatform;
   reviewerName: string;
   originalReviewText: string;
+  textStyle?: ReviewTextStyle;
   sourceReviewUrl: string | null;
   reviewDate: string;
   recommendationStatus: CustomerRecommendationStatus;
@@ -57,6 +60,7 @@ export type PublicCustomerReview = Readonly<{
   sourcePlatform: CustomerReviewSourcePlatform;
   reviewerName: string;
   originalReviewText: string;
+  textStyle?: ReviewTextStyle;
   sourceReviewUrl: string | null;
   reviewDate: string;
   recommendationStatus: "RECOMMENDS";

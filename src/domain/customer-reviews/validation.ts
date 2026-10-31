@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reviewTextStyleSchema } from "./text-style";
 
 import {
   CUSTOMER_RECOMMENDATION_STATUSES,
@@ -89,6 +90,7 @@ export const customerReviewMutationSchema = z.object({
   sourcePlatform: z.enum(CUSTOMER_REVIEW_SOURCE_PLATFORMS).default("FACEBOOK"),
   reviewerName: z.string().trim().min(1, "Reviewer name is required").max(120),
   originalReviewText: z.string().trim().min(1, "Review text is required").max(10_000),
+  textStyle: reviewTextStyleSchema.optional(),
   sourceReviewUrl: optionalSourceUrl,
   reviewDate: calendarDate,
   recommendationStatus: z.enum(CUSTOMER_RECOMMENDATION_STATUSES),

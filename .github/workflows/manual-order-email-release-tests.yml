@@ -1,7 +1,7 @@
 name: Manual order email isolated release tests
 on:
   push:
-    branches: [codex/manual-order-email-details-20261030]
+    branches: [codex/manual-order-email-details-20261030, codex/review-email-typography-20261031]
 permissions:
   contents: read
 concurrency:
@@ -47,7 +47,7 @@ jobs:
           echo "RELEASE_TEST_DATABASE_ADMIN_URL=postgresql://postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run typecheck
-      - name: Scope isolated tests to manual order notifications
+      - name: Scope isolated tests to review typography and manual order notifications
         run: >-
           npm pkg set 'scripts.test:run=vitest run
           src/server/notifications/internal-notification-email.test.ts
@@ -55,7 +55,17 @@ jobs:
           src/server/notifications/drizzle-internal-notification-outbox-repository.integration.test.ts
           src/server/production/production-job-service.test.ts
           src/server/production/drizzle-production-job-repository.integration.test.ts
-          src/server/invoices/invoice-domain.test.ts'
+          src/server/invoices/invoice-domain.test.ts
+          src/domain/customer-reviews/text-style.test.ts
+          src/domain/customer-reviews/validation.test.ts
+          src/components/admin/customer-review-form.test.tsx
+          src/components/customer-reviews/customer-reviews-section.test.tsx
+          src/components/customer-reviews/customer-review-carousel.test.tsx
+          src/server/customer-reviews/drizzle-customer-review-repository.test.ts
+          src/server/customer-reviews/drizzle-customer-review-repository.integration.test.ts
+          src/server/customer-reviews/customer-review-service.test.ts
+          src/app/api/admin/customer-reviews/route.test.ts
+          src/app/api/admin/customer-reviews/[reviewId]/route.test.ts'
       - run: npm run release:test:isolated
       - name: Restore package scripts after scoped tests
         if: always()
