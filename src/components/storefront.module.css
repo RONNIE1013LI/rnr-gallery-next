@@ -3264,6 +3264,13 @@
   font-variant-numeric: tabular-nums;
 }
 
+.cartTotals .cartOfferAmount {
+  color: #b42318;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 800;
+}
+
 .cartTotals h2 {
   margin-top: 0.75rem;
   font-size: var(--type-card);

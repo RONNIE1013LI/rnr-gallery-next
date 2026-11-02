@@ -394,13 +394,13 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
         {quote ? <>
           <dl className={styles.priceLines}>
             <div><dt>{quote.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt><dd>{formatMarketMoney(quote.totalInclGstCents + quote.discountCents, quote.currency)}</dd></div>
-            {quote.promotion?.key === "first-order-20-v1" ? <div><dt>First-order discount (20%)</dt><dd>−{formatMarketMoney(quote.discountCents, quote.currency)}</dd></div> : null}
+            {quote.promotion?.key === "first-order-20-v1" ? <div><dt>First-order discount (20%)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.discountCents, quote.currency)}</dd></div> : null}
             {quote.promotion?.key === "returning-customer-36-v1" ? <>
-              <div><dt>Returning customer discount (20%)</dt><dd>−{formatMarketMoney(quote.promotion.baseDiscountCents, quote.currency)}</dd></div>
-              <div><dt>Extra discount (20% after base discount)</dt><dd>−{formatMarketMoney(quote.promotion.extraDiscountCents, quote.currency)}</dd></div>
+              <div><dt>Returning customer discount (20%)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.promotion.baseDiscountCents, quote.currency)}</dd></div>
+              <div><dt>Extra discount (20% after base discount)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.promotion.extraDiscountCents, quote.currency)}</dd></div>
             </> : null}
             {quote.taxJurisdiction !== "NONE" ? <div><dt>{quote.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : "Includes Australian GST"}</dt><dd>{formatMarketMoney(quote.gstCents, quote.currency)}</dd></div> : null}
-            <div className={styles.priceTotal}><dt>{quote.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt><dd>{formatMarketMoney(quote.totalInclGstCents, quote.currency)}</dd></div>
+            <div className={styles.priceTotal}><dt>{quote.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt><dd className={quote.discountCents > 0 ? styles.cartOfferAmount : undefined}>{formatMarketMoney(quote.totalInclGstCents, quote.currency)}</dd></div>
           </dl>
           {quote.discountCents > 0 ? <p className={styles.cartAssurance}>Discount applies to eligible products. Urgent service and shipping are excluded.</p> : null}
           <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link>
