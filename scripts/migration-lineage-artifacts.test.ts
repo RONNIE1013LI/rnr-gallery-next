@@ -593,5 +593,5 @@ it("adds only the cart snapshot table after 0073 without altering existing metad
   const sql = readFileSync("drizzle/0074_website_cart_snapshots.sql", "utf8");
   expect(sql).toMatch(/ON DELETE cascade/);
   expect(sql).toContain('"website_analytics_cart_snapshots_time_idx"');
-  expect(sql).not.toMatch(/DROP |INSERT |UPDATE |DELETE FROM/);
+  expect(sql).not.toMatch(/^(?:DROP |INSERT |UPDATE |DELETE FROM)/m);
 });

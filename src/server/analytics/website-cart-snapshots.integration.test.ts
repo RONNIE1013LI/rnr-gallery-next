@@ -17,8 +17,8 @@ async function session() {
   return id;
 }
 const snapshot = (eventId = randomUUID()) => ({ version: 1 as const, eventId, stage: "cart" as const, currency: "NZD" as const, totalInclGstCents: 0, items: [] });
+afterAll(async () => { if (db && ids.length) await db.delete(sessions).where(inArray(sessions.id, ids)); await pool?.end(); });
 (url ? describe : describe.skip)("cart snapshot storage boundaries", () => {
-  afterAll(async () => { if (db && ids.length) await db.delete(sessions).where(inArray(sessions.id, ids)); await pool?.end(); });
   it("serializes simultaneous identical snapshots and event retries", async () => {
     const sessionId = await session();
     const record = createCartSnapshotRecorder(db!);
@@ -51,5 +51,14 @@ const snapshot = (eventId = randomUUID()) => ({ version: 1 as const, eventId, st
     await Promise.all(Array.from({ length: 8 }, (_, i) => record({ sessionId, visitorDigest: digest, snapshot: { ...snapshot(), stage: i % 2 ? "checkout" : "cart" } })));
     const [count] = await db!.select({ count: sql<number>`count(*)::int` }).from(carts).where(and(eq(carts.sessionId, sessionId)));
     expect(count?.count).toBe(500);
+  });
+});
+
+(url ? it : it.skip)("fails closed before the additive schema exists", async () => {
+  await db!.transaction(async tx => {
+    await tx.execute(sql`alter table website_analytics_cart_snapshots rename to website_analytics_cart_snapshots_unavailable`);
+    const record = createCartSnapshotRecorder(tx as unknown as NonNullable<typeof db>);
+    expect(await record({ sessionId: randomUUID(), visitorDigest: digest, snapshot: snapshot() })).toBe("unavailable");
+    await tx.execute(sql`alter table website_analytics_cart_snapshots_unavailable rename to website_analytics_cart_snapshots`);
   });
 });

@@ -85,3 +85,24 @@ it("drops a superseded retry so an old cart cannot become the latest cart", asyn
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
   expect(JSON.parse(vi.mocked(fetch).mock.calls[1]![1]!.body as string).items[0].quantity).toBe(2);
 });
+
+it("cancels a guest retry on account switch and captures only the active account cart", async () => {
+  const { setActiveCustomerId } = await import("@/domain/cart/browser-cart-scope");
+  state.pathname = "/cart"; state.consent.analytics = true; localStorage.clear(); setActiveCustomerId(null); completeCartAnalyticsPageview("/unready"); save([item]);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(null, { status: 409 })).mockResolvedValue(new Response(null, { status: 204 })));
+  const view = render(<CartSnapshotTracker enabled />); ready(); await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  localStorage.setItem("rnr:commerce:v1:user:account-test:cart", JSON.stringify({ version: 1, items: [{ ...item, quantity: 3 }] }));
+  act(() => { setActiveCustomerId("account-test"); notifyCartChanged(); });
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[1]![1]!.body as string).items[0].quantity).toBe(3);
+  view.unmount(); setActiveCustomerId(null);
+});
+it("preserves observation after 25 minutes and resumes on a genuine new pageview", async () => {
+  state.pathname = "/cart"; state.consent.analytics = true; localStorage.clear(); completeCartAnalyticsPageview("/unready");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+  const view = render(<CartSnapshotTracker enabled />); ready(); await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  const dateNow = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 26 * 60_000);
+  save([item]); await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2)); dateNow.mockRestore();
+  state.pathname = "/checkout"; view.rerender(<CartSnapshotTracker enabled />);
+  expect(fetch).toHaveBeenCalledTimes(2); ready(); await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+});
