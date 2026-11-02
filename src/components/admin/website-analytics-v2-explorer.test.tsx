@@ -183,3 +183,14 @@ describe("WebsiteAnalyticsV2Explorer", () => {
     expect(screen.getByLabelText("Session quality")).toHaveTextContent("Visitors1Sessions1Pageviews2");
   });
 });
+
+it("shows missing history distinctly from a recorded empty AUD cart", async () => {
+  const journey: ExplorerVisitorResponse = { ...detail, sessions: [{ ...detail.sessions[0]!, cartSnapshots: [{ id: "00000000-0000-4000-8000-000000000002", occurredAt: session.startedAt, stage: "checkout", currency: "AUD", totalInclGstCents: 0, items: [] }] }] };
+  vi.stubGlobal("fetch", vi.fn().mockImplementation((url: string) => response(url.includes("/visitors/") ? journey : data)));
+  render(<WebsiteAnalyticsV2Explorer canonicalQuery={`${query}&visitor=${visitorId}`} onNavigate={vi.fn()} />);
+  const dialog = await screen.findByRole("dialog", { name: "Visitor journey" });
+  await waitFor(() => expect(within(dialog).getByRole("list", { name: "Cart history" })).toHaveTextContent("AUD"));
+  expect(within(dialog).getByText(/Empty cart observed/)).toHaveTextContent("$0.00");
+  expect(within(dialog).getByText(/GST-inclusive merchandise totals/)).toHaveTextContent("shipping excluded");
+  expect(within(dialog).queryByText("No cart price snapshot recorded")).not.toBeInTheDocument();
+});

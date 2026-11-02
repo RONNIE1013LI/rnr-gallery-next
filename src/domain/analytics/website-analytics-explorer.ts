@@ -83,6 +83,7 @@ export type ExplorerVisitorResponse = Readonly<{
     financialEvents: readonly ExplorerFinancialEvent[];
     pageviewsTotal: number; pageviewsTruncated: boolean;
     cartSnapshots?: readonly ExplorerCartSnapshot[];
+    cartSnapshotsTruncated?: boolean;
   }>)[];
   total: number; page: number; pageSize: number; pageCount: number; truncated: boolean;
   metadata: ExplorerMetadata; notices: readonly string[];

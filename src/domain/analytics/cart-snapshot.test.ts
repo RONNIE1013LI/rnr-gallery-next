@@ -40,3 +40,26 @@ describe("cart snapshot allowlist and money", () => {
     });
   });
 });
+
+describe("snapshot edge cases", () => {
+  it("rejects mixed markets rather than labeling them NZD", () => {
+    const au = cart().items[0]!;
+    const nz = { ...au, id: "nz", price: { ...au.price, currency: "NZD", market: "NZ", taxJurisdiction: "NZ_GST" } };
+    expect(cartSnapshotPayload({ version: 1, items: [au, nz] } as Cart)).toBeNull();
+  });
+  it("reconciles multiple quantities in inclusive cents", () => {
+    const au = cart(12345).items[0]!;
+    const payload = cartSnapshotPayload({ version: 1, items: [{ ...au, quantity: 3 }] });
+    expect(payload?.totalInclGstCents).toBe(37035);
+  });
+  it("rejects currency that disagrees with the displayed route market", () => {
+    expect(cartSnapshotPayload(cart(), "NZD")).toBeNull();
+  });
+  it("rejects control characters or contact details in metadata", () => {
+    const payload = cartSnapshotPayload(cart())!;
+    const event = { ...payload, eventId: crypto.randomUUID(), stage: "cart" };
+    for (const productTitle of ["private@example.com", "https://private.example", "Product\nprivate"]) {
+      expect(cartSnapshotSchema.safeParse({ ...event, items: [{ ...payload.items[0], productTitle }] }).success).toBe(false);
+    }
+  });
+});

@@ -2,10 +2,12 @@ import { z } from "zod";
 import { calculateCartTotals, getCartDisplayMarket } from "@/domain/cart/cart";
 import type { Cart } from "@/domain/cart/types";
 
+const metadata = z.string().regex(/^[^\x00-\x1f\x7f@<>]*$/).refine((value) => !/https?:|www\./i.test(value));
+
 export const cartSnapshotItemSchema = z.object({
-  productKey: z.string().min(1).max(100),
-  productTitle: z.string().min(1).max(160),
-  sizeLabel: z.string().max(100),
+  productKey: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9_-]*$/),
+  productTitle: metadata.min(1).max(160),
+  sizeLabel: metadata.max(100),
   peoplePets: z.number().int().min(0).max(999).nullable(),
   quantity: z.number().int().min(1).max(999),
   unitPriceInclGstCents: z.number().int().min(0).max(100_000_000),
@@ -37,6 +39,7 @@ export function cartSnapshotPayload(cart: Cart, currencyFallback?: "NZD" | "AUD"
   if (cart.items.length > 50) return null;
   const currency = cart.items.length === 0 ? (currencyFallback ?? "NZD") : getCartDisplayMarket(cart)?.currency;
   if (currency !== "AUD" && currency !== "NZD") return null;
+  if (currencyFallback && currency !== currencyFallback) return null;
   const items = cart.items.map((item) => ({
     productKey: item.productKey,
     productTitle: item.productTitle,

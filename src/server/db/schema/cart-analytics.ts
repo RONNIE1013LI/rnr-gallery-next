@@ -16,6 +16,8 @@ export const websiteAnalyticsCartSnapshots = pgTable("website_analytics_cart_sna
   fingerprint: varchar("fingerprint", { length: 64 }).notNull(),
 }, (table) => [
   index("website_analytics_cart_snapshots_session_time_idx").on(table.sessionId, table.occurredAt),
+  index("website_analytics_cart_snapshots_time_idx").on(table.occurredAt),
+  check("website_analytics_cart_snapshots_fingerprint_valid", sql`${table.fingerprint} ~ '^[a-f0-9]{64}$'`),
   check("website_analytics_cart_snapshots_currency_valid", sql`${table.currency} in ('NZD','AUD')`),
   check("website_analytics_cart_snapshots_stage_valid", sql`${table.stage} in ('cart','checkout')`),
   check("website_analytics_cart_snapshots_total_nonnegative", sql`${table.totalInclGstCents} >= 0`),

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { completeCartAnalyticsPageview } from "@/domain/analytics/cart-capture-readiness";
 import { WEBSITE_CLICK_ID_TYPES } from "@/domain/analytics/website-analytics";
 import { isTrackableWebsitePageviewPath, normalizeWebsitePathname } from "@/domain/analytics/website-path-policy";
 import { parseAttribution } from "@/domain/analytics/attribution";
@@ -41,10 +42,10 @@ function postWebsiteAnalyticsPageview(body: unknown): Promise<Response> {
   });
 }
 
-async function sendWebsiteAnalyticsPageview(body: unknown): Promise<void> {
+async function sendWebsiteAnalyticsPageview(body: unknown, pathname: string): Promise<void> {
   const send = async () => {
     const response = await postWebsiteAnalyticsPageview(body);
-    if (response.ok) window.dispatchEvent(new Event("rnr:website-analytics:pageview-complete"));
+    if (response.ok) completeCartAnalyticsPageview(pathname);
   };
   const locks = analyticsLockManager();
   if (!locks) {
@@ -102,7 +103,7 @@ export function WebsiteAnalyticsTracker({ enabled }: Readonly<{ enabled: boolean
       referrerOrigin: referrerOrigin.current,
     };
 
-    void sendWebsiteAnalyticsPageview(body).catch(() => undefined);
+    void sendWebsiteAnalyticsPageview(body, pathname).catch(() => undefined);
   }, [consent?.advertising, consent?.analytics, explicitAdvertising, enabled, pathname, search]);
 
   return null;

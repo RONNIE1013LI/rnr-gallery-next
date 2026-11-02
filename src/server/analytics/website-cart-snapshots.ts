@@ -12,7 +12,7 @@ export type CartSnapshotInput = Readonly<{
 }>;
 
 export function createCartSnapshotRecorder(database: Database) {
-  return async function record(input: CartSnapshotInput): Promise<"saved" | "duplicate" | "unlinked"> {
+  return async function record(input: CartSnapshotInput): Promise<"saved" | "duplicate" | "unlinked" | "unavailable"> {
     const { sessionId, visitorDigest, snapshot } = input;
     const fingerprint = createHash("sha256").update(JSON.stringify({
       stage: snapshot.stage,
@@ -22,12 +22,12 @@ export function createCartSnapshotRecorder(database: Database) {
     })).digest("hex");
     return database.transaction(async (tx) => {
       const presence = await tx.execute(sql`select to_regclass('public.website_analytics_cart_snapshots') is not null as available`);
-      if (presence.rows[0]?.available !== true) return "duplicate";
+      if (presence.rows[0]?.available !== true) return "unavailable";
       const [session] = await tx.select({ id: websiteAnalyticsSessions.id })
         .from(websiteAnalyticsSessions)
         .where(and(eq(websiteAnalyticsSessions.id, sessionId),
           eq(websiteAnalyticsSessions.visitorDigest, visitorDigest)))
-        .limit(1);
+        .limit(1).for("update");
       if (!session) return "unlinked";
       const [latest] = await tx.select({ fingerprint: websiteAnalyticsCartSnapshots.fingerprint })
         .from(websiteAnalyticsCartSnapshots)
@@ -41,7 +41,7 @@ export function createCartSnapshotRecorder(database: Database) {
         .where(eq(websiteAnalyticsCartSnapshots.sessionId, sessionId));
       if ((counter?.count ?? 0) >= 500) return "duplicate";
       await tx.insert(websiteAnalyticsCartSnapshots).values({
-        id: snapshot.eventId, sessionId, stage: snapshot.stage,
+        id: snapshot.eventId, sessionId, stage: snapshot.stage, occurredAt: sql`clock_timestamp()`,
         currency: snapshot.currency, totalInclGstCents: snapshot.totalInclGstCents,
         items: snapshot.items, fingerprint,
       }).onConflictDoNothing();

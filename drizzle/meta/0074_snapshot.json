@@ -19296,6 +19296,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "website_analytics_cart_snapshots_time_idx": {
+          "name": "website_analytics_cart_snapshots_time_idx",
+          "columns": [
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -19328,6 +19343,10 @@
         "website_analytics_cart_snapshots_total_nonnegative": {
           "name": "website_analytics_cart_snapshots_total_nonnegative",
           "value": "\"website_analytics_cart_snapshots\".\"total_incl_gst_cents\" >= 0"
+        },
+        "website_analytics_cart_snapshots_fingerprint_valid": {
+          "name": "website_analytics_cart_snapshots_fingerprint_valid",
+          "value": "\"website_analytics_cart_snapshots\".\"fingerprint\" ~ '^[a-f0-9]{64}$'"
         }
       },
       "isRLSEnabled": false

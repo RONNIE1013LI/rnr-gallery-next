@@ -56,3 +56,37 @@ describe("consent-qualified cart snapshot endpoint", () => {
     expect(record).not.toHaveBeenCalled();
   });
 });
+
+describe("cart endpoint rejection boundaries", () => {
+  const record = vi.fn().mockResolvedValue("saved");
+  const route = createCartSnapshotRoute({ config: { enabled: true, cookieSecret: secret }, now: () => now, trustedOrigin: origin, record });
+  beforeEach(() => record.mockClear());
+  it("rejects expired and forged signed cookies", async () => {
+    const expired = createWebsiteAnalyticsIdentity(secret, new Date(now.getTime() - 31 * 60_000));
+    for (const cookie of [
+      `rnr-consent-v1=${consent(true)}; ra_vid_v1=${identity.visitorCookie}; ra_sid_v1=${expired.sessionCookie}`,
+      `rnr-consent-v1=${consent(true)}; ra_vid_v1=${identity.visitorCookie}; ra_sid_v1=${identity.sessionCookie}forged`,
+    ]) expect((await route(request(valid, { cookie }))).status).toBe(409);
+    expect(record).not.toHaveBeenCalled();
+  });
+  it("excludes bots and missing consent", async () => {
+    const bot = request(valid); bot.headers.set("User-Agent", "Googlebot");
+    expect((await route(bot)).status).toBe(204);
+    expect((await route(request(valid, { cookie: `ra_vid_v1=${identity.visitorCookie}; ra_sid_v1=${identity.sessionCookie}` }))).status).toBe(204);
+    expect(record).not.toHaveBeenCalled();
+  });
+  it("bounds bytes and rejects malformed JSON and nested private fields", async () => {
+    expect((await route(request({ ...valid, extra: "a".repeat(17_000) }))).status).toBe(413);
+    const malformed = request(valid);
+    expect((await route(new Request(malformed.url, { method: "POST", headers: malformed.headers, body: "{" }))).status).toBe(400);
+    expect((await route(request({ ...valid, items: [{ ...valid.items[0], designText: "private" }] }))).status).toBe(422);
+    expect(record).not.toHaveBeenCalled();
+  });
+  it("returns retryable errors without leaking infrastructure details", async () => {
+    record.mockResolvedValueOnce("unlinked"); expect((await route(request(valid))).status).toBe(409);
+    record.mockResolvedValueOnce("unavailable"); expect((await route(request(valid))).status).toBe(503);
+    record.mockRejectedValueOnce(new Error("private connection string"));
+    const result = await route(request(valid)); expect(result.status).toBe(503);
+    expect(await result.text()).not.toContain("private");
+  });
+});

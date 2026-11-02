@@ -1,71 +1,74 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { getCartSnapshot, subscribeToCart } from "@/domain/cart/browser-cart-events";
+import { getActiveCartStorageKey } from "@/domain/cart/browser-cart-scope";
 import { parseStoredCart } from "@/domain/cart/browser-cart-repository";
-import { cartSnapshotPayload } from "@/domain/analytics/cart-snapshot";
+import { cartSnapshotPayload, type CartSnapshot } from "@/domain/analytics/cart-snapshot";
+import { cartAnalyticsReadyAt, subscribeCartAnalyticsReady } from "@/domain/analytics/cart-capture-readiness";
+import { isTrackableWebsitePageviewPath } from "@/domain/analytics/website-path-policy";
 import { useAdvertisingConsent } from "./consent-preferences";
 
-/** Best effort only: analytics errors never block cart mutations or checkout. */
+/** Capture is independent from commerce writes and never awaits or changes checkout. */
 export function CartSnapshotTracker({ enabled }: Readonly<{ enabled: boolean }>) {
   const pathname = usePathname();
   const consent = useAdvertisingConsent();
-  const lastSent = useRef<string | null>(null);
-  const seenNonempty = useRef(false);
-  const lastCurrency = useRef<"NZD" | "AUD" | undefined>(undefined);
-
   useEffect(() => {
-    if (!enabled || consent?.analytics !== true) {
-      lastSent.current = null;
-      return;
-    }
+    if (!enabled || consent?.analytics !== true || !isTrackableWebsitePageviewPath(pathname)) return;
     let active = true;
     let busy = false;
-    let queued = false;
+    let signature: string | null = null;
+    const queue: { payload: CartSnapshot; scope: string }[] = [];
+    const controller = new AbortController();
+    const timers = new Set<ReturnType<typeof setTimeout>>();
     const stage = /^\/(?:au\/)?checkout(?:\/|$)/.test(pathname) ? "checkout" : "cart";
-    const send = async () => {
-      if (!active) return;
-      if (busy) { queued = true; return; }
+    const currency = /^\/au(?:\/|$)/.test(pathname) ? "AUD" : "NZD";
+    const pause = (ms: number) => new Promise<void>((resolve) => {
+      const timer = setTimeout(() => { timers.delete(timer); resolve(); }, ms);
+      timers.add(timer);
+      controller.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true });
+    });
+    const drain = async () => {
+      if (busy) return;
       busy = true;
       try {
-        do {
-          queued = false;
-          let payload;
-          try {
-            const cart = parseStoredCart(getCartSnapshot());
-            if (cart.items.length === 0 && !seenNonempty.current) break;
-            if (cart.items.length > 0) seenNonempty.current = true;
-            payload = cartSnapshotPayload(cart, lastCurrency.current ?? (pathname.startsWith("/au/") ? "AUD" : "NZD"));
-          } catch { break; }
-          if (!payload) break;
-          lastCurrency.current = payload.currency;
-          const signature = JSON.stringify({ stage, ...payload });
-          if (signature === lastSent.current) continue;
-          try {
-            const response = await fetch("/api/analytics/cart-snapshot", {
-              method: "POST",
-              credentials: "same-origin",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ ...payload, stage, eventId: crypto.randomUUID() }),
-              keepalive: true,
-            });
-            if (response.ok && active) lastSent.current = signature;
-          } catch {
-            // Analytics is strictly non-blocking.
+        while (active && queue.length) {
+          const next = queue.shift()!;
+          for (let attempt = 0; active && attempt < 3; attempt++) {
+            if (next.scope !== getActiveCartStorageKey()) break;
+            try {
+              const response = await fetch("/api/analytics/cart-snapshot", {
+                method: "POST", credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(next.payload), signal: controller.signal,
+              });
+              if (response.ok || (response.status !== 409 && response.status !== 503)) break;
+            } catch { if (!active) break; }
+            if (attempt < 2) await pause(250 * (attempt + 1));
           }
-        } while (queued && active);
+        }
       } finally { busy = false; }
     };
-    const unsubscribe = subscribeToCart(() => { void send(); });
-    // The pageview endpoint first issues the signed visitor/session cookies.
-    // This follow-up also recovers a 409 caused by an initial pageview race.
-    window.addEventListener("rnr:website-analytics:pageview-complete", send);
-    void send();
+    const capture = () => {
+      if (!active || !cartAnalyticsReadyAt(pathname)) return;
+      try {
+        const scope = getActiveCartStorageKey();
+        const payload = cartSnapshotPayload(parseStoredCart(getCartSnapshot()), currency);
+        if (!payload) return;
+        const key = JSON.stringify({ scope, stage, ...payload });
+        if (signature === key || queue.length >= 20) return;
+        signature = key;
+        queue.push({ scope, payload: { ...payload, stage, eventId: crypto.randomUUID() } });
+        void drain();
+      } catch { /* Storage, crypto and analytics failures never affect commerce. */ }
+    };
+    const unsubscribe = subscribeToCart(capture);
+    const unready = subscribeCartAnalyticsReady(capture);
+    capture();
     return () => {
-      active = false;
-      unsubscribe();
-      window.removeEventListener("rnr:website-analytics:pageview-complete", send);
+      active = false; queue.length = 0; controller.abort();
+      timers.forEach(clearTimeout); unsubscribe(); unready();
     };
   }, [enabled, consent?.analytics, pathname]);
   return null;

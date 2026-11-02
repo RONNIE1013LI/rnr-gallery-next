@@ -1,5 +1,7 @@
 "use client";
 
+import { cartSnapshotChange } from "@/domain/analytics/cart-snapshot-change";
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import type {
@@ -182,17 +184,6 @@ function VisitorDetail({ visitorId, sessionId, canonicalQuery, onClose }: Readon
         {data.sessions.map((session) => {
           const timeline: { id: string; at: string; content: ReactNode }[] = [
             ...session.pageviews.map((view) => ({ id: `page:${view.id}`, at: view.occurredAt, content: <code>{view.pathname}</code> })),
-            ...(session.cartSnapshots ?? []).map((cart) => ({ id: `cart:${cart.id}`, at: cart.occurredAt,
-              content: <details className={styles.acquisitionDetails}>
-                <summary>{cart.stage === "checkout" ? "Checkout cart" : "Cart snapshot"} · {formatAnalyticsMoney(cart.currency, cart.totalInclGstCents)} · {cart.items.reduce((sum, item) => sum + item.quantity, 0)} items</summary>
-                <p className={styles.muted}>Browser cart estimate, including product tax but excluding shipping. Not a confirmed checkout quote or payment.</p>
-                {cart.items.length === 0 ? <p>Cart emptied.</p> : <ul>{cart.items.map((item, index) => <li key={index}>
-                  <strong>{item.productTitle}</strong> · {item.sizeLabel}
-                  {item.peoplePets !== null && item.peoplePets > 0 ? ` · ${item.peoplePets} faces/pets` : ""}
-                  { ` · Qty ${item.quantity} · ${formatAnalyticsMoney(cart.currency, item.unitPriceInclGstCents)} each` }
-                </li>)}</ul>}
-              </details> })),
-
             ...session.conversions.map((order) => ({ id: `order:${order.conversionId}`, at: order.occurredAt,
               content: order.adminHref ? <Link href={order.adminHref}>Order {order.orderNumber} created</Link> : <>Order {order.orderNumber} created</> })),
             ...session.financialEvents.map((event) => ({ id: `payment:${event.id}`, at: event.occurredAt,
@@ -215,6 +206,21 @@ function VisitorDetail({ visitorId, sessionId, canonicalQuery, onClose }: Readon
               <div><dt>Click ID Type</dt><dd>{known(session.clickIdType)}</dd></div>
               <div><dt>Click ID / referrer</dt><dd>Available below only when captured with a linked order.</dd></div>
             </dl>
+            <h4>Cart history</h4>
+            {session.cartSnapshotsTruncated ? <p>Showing the latest 100 recorded cart changes. Earlier changes are omitted.</p> : null}
+            <p className={styles.muted}>Browser cart estimates · GST-inclusive merchandise totals · shipping excluded. These are not verified checkout quotes or payments.</p>
+            <ol className={styles.journeyTimeline} aria-label="Cart history">{(session.cartSnapshots ?? []).map((cart, index, history) => <li key={cart.id}>
+              <time dateTime={cart.occurredAt}>{dateTime.format(new Date(cart.occurredAt))}</time>
+              <details className={styles.acquisitionDetails}>
+                <summary>{cartSnapshotChange(history[index - 1] ?? null, cart)} · {cart.currency} {formatAnalyticsMoney(cart.currency, cart.totalInclGstCents)} · {cart.items.reduce((sum, item) => sum + item.quantity, 0)} items</summary>
+                {cart.items.length === 0 ? <p>Cart emptied / empty observed state.</p> : <ul>{cart.items.map((item, itemIndex) => <li key={itemIndex}>
+                  <strong>{item.productTitle}</strong> · {item.sizeLabel}
+                  {item.peoplePets !== null && item.peoplePets > 0 ? ` · ${item.peoplePets} faces/pets` : ""}
+                  {` · Qty ${item.quantity} · ${formatAnalyticsMoney(cart.currency, item.unitPriceInclGstCents)} each, GST inclusive`}
+                </li>)}</ul>}
+              </details>
+            </li>)}</ol>
+            <h4>Pageviews and linked orders</h4>
             <ol className={styles.journeyTimeline} aria-label="Session journey">{timeline.map((event) => <li key={event.id}>
               <time dateTime={event.at}>{dateTime.format(new Date(event.at))}</time><div>{event.content}</div>
             </li>)}</ol>

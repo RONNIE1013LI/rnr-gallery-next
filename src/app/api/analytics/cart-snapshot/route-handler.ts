@@ -21,7 +21,7 @@ type Dependencies = Readonly<{
   config?: WebsiteAnalyticsConfig;
   now?: () => Date;
   trustedOrigin?: string;
-  record?: (input: CartSnapshotInput) => Promise<"saved" | "duplicate" | "unlinked">;
+  record?: (input: CartSnapshotInput) => Promise<"saved" | "duplicate" | "unlinked" | "unavailable">;
 }>;
 
 export function createCartSnapshotRoute(dependencies: Dependencies = {}) {
@@ -39,14 +39,20 @@ export function createCartSnapshotRoute(dependencies: Dependencies = {}) {
       const visitor = parseWebsiteAnalyticsVisitor(cookie(cookies, WEBSITE_ANALYTICS_VISITOR_COOKIE), config.cookieSecret, now);
       const session = parseWebsiteAnalyticsSession(cookie(cookies, WEBSITE_ANALYTICS_SESSION_COOKIE), config.cookieSecret, now);
       if (!visitor || !session) return new Response(null, { status: 409, headers: noStore });
-      const data = cartSnapshotSchema.safeParse(await parseBoundedJson(request, 16_384));
+      let body: unknown;
+      try { body = await parseBoundedJson(request, 16_384); }
+      catch (error) {
+        if (error instanceof MutationRequestError) throw error;
+        return Response.json({ error: "Invalid cart snapshot" }, { status: 400, headers: noStore });
+      }
+      const data = cartSnapshotSchema.safeParse(body);
       if (!data.success) return Response.json({ error: "Invalid cart snapshot" }, { status: 422, headers: noStore });
       const result = await (dependencies.record ?? recordWebsiteCartSnapshot)({
         sessionId: session.sessionId,
         visitorDigest: websiteAnalyticsVisitorDigest(visitor.visitorId, config.cookieSecret),
         snapshot: data.data,
       });
-      return new Response(null, { status: result === "unlinked" ? 409 : 204, headers: noStore });
+      return new Response(null, { status: result === "unlinked" ? 409 : result === "unavailable" ? 503 : 204, headers: noStore });
     } catch (error) {
       if (error instanceof MutationRequestError) {
         return Response.json({ error: error.code }, { status: error.status, headers: noStore });

@@ -1,4 +1,4 @@
-import { inArray, sql, type SQL } from "drizzle-orm";
+import { desc, eq, sql, type SQL } from "drizzle-orm";
 import type {
   ExplorerConversion, ExplorerFinancialEvent, ExplorerMetadata, ExplorerMoney,
   ExplorerOrderAcquisition, ExplorerQuality, ExplorerSession,
@@ -243,18 +243,17 @@ export function createWebsiteAnalyticsExplorer(database: Database) {
         // Additive release compatibility: existing journeys remain readable before migration 0074.
         const cartPresence = await transaction.execute(sql`select to_regclass('public.website_analytics_cart_snapshots') is not null as available`);
         const cartTableAvailable = cartPresence.rows[0]?.available === true;
-        const cartRows = cartTableAvailable && selectedSessionIds.length ? await transaction.select({
-          id: websiteAnalyticsCartSnapshots.id,
-          sessionId: websiteAnalyticsCartSnapshots.sessionId,
-          occurredAt: websiteAnalyticsCartSnapshots.occurredAt,
-          stage: websiteAnalyticsCartSnapshots.stage,
-          currency: websiteAnalyticsCartSnapshots.currency,
-          totalInclGstCents: websiteAnalyticsCartSnapshots.totalInclGstCents,
-          items: websiteAnalyticsCartSnapshots.items,
-        }).from(websiteAnalyticsCartSnapshots)
-          .where(inArray(websiteAnalyticsCartSnapshots.sessionId, selectedSessionIds))
-          .orderBy(websiteAnalyticsCartSnapshots.occurredAt, websiteAnalyticsCartSnapshots.id)
-          .limit(5000) : [];
+        // Bound each session separately so a busy visit cannot hide another visit's latest cart.
+        const cartRows: (typeof websiteAnalyticsCartSnapshots.$inferSelect)[] = [];
+        const truncatedCartSessions = new Set<string>();
+        if (cartTableAvailable) for (const sessionId of selectedSessionIds) {
+          const rows = await transaction.select().from(websiteAnalyticsCartSnapshots)
+            .where(eq(websiteAnalyticsCartSnapshots.sessionId, sessionId))
+            .orderBy(desc(websiteAnalyticsCartSnapshots.occurredAt), desc(websiteAnalyticsCartSnapshots.id))
+            .limit(101);
+          if (rows.length > 100) truncatedCartSessions.add(sessionId);
+          cartRows.push(...rows.slice(0, 100).reverse());
+        }
 
         return { visitor: number(visitor.sessionCount) > 0 ? { visitorId, firstSeenAt: iso(visitor.firstSeenAt), lastSeenAt: iso(visitor.lastSeenAt), sessionCount: number(visitor.sessionCount), observedReturning: number(visitor.sessionCount) > 1 } : null,
           sessions: array(row.items).map(item => {
@@ -263,6 +262,7 @@ export function createWebsiteAnalyticsExplorer(database: Database) {
             return { ...basic,
               pageviews: pages.filter(page => page.sessionId === basic.sessionId).map(page => ({ id: String(page.id), occurredAt: iso(page.occurredAt), pathname: String(page.pathname), previousPage: nullable(page.previousPage), nextPage: nullable(page.nextPage) })),
               pageviewsTotal: basic.pageViews, pageviewsTruncated: basic.pageViews > PAGEVIEW_LIMIT,
+              cartSnapshotsTruncated: truncatedCartSessions.has(basic.sessionId),
               cartSnapshots: cartRows.filter(item => item.sessionId === basic.sessionId).map(item => ({
                 id: item.id,
                 occurredAt: item.occurredAt.toISOString(),
