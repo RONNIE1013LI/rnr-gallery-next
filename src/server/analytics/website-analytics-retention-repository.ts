@@ -5,15 +5,18 @@ type Database = ReturnType<typeof getDatabase>;
 
 export function createWebsiteAnalyticsRetentionRepository(database: Database) {
   return Object.freeze({
-    async deleteBefore(input: Readonly<{ cutoff: Date; limit: number }>) {
-      // Independent expiry also covers a long-lived session with recent pageviews.
+    async deleteCartSnapshotsBefore(input: Readonly<{ cutoff: Date; limit: number }>) {
       const presence = await database.execute(sql`select to_regclass('public.website_analytics_cart_snapshots') is not null as available`);
-      if (presence.rows[0]?.available === true) await database.execute(sql`
+      if (presence.rows[0]?.available !== true) return 0;
+      const result = await database.execute(sql`
         delete from website_analytics_cart_snapshots where id in (
           select id from website_analytics_cart_snapshots where occurred_at < ${input.cutoff}
           order by occurred_at, id limit ${input.limit}
-        )
+        ) returning id
       `);
+      return result.rowCount ?? result.rows.length;
+    },
+    async deleteBefore(input: Readonly<{ cutoff: Date; limit: number }>) {
       const result = await database.execute(sql`
         with candidates as (
           select sessions.id

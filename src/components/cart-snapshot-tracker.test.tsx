@@ -74,3 +74,14 @@ it("captures cross-tab cart state using the active storage scope", async () => {
   act(() => window.dispatchEvent(new StorageEvent("storage", { key: "rnr:commerce:v1:guest:cart" })));
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
 });
+
+it("drops a superseded retry so an old cart cannot become the latest cart", async () => {
+  state.pathname = "/cart"; state.consent.analytics = true; localStorage.clear(); completeCartAnalyticsPageview("/unready");
+  save([item]);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 })).mockResolvedValue(new Response(null, { status: 204 })));
+  render(<CartSnapshotTracker enabled />); ready();
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  save([{ ...item, quantity: 2 }]);
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(vi.mocked(fetch).mock.calls[1]![1]!.body as string).items[0].quantity).toBe(2);
+});

@@ -38,7 +38,7 @@ const snapshot = (eventId = randomUUID()) => ({ version: 1 as const, eventId, st
     const sessionId = await session(); const record = createCartSnapshotRecorder(db!);
     await record({ sessionId, visitorDigest: digest, snapshot: snapshot() });
     await db!.update(carts).set({ occurredAt: new Date("2026-01-01Z") }).where(eq(carts.sessionId, sessionId));
-    await createWebsiteAnalyticsRetentionRepository(db!).deleteBefore({ cutoff: new Date("2026-08-01Z"), limit: 500 });
+    await createWebsiteAnalyticsRetentionRepository(db!).deleteCartSnapshotsBefore({ cutoff: new Date("2026-08-01Z"), limit: 500 });
     expect(await db!.select().from(carts).where(eq(carts.sessionId, sessionId))).toHaveLength(0);
     await record({ sessionId, visitorDigest: digest, snapshot: snapshot() });
     await db!.delete(sessions).where(eq(sessions.id, sessionId));

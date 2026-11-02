@@ -170,7 +170,7 @@ export function createWebsitePageviewRoute(dependencies: Dependencies = {}) {
         isInternal,
       });
 
-      const headers = new Headers();
+      const headers = new Headers({ "X-RNR-Analytics-Ready": "1" });
       for (const cookie of websiteAnalyticsCookieHeaders({
         visitorCookie: nextVisitorCookie,
         sessionCookie: nextSessionCookie,

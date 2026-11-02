@@ -33,11 +33,14 @@ export function CartSnapshotTracker({ enabled }: Readonly<{ enabled: boolean }>)
       if (busy) return;
       busy = true;
       try {
+        const processQueue = async () => {
         while (active && queue.length) {
           const next = queue.shift()!;
           for (let attempt = 0; active && attempt < 3; attempt++) {
             if (next.scope !== getActiveCartStorageKey()) break;
             try {
+              const current = cartSnapshotPayload(parseStoredCart(getCartSnapshot()), currency);
+              if (!current || JSON.stringify({ ...current, stage, eventId: "" }) !== JSON.stringify({ ...next.payload, eventId: "" })) break;
               const response = await fetch("/api/analytics/cart-snapshot", {
                 method: "POST", credentials: "same-origin",
                 headers: { "Content-Type": "application/json" },
@@ -48,7 +51,13 @@ export function CartSnapshotTracker({ enabled }: Readonly<{ enabled: boolean }>)
             if (attempt < 2) await pause(250 * (attempt + 1));
           }
         }
-      } finally { busy = false; }
+        };
+        // Share network ordering across tabs; every retry also checks the shared cart.
+        const locks = navigator.locks;
+        if (locks) await locks.request("rnr:website-analytics:cart-snapshot", processQueue);
+        else await processQueue();
+      } catch { /* Best effort, including unavailable browser lock APIs. */ }
+      finally { busy = false; }
     };
     const capture = () => {
       if (!active || !cartAnalyticsReadyAt(pathname)) return;

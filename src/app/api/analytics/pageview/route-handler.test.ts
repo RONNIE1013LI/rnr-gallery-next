@@ -225,6 +225,7 @@ describe("website pageview route", () => {
 
     expect(response.status).toBe(204);
     expect(await response.text()).toBe("");
+    expect(response.headers.has("X-RNR-Analytics-Ready")).toBe(false);
   });
 
   it("does nothing when the feature flag is disabled", async () => {

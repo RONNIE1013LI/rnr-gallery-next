@@ -32,3 +32,10 @@ describe("website analytics retention", () => {
     expect(deleteBefore).toHaveBeenCalledTimes(3);
   });
 });
+
+it("drains cart expiry independently when no sessions expire", async () => {
+  const deleteBefore = vi.fn().mockResolvedValue(0);
+  const deleteCartSnapshotsBefore = vi.fn().mockResolvedValueOnce(500).mockResolvedValueOnce(500).mockResolvedValueOnce(2);
+  await createWebsiteAnalyticsRetention({ deleteBefore, deleteCartSnapshotsBefore }).run(new Date(), 500);
+  expect(deleteCartSnapshotsBefore).toHaveBeenCalledTimes(3);
+});
