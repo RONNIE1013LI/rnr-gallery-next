@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultProductRegistry,
@@ -475,5 +475,30 @@ describe("ProductPageContent", () => {
         },
       },
     });
+  });
+});
+
+
+describe("canvas advertising page promotion", () => {
+  it.each(["NZ", "AU"] as const)("shows the shared promotion after four seconds on the %s canvas landing page", (market) => {
+    vi.useFakeTimers();
+    try {
+      render(<ProductPageContent product={getProductBySlug("digital-oil-painting-canvas")!} selection={null} market={market} />);
+      act(() => vi.advanceTimersByTime(3999));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(1));
+      expect(screen.getByRole("dialog", {name:"Limited-time offer: save 36% in total"})).toBeInTheDocument();
+      expect(screen.getByRole("link",{name:"Sign up"})).toHaveAttribute("href", market === "AU" ? "/account/register?next=%2Fau%2Fshop" : "/account/register?next=%2Fshop");
+      fireEvent.click(screen.getByRole("button",{name:"Close promotion"}));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
+  });
+  it("does not add the advertising popup to other product pages", () => {
+    vi.useFakeTimers();
+    try {
+      render(<ProductPageContent product={getProductBySlug("photo-print-canvas")!} selection={null} />);
+      act(() => vi.advanceTimersByTime(4000));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
   });
 });

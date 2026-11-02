@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { HomepagePromotion } from "@/components/homepage-promotion";
 import { AnalyticsEventTracker } from "@/components/analytics-event-tracker";
 import { hasProductBuyingGuide, ProductBuyingGuide } from "@/components/product-buying-guide";
 import { StructuredData } from "@/components/structured-data";
@@ -262,6 +263,7 @@ export function ProductPageContent({
   );
   return (
     <main id="main-content" className={styles.productDetail}>
+      {product.key === "digital-oil-painting-canvas" ? <HomepagePromotion market={market} /> : null}
       {analyticsSubtotalExGstCents !== undefined && analyticsSizeKey ? (
         <AnalyticsEventTracker
           event={buildProductViewEvent({
