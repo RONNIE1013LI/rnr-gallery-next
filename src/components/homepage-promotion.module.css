@@ -1,0 +1,119 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: rgb(24 17 15 / 65%);
+}
+
+.dialog {
+  position: relative;
+  width: min(960px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 14px;
+  background: #fff8ee;
+  box-shadow: 0 20px 80px rgb(0 0 0 / 28%);
+}
+
+.close {
+  position: sticky;
+  top: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 8px 8px -52px auto;
+  padding: 0;
+  border: 1px solid #d7c7b8;
+  border-radius: 50%;
+  color: #341b14;
+  background: #fffaf3;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.artwork { position: relative; }
+
+.artwork,
+.artwork picture,
+.artwork img {
+  display: block;
+  width: 100%;
+}
+
+.artwork img {
+  height: auto;
+  aspect-ratio: 1670 / 941;
+}
+
+.footer {
+  position: sticky;
+  bottom: 0;
+  padding: 12px 16px;
+  border-top: 1px solid #e6d5c5;
+  background: #fff8ee;
+}
+
+/* Match the button regions in the fixed desktop/mobile campaign artwork. */
+.actions {
+  position: absolute;
+  top: 88.8%;
+  left: 12.25%;
+  width: 47%;
+  height: 6.8%;
+  min-height: 44px;
+  transform: translateY(-50%);
+  display: grid;
+  grid-template-columns: 36% 64%;
+}
+
+.actions a {
+  display: block;
+  border-radius: 999px;
+}
+
+.actions a:hover { background: rgb(255 255 255 / 12%); }
+
+.close:focus-visible,
+.actions a:focus-visible {
+  outline: 3px solid #b97a16;
+  outline-offset: 2px;
+}
+
+.footer p {
+  margin: 0;
+  color: #5b4439;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .dialog { max-width: 420px; }
+  .artwork img { aspect-ratio: 3 / 4; }
+  .footer { padding: 10px 12px; }
+  .actions {
+    top: 92.6%;
+    left: 9%;
+    width: 82%;
+    height: 5.5%;
+    grid-template-columns: 1fr 1fr;
+    gap: 1%;
+  }
+}

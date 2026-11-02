@@ -1,0 +1,93 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import Link from "next/link";
+import type { Market } from "@/domain/markets/types";
+import { useContainedDialog } from "./forms/use-contained-dialog";
+import styles from "./homepage-promotion.module.css";
+
+// Turn off when this limited-time promotion ends.
+const promotionEnabled = true;
+const storageKey = "rnr:homepage-promotion:36-percent:v1";
+const repeatAfterMs = 24 * 60 * 60 * 1_000;
+
+export function HomepagePromotion({ market = "NZ" }: Readonly<{ market?: Market }>) {
+  const [open, setOpen] = useState(false);
+  const dialogRef = useRef<HTMLElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const close = () => setOpen(false);
+
+  useEffect(() => {
+    if (!promotionEnabled) return;
+    const timer = window.setTimeout(() => {
+      if (document.visibilityState === "hidden"
+        || document.querySelector('[role="dialog"], [role="alertdialog"], .consent-preferences')) return;
+      try {
+        const lastShown = Number(localStorage.getItem(storageKey));
+        if (lastShown > 0 && Date.now() - lastShown < repeatAfterMs) return;
+        // Skip automatic display if the browser cannot remember the frequency cap.
+        localStorage.setItem(storageKey, String(Date.now()));
+      } catch {
+        return;
+      }
+      setOpen(true);
+    }, 4_000);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useContainedDialog({
+    active: open,
+    dialogRef,
+    isolationRootRef: backdropRef,
+    initialFocusRef: closeRef,
+    onClose: close,
+  });
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      ref={backdropRef}
+      className={styles.backdrop}
+      data-testid="promotion-backdrop"
+      onClick={(event) => { if (event.target === event.currentTarget) close(); }}
+    >
+      <section
+        ref={dialogRef}
+        className={styles.dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="homepage-promotion-title"
+        aria-describedby="homepage-promotion-description"
+        tabIndex={-1}
+      >
+        <button ref={closeRef} className={styles.close} type="button" aria-label="Close promotion" onClick={close}>
+          <span aria-hidden="true">×</span>
+        </button>
+        <h2 id="homepage-promotion-title" className={styles.srOnly}>Limited-time offer: save 36% in total</h2>
+        <p id="homepage-promotion-description" className={styles.srOnly}>
+          Sign up for 20% off. Returning customers: send your previous 5-digit order number to our team
+          to claim an extra 20% off the discounted price. For example, $100 becomes $80, then $64.
+          Limited time only. Offer ends when this banner is removed.
+        </p>
+        <div className={styles.artwork}>
+          <picture>
+            <source media="(max-width: 640px)" srcSet="/media/promotions/thank-you-36-mobile.webp" width={1086} height={1448} />
+            {/* Precompressed, art-directed assets; the browser downloads only the matching version. */}
+            <img src="/media/promotions/thank-you-36-desktop.webp" alt="R&R Gallery limited-time canvas and banner offer" width={1670} height={941} />
+          </picture>
+          <div className={styles.actions} data-artwork-actions>
+            <Link href={`/account/register?next=${encodeURIComponent(market === "AU" ? "/au/shop" : "/shop")}`} prefetch={false} onClick={close}><span className={styles.srOnly}>Sign up</span></Link>
+            <a href="https://m.me/RandRgallery" rel="noopener noreferrer" onClick={close}><span className={styles.srOnly}>Message our team</span></a>
+          </div>
+        </div>
+        <footer className={styles.footer}>
+          <p>Contact our team before payment to arrange your offer.</p>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}

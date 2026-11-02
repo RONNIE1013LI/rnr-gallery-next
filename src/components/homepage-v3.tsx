@@ -18,6 +18,7 @@ import {
 } from "./homepage-gallery";
 import { ProofConversationScroller } from "./proof-conversation-scroller";
 import { HomepageFaq } from "./homepage-faq";
+import { HomepagePromotion } from "./homepage-promotion";
 import { CustomerReviewsSection } from "./customer-reviews/customer-reviews-section";
 import { homepageV3ImageSlots, type HomepageV3ImageSlot } from "./homepage-v3-images";
 import styles from "./homepage-v3.module.css";
@@ -202,6 +203,7 @@ export function HomepageV3({
 
   return (
     <main id="main-content" className={styles.page}>
+      <HomepagePromotion market={market} />
       <StructuredData id="rnr-local-business" data={{
         "@context": "https://schema.org",
         "@type": "LocalBusiness",
