@@ -5,10 +5,10 @@ import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { generateDrizzleJson, generateMigration, pushSchema } from "drizzle-kit/api";
 import * as schema from "../src/server/db/schema";
+import { releaseDatabaseNames } from "./release-test-database";
 const docker = "/usr/local/bin/docker";
 const name = "rnr-wise-preflight-20261022";
-const applicationName = "rnr_gallery_test_release_gate_31578895_wisepreflight_app";
-const databaseName = "rnr_gallery_test_release_gate_31578895_wisepreflight_integration";
+const { application: applicationName, integration: databaseName } = releaseDatabaseNames("31578895", "wisepreflight");
 function command(args: string[]) { return execFileSync(docker, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 30_000 }).trim(); }
 async function main() {
   if (command(["inspect", "--format", '{{index .Config.Labels "codex.task"}}', name]) !== "wise-payid-preflight") throw new Error("Container ownership mismatch");

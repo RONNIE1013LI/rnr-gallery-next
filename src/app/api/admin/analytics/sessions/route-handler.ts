@@ -49,6 +49,15 @@ const conversion = z.object({
 const detailSchema = z.object({
   visitor: z.object({ visitorId: text, firstSeenAt: text, lastSeenAt: text, sessionCount: count, observedReturning: z.boolean() }).strict().nullable(),
   sessions: z.array(session.extend({ pageviews: z.array(page), pageviewsTotal: count, pageviewsTruncated: z.boolean(), conversions: z.array(conversion),
+    cartSnapshotsTruncated: z.boolean().optional(),
+    cartSnapshots: z.array(z.object({
+      id: z.uuid(), occurredAt: text, stage: z.enum(["cart", "checkout"]),
+      currency: z.enum(["NZD", "AUD"]), totalInclGstCents: count,
+      items: z.array(z.object({
+        productKey: text.max(100), productTitle: text.max(160), sizeLabel: text.max(100),
+        peoplePets: count.nullable(), quantity: count, unitPriceInclGstCents: count,
+      }).strict()),
+    }).strict()).optional(),
     financialEvents: z.array(z.object({ id: text, orderId: optionalText, occurredAt: text, type: z.enum(["receipt", "refund", "reversal"]), amountCents: amount, currency: z.enum(["NZD", "AUD"]) }).strict()),
   }).strict()), ...pagination, truncated: z.boolean(), metadata, notices: z.array(text),
 }).strict();

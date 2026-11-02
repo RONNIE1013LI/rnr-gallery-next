@@ -40,6 +40,7 @@ const protectedPages = new Map<string, string>([
   ["src/app/admin/settings/page.tsx", "/admin/settings"],
   ["src/app/admin/settings/payment/flik/page.tsx", "/admin/settings/payment/flik"],
   ["src/app/admin/settings/payment/page.tsx", "/admin/settings/payment"],
+  ["src/app/admin/settings/payment/wise-payid/page.tsx", "/admin/settings/payment/wise-payid"],
   ["src/app/admin/settings/shipping/page.tsx", "/admin/settings/shipping"],
   ["src/app/admin/supplies/categories/page.tsx", "/admin/supplies/categories"],
   ["src/app/admin/supplies/page.tsx", "/admin/supplies"],

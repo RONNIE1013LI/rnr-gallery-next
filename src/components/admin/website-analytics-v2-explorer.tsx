@@ -1,5 +1,7 @@
 "use client";
 
+import { cartSnapshotChange } from "@/domain/analytics/cart-snapshot-change";
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import type {
@@ -196,9 +198,29 @@ function VisitorDetail({ visitorId, sessionId, canonicalQuery, onClose }: Readon
               <div><dt>Landing / exit</dt><dd>{known(session.entryPage)}<br />{known(session.exitPage)}</dd></div>
               <div><dt>Pageviews / observed span</dt><dd>{session.pageViews} · {duration(session.observedDurationSeconds)}{session.singlePage ? " · Single-page session" : ""}</dd></div>
               <div><dt>Cart / Checkout</dt><dd>{flag(session.cart)} / {flag(session.checkout)}</dd></div>
+              <div><dt>Last recorded cart</dt><dd>{session.cartSnapshots?.length
+                ? <>{formatAnalyticsMoney(session.cartSnapshots[session.cartSnapshots.length - 1]!.currency,
+                  session.cartSnapshots[session.cartSnapshots.length - 1]!.totalInclGstCents)} (browser estimate, excl. shipping)</>
+                : "No cart price snapshot recorded"}</dd></div>
+
               <div><dt>Click ID Type</dt><dd>{known(session.clickIdType)}</dd></div>
               <div><dt>Click ID / referrer</dt><dd>Available below only when captured with a linked order.</dd></div>
             </dl>
+            <h4>Cart history</h4>
+            {session.cartSnapshotsTruncated ? <p>Showing the latest 100 recorded cart changes. Earlier changes are omitted.</p> : null}
+            <p className={styles.muted}>Browser cart estimates · GST-inclusive merchandise totals · shipping excluded. These are not verified checkout quotes or payments.</p>
+            <ol className={styles.journeyTimeline} aria-label="Cart history">{(session.cartSnapshots ?? []).map((cart, index, history) => <li key={cart.id}>
+              <time dateTime={cart.occurredAt}>{dateTime.format(new Date(cart.occurredAt))}</time>
+              <details className={styles.acquisitionDetails}>
+                <summary>{cartSnapshotChange(history[index - 1] ?? null, cart)} · {cart.currency} {formatAnalyticsMoney(cart.currency, cart.totalInclGstCents)} · {cart.items.reduce((sum, item) => sum + item.quantity, 0)} items</summary>
+                {cart.items.length === 0 ? <p>Cart emptied / empty observed state.</p> : <ul>{cart.items.map((item, itemIndex) => <li key={itemIndex}>
+                  <strong>{item.productTitle}</strong> · {item.sizeLabel}
+                  {item.peoplePets !== null && item.peoplePets > 0 ? ` · ${item.peoplePets} faces/pets` : ""}
+                  {` · Qty ${item.quantity} · ${formatAnalyticsMoney(cart.currency, item.unitPriceInclGstCents)} each, GST inclusive`}
+                </li>)}</ul>}
+              </details>
+            </li>)}</ol>
+            <h4>Pageviews and linked orders</h4>
             <ol className={styles.journeyTimeline} aria-label="Session journey">{timeline.map((event) => <li key={event.id}>
               <time dateTime={event.at}>{dateTime.format(new Date(event.at))}</time><div>{event.content}</div>
             </li>)}</ol>

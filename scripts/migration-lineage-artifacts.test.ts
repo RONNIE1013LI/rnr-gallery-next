@@ -112,17 +112,19 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(73);
+    expect(journal.entries).toHaveLength(75);
     expect(journal.entries[69]).toMatchObject({ idx: 69, tag: "0069_transactional_business_numbers" });
     expect(journal.entries[70]).toMatchObject({ idx: 70, tag: "0070_production_job_pinning" });
     expect(journal.entries[71]).toMatchObject({ idx: 71, tag: "0071_flik_checkout" });
     expect(journal.entries[72]).toMatchObject({ idx: 72, tag: "0072_supplies_store" });
+    expect(journal.entries[73]).toMatchObject({ idx: 73, tag: "0073_wise_payid_aud" });
+    expect(journal.entries[74]).toMatchObject({ idx: 74, tag: "0074_website_cart_snapshots" });
     expect(sha256("drizzle/0071_flik_checkout.sql")).toBe(
       "332d9bae18f4f4286756a7889c0d8860ad36e2d7f8fc3ea2710d8ddb7c2042d2",
     );
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(73);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(73);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(75);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(75);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -577,4 +579,19 @@ describe("migration lineage artifacts", () => {
     normalizedCurrent.prevId = normalizedPrevious.prevId;
     expect(normalizedCurrent).toEqual(normalizedPrevious);
   });
+});
+
+it("adds only the cart snapshot table after 0073 without altering existing metadata", () => {
+  const previous = loadJson<Snapshot>("drizzle/meta/0073_snapshot.json");
+  const current = loadJson<Snapshot>("drizzle/meta/0074_snapshot.json");
+  expect(current.prevId).toBe(previous.id);
+  expect(Object.keys(current.tables).filter(key => !(key in previous.tables))).toEqual(["public.website_analytics_cart_snapshots"]);
+  const normalized = structuredClone(current);
+  normalized.id = previous.id; normalized.prevId = previous.prevId;
+  delete normalized.tables["public.website_analytics_cart_snapshots"];
+  expect(normalized).toEqual(previous);
+  const sql = readFileSync("drizzle/0074_website_cart_snapshots.sql", "utf8");
+  expect(sql).toMatch(/ON DELETE cascade/);
+  expect(sql).toContain('"website_analytics_cart_snapshots_time_idx"');
+  expect(sql).not.toMatch(/^(?:DROP |INSERT |UPDATE |DELETE FROM)/m);
 });

@@ -151,6 +151,14 @@ export function createOrderService({
       }
 
       const state = await repository.getCheckoutState(sessionId);
+      // Another request can commit between the order lookup and this state read.
+      if (state?.completedAt) {
+        const completedOrder = await repository.findBySession(sessionId);
+        if (completedOrder) {
+          if (completedOrder.idempotencyKey !== idempotencyKey) throw new OrderConflictError();
+          return toPaymentStartDTO(completedOrder);
+        }
+      }
       if (
         !state ||
         state.completedAt ||

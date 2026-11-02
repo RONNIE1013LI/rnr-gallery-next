@@ -1,4 +1,4 @@
-import { sql, type SQL } from "drizzle-orm";
+import { desc, eq, sql, type SQL } from "drizzle-orm";
 import type {
   ExplorerConversion, ExplorerFinancialEvent, ExplorerMetadata, ExplorerMoney,
   ExplorerOrderAcquisition, ExplorerQuality, ExplorerSession,
@@ -7,6 +7,7 @@ import type {
 import { attributionHistorySchema } from "@/domain/analytics/attribution-history";
 import { WEBSITE_CLICK_ID_TYPES } from "@/domain/analytics/website-analytics";
 import { getDatabase } from "@/server/db/client";
+import { websiteAnalyticsCartSnapshots } from "@/server/db/schema/cart-analytics";
 import { analyticsPaymentStatus, isPaidOrder, isPaidOrderSql } from "./website-analytics-business-rules";
 import type { WebsiteAnalyticsV2Query } from "./website-analytics-v2-query";
 import { websiteAnalyticsLocalDate } from "./website-local-date";
@@ -238,6 +239,22 @@ export function createWebsiteAnalyticsExplorer(database: Database) {
             (select min(local_date)::text from website_analytics_sessions where ${query.includeInternal}::boolean or not is_internal) as earliest`);
         const row = record(result.rows[0]); const total = number(row.total); const visitor = record(row.visitor);
         const orders = array(row.orders); const pages = array(row.pages); const financial = array(row.financial);
+        const selectedSessionIds = array(row.items).map(item => String(item.sessionId));
+        // Additive release compatibility: existing journeys remain readable before migration 0074.
+        const cartPresence = await transaction.execute(sql`select to_regclass('public.website_analytics_cart_snapshots') is not null as available`);
+        const cartTableAvailable = cartPresence.rows[0]?.available === true;
+        // Bound each session separately so a busy visit cannot hide another visit's latest cart.
+        const cartRows: (typeof websiteAnalyticsCartSnapshots.$inferSelect)[] = [];
+        const truncatedCartSessions = new Set<string>();
+        if (cartTableAvailable) for (const sessionId of selectedSessionIds) {
+          const rows = await transaction.select().from(websiteAnalyticsCartSnapshots)
+            .where(eq(websiteAnalyticsCartSnapshots.sessionId, sessionId))
+            .orderBy(desc(websiteAnalyticsCartSnapshots.occurredAt), desc(websiteAnalyticsCartSnapshots.id))
+            .limit(101);
+          if (rows.length > 100) truncatedCartSessions.add(sessionId);
+          cartRows.push(...rows.slice(0, 100).reverse());
+        }
+
         return { visitor: number(visitor.sessionCount) > 0 ? { visitorId, firstSeenAt: iso(visitor.firstSeenAt), lastSeenAt: iso(visitor.lastSeenAt), sessionCount: number(visitor.sessionCount), observedReturning: number(visitor.sessionCount) > 1 } : null,
           sessions: array(row.items).map(item => {
             const basic = session(item); const ownOrders = orders.filter(order => order.converting_session_id === basic.sessionId);
@@ -245,11 +262,23 @@ export function createWebsiteAnalyticsExplorer(database: Database) {
             return { ...basic,
               pageviews: pages.filter(page => page.sessionId === basic.sessionId).map(page => ({ id: String(page.id), occurredAt: iso(page.occurredAt), pathname: String(page.pathname), previousPage: nullable(page.previousPage), nextPage: nullable(page.nextPage) })),
               pageviewsTotal: basic.pageViews, pageviewsTruncated: basic.pageViews > PAGEVIEW_LIMIT,
+              cartSnapshotsTruncated: truncatedCartSessions.has(basic.sessionId),
+              cartSnapshots: cartRows.filter(item => item.sessionId === basic.sessionId).map(item => ({
+                id: item.id,
+                occurredAt: item.occurredAt.toISOString(),
+                stage: item.stage,
+                currency: item.currency,
+                totalInclGstCents: item.totalInclGstCents,
+                items: item.items,
+              })),
+
               conversions: ownOrders.map(order => conversion(order, query)),
               financialEvents: financial.filter(event => ids.has(event.linked_conversion_id)).map(financialEvent),
             };
           }), total, page: query.trafficPage, pageSize: query.trafficPageSize, pageCount: Math.ceil(total / query.trafficPageSize), truncated: total > query.trafficPageSize,
-          metadata: { ...metadata(row.earliest, query, now), conversionBasis: "converting_session_current_history" }, notices: [...notices, "Visitor detail shows all retained history. Order status and payment events are current retained facts; the date filter selects the explorer cohort, not this historical detail."] };
+          metadata: { ...metadata(row.earliest, query, now), conversionBasis: "converting_session_current_history" }, notices: [...notices,
+          ...(cartTableAvailable ? [] : ["Cart snapshots are unavailable until schema migration 0074 is applied."]),
+          "Visitor detail shows all retained history. Order status and payment events are current retained facts; the date filter selects the explorer cohort, not this historical detail."] };
       }, { isolationLevel: "repeatable read", accessMode: "read only" });
     },
   };
