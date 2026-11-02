@@ -1,4 +1,4 @@
-import { isFirstOrderOfferEligible } from "@/server/checkout/first-order-offer";
+import { resolveCustomerOffer, InvalidReturningVoucherError } from "@/server/checkout/first-order-offer";
 import { getSupplyPurchaseService } from "@/server/supplies/purchase-runtime";
 import { ZodError } from "zod";
 import { InvalidCheckoutCartError } from "@/domain/checkout/types";
@@ -62,7 +62,7 @@ function defaults(): Dependencies {
       gallerySelectionService: getGalleryRuntime().selectionService,
       productRegistryService: getProductRegistryRuntime(),
       suppliesPurchaseService: getSupplyPurchaseService(),
-      firstOrderOfferEligible: (customerId) => isFirstOrderOfferEligible(getDatabase(), customerId),
+      customerOffer: (customerId, voucherCode) => resolveCustomerOffer(getDatabase(), customerId, voucherCode, process.env.BETTER_AUTH_SECRET ?? ""),
     }),
     getOptionalSession,
   };
@@ -82,7 +82,8 @@ function errorResponse(error: unknown) {
   if (
     error instanceof ZodError ||
     error instanceof InvalidCheckoutCartError ||
-    error instanceof InvalidCheckoutStateError
+    error instanceof InvalidCheckoutStateError ||
+    error instanceof InvalidReturningVoucherError
   ) {
     return json({ error: { code: "VALIDATION_ERROR", message: error.message } }, 422);
   }

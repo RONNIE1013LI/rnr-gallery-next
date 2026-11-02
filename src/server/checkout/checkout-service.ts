@@ -35,6 +35,7 @@ type ProductRegistryService = Readonly<{
 
 export type UpdateCheckoutSessionInput = Readonly<{
   cart: unknown;
+  voucherCode?: unknown;
   billingAddress: unknown;
   useDifferentDeliveryAddress?: boolean;
   deliveryAddress?: unknown;
@@ -55,6 +56,7 @@ export function createCheckoutService({
   productRegistryService,
   suppliesPurchaseService,
   firstOrderOfferEligible,
+  customerOffer,
   now = () => new Date(),
 }: {
   repository: CheckoutStateRepository;
@@ -63,6 +65,7 @@ export function createCheckoutService({
   productRegistryService?: ProductRegistryService;
   suppliesPurchaseService?: SuppliesPurchaseService;
   firstOrderOfferEligible?: (customerId: string | null) => Promise<boolean>;
+  customerOffer?: (customerId: string | null, voucherCode: unknown) => Promise<{ firstOrderDiscount: boolean; returningCustomerDiscount: boolean }>;
   now?: () => Date;
 }) {
   return {
@@ -104,11 +107,11 @@ export function createCheckoutService({
         }
         supplies.set(supplySelectionKey(item.supplyProductId, item.supplyVariantId), supply);
       }
-      const session = firstOrderOfferEligible ? await repository.getCheckoutState(sessionId) : null;
-      const firstOrderDiscount = firstOrderOfferEligible
-        ? await firstOrderOfferEligible(session?.customerId ?? null) : false;
+      const session = firstOrderOfferEligible || customerOffer ? await repository.getCheckoutState(sessionId) : null;
+      const offer = customerOffer ? await customerOffer(session?.customerId ?? null, input.voucherCode)
+        : { firstOrderDiscount: firstOrderOfferEligible ? await firstOrderOfferEligible(session?.customerId ?? null) : false, returningCustomerDiscount: false };
       const cartSnapshot = repriceCart(canonicalCart, {
-        firstOrderDiscount,
+        ...offer,
         supplies,
         now: now(),
         galleryDesigns,

@@ -1,5 +1,7 @@
 "use client";
 
+import { readActiveVoucherCode } from "@/domain/cart/checkout-promotion";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -584,7 +586,7 @@ export function CheckoutView({
     reviewing.current = true;
     setPending("review");
     try {
-      const session = await postJson("/api/checkout/session", { cart: canonicalCheckoutCart(cart), billingAddress: billing, useDifferentDeliveryAddress: different, ...(different ? { deliveryAddress: delivery } : {}), deliveryMethod });
+      const session = await postJson("/api/checkout/session", { voucherCode: readActiveVoucherCode() || undefined, cart: canonicalCheckoutCart(cart), billingAddress: billing, useDifferentDeliveryAddress: different, ...(different ? { deliveryAddress: delivery } : {}), deliveryMethod });
       const quote = await postJson("/api/checkout/shipping", {});
       const payment = await postJson("/api/checkout/payment-methods", { checkoutVersion: session.checkout.version, cartDigest: session.checkout.cart.cartDigest }) as { methods: readonly PaymentMethodOption[] };
       setReviewedCart(session.checkout.cart); setReviewedVersion(session.checkout.version); setShipping(quote.shipping.option); setShippingOptions(quote.shipping.options ?? [quote.shipping.option]); setReviewKey(currentKey);

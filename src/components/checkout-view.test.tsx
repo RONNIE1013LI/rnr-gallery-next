@@ -1,3 +1,4 @@
+import { writeActiveVoucherCode } from "@/domain/cart/checkout-promotion";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CART_STORAGE_KEY, type Cart, type CustomCartItem } from "@/domain/cart/types";
@@ -1263,4 +1264,19 @@ describe("CheckoutView", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-TERMINAL#payment"));
     expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
   });
+  it("carries the validated account voucher from cart into the server checkout review",async()=>{
+    writeActiveVoucherCode("THANKYOU-VALIDATED-ACCOUNT-CODE");
+    const fetchMock=vi.fn()
+      .mockResolvedValueOnce({ok:true,json:async()=>({checkout:{version:2,cart:repriced}})})
+      .mockResolvedValueOnce({ok:true,json:async()=>({shipping:{option:{method:"pickup",serviceCode:"pickup",serviceName:"Pickup",amountExGstCents:0,gstCents:0,amountInclGstCents:0,currency:"NZD",provenance:"internal",isTest:false}}})})
+      .mockResolvedValueOnce(methodsResponse);
+    vi.stubGlobal("fetch",fetchMock);
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button",{name:"Review delivery & totals"}));
+    await screen.findByText(/No shipping charge/);
+    const request=fetchMock.mock.calls.find(([url])=>url==="/api/checkout/session");
+    expect(JSON.parse(request![1].body).voucherCode).toBe("THANKYOU-VALIDATED-ACCOUNT-CODE");
+  });
+
 });

@@ -461,7 +461,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
           }
 
           if (locked.customerId) {
-            await assertFirstOrderOfferAvailable(transaction, locked.customerId, input.cart.promotion?.key === "first-order-20-v1");
+            await assertFirstOrderOfferAvailable(transaction, locked.customerId, input.cart.promotion?.key === "first-order-20-v1", input.cart.promotion?.key === "returning-customer-36-v1");
           } else if (input.cart.promotion) {
             throw new AtomicOrderStateError("Sign in to use the first-order offer.");
           }

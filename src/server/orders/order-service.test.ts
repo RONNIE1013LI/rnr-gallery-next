@@ -462,3 +462,13 @@ describe("first-order offer final repricing",()=>{
     expect(repo.createAtomicOrder).not.toHaveBeenCalled();
   });
 });
+
+it("rechecks a server-verified returning voucher and preserves the stacked net price",async()=>{
+  const discounted=repriceCart(canonicalCart(),{now,returningCustomerDiscount:true});
+  const repo=repository({getCheckoutState:vi.fn().mockResolvedValue({...state(),customerId:"customer-1",cartSnapshot:discounted,cartDigest:discounted.cartDigest})});
+  const eligibility=vi.fn(async()=>true);
+  const service=createOrderService({repository:repo,shippingService:shippingService(),now:()=>now,returningCustomerOfferEligible:eligibility});
+  await service.createOrder(sessionId,key,{...reviewed(),cartDigest:discounted.cartDigest});
+  expect(eligibility).toHaveBeenCalledWith("customer-1");
+  expect(vi.mocked(repo.createAtomicOrder).mock.calls[0][0].cart).toEqual(discounted);
+});

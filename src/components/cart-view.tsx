@@ -17,13 +17,14 @@ import {
   subscribeToCart,
 } from "@/domain/cart/browser-cart-events";
 import {
-  calculateCartTotals,
   cartMatchesMarket,
-  getCartDisplayMarket,
   applyAuthoritativeRepricing,
   removeCartItem,
   setCartItemQuantity,
 } from "@/domain/cart/cart";
+import { cartToCheckoutInput } from "@/domain/cart/checkout-input";
+import { readActiveVoucherCode, writeActiveVoucherCode, clearActiveVoucherCode } from "@/domain/cart/checkout-promotion";
+import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { Cart } from "@/domain/cart/types";
 import {
   clearIdentityCheckoutState,
@@ -81,14 +82,85 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
     () => EMPTY_CART_JSON,
   );
   const cart = parseStoredCart(snapshot);
-  const totals = calculateCartTotals(cart);
-  const displayMarket = getCartDisplayMarket(cart);
   const needsMarketReconciliation = cart.items.length > 0 && !cartMatchesMarket(cart, market);
   const reconciliationRef = useRef<string | null>(null);
   const [reconciliationError, setReconciliationError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const [reconciliationPending, setReconciliationPending] = useState(false);
   const [marketDialog, setMarketDialog] = useState<MarketSwitchDialogState | null>(null);
+  const customerId = useSyncExternalStore(subscribeToCart, getActiveCustomerId, () => null);
+  const [voucherRequest, setVoucherRequest] = useState(() => ({
+    customerId, code: readActiveVoucherCode(), persist: false, revision: 0,
+  }));
+  const [voucherInput, setVoucherInput] = useState(() => ({ customerId, value: readActiveVoucherCode() }));
+  const voucherCode = voucherRequest.customerId === customerId ? voucherRequest.code : readActiveVoucherCode();
+  const inputValue = voucherInput.customerId === customerId ? voucherInput.value : readActiveVoucherCode();
+  const quoteKey = JSON.stringify([snapshot, market, customerId, voucherCode, voucherRequest.revision]);
+  const [quoteResult, setQuoteResult] = useState<{
+    key: string; cart?: RepricedCheckoutCart; signedIn?: boolean; error?: string;
+  } | null>(null);
+  const currentResult = quoteResult?.key === quoteKey ? quoteResult : null;
+  const quote = currentResult?.cart;
+  const quotePending = !currentResult;
+  const voucherApplied = quote?.promotion?.key === "returning-customer-36-v1";
+
+  useEffect(() => {
+    if (needsMarketReconciliation || !parseStoredCart(snapshot).items.length) return;
+    const controller = new AbortController();
+    const initiatingCustomerId = customerId;
+    const initiatingSnapshot = snapshot;
+    const isCurrent = () => !controller.signal.aborted
+      && getActiveCustomerId() === initiatingCustomerId
+      && getCartSnapshot() === initiatingSnapshot;
+    void (async () => {
+      try {
+        const response = await fetch("/api/cart/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cart: cartToCheckoutInput(parseStoredCart(snapshot)), market, ...(voucherCode ? { voucherCode } : {}) }),
+          signal: controller.signal,
+        });
+        const payload = await response.json();
+        if (!isCurrent()) return;
+        if (!response.ok || !payload.cart) {
+          throw new Error(payload.error?.message || "Your cart total could not be confirmed. Please try again.");
+        }
+        if (voucherCode && payload.cart.promotion?.key !== "returning-customer-36-v1") {
+          throw new Error("This voucher could not be applied to your account.");
+        }
+        if (voucherCode && voucherRequest.customerId === initiatingCustomerId && voucherRequest.persist) {
+          try {
+            writeActiveVoucherCode(voucherCode);
+          } catch {
+            throw new Error("Your voucher could not be saved for checkout. Please try again.");
+          }
+        }
+        setQuoteResult({ key: quoteKey, cart: payload.cart, signedIn: payload.signedIn === true });
+      } catch (error) {
+        if (isCurrent()) setQuoteResult({ key: quoteKey, error: error instanceof Error ? error.message : "Your cart total could not be confirmed. Please try again." });
+      }
+    })();
+    return () => controller.abort();
+  }, [customerId, market, needsMarketReconciliation, quoteKey, snapshot, voucherCode, voucherRequest.customerId, voucherRequest.persist]);
+
+  function applyVoucher() {
+    const code = inputValue.trim();
+    if (!code) return;
+    // The server must validate the code before it is saved for checkout.
+    setVoucherRequest({ customerId, code, persist: true, revision: voucherRequest.revision + 1 });
+  }
+
+  function removeVoucher() {
+    try {
+      clearActiveVoucherCode();
+    } catch {
+      setQuoteResult({ key: quoteKey, error: "Your voucher could not be removed. Please try again." });
+      return;
+    }
+    setVoucherInput({ customerId, value: "" });
+    setVoucherRequest({ customerId, code: "", persist: false, revision: voucherRequest.revision + 1 });
+  }
+
 
   const reconcileMarket = useCallback(async (candidateCart: Cart) => {
     const initiatingCustomerId = getActiveCustomerId();
@@ -305,12 +377,34 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
       <aside className={styles.cartTotals} aria-label="Cart totals">
         <p className={styles.eyebrow}>Order total</p>
         <h2>Cart summary</h2>
-        {displayMarket ? <dl className={styles.priceLines}>
-          <div><dt>{displayMarket.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt><dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd></div>
-          {displayMarket.taxJurisdiction !== "NONE" ? <div><dt>{displayMarket.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : "Includes Australian GST"}</dt><dd>{formatMarketMoney(totals.gstCents, displayMarket.currency)}</dd></div> : null}
-          <div className={styles.priceTotal}><dt>{displayMarket.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt><dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd></div>
-        </dl> : <p>Prices will be recalculated for the selected delivery country.</p>}
-        <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link>
+        <form className={styles.cartVoucherForm} onSubmit={(event) => { event.preventDefault(); applyVoucher(); }}>
+          <label htmlFor="cart-returning-voucher">Returning customer voucher</label>
+          <div className={styles.cartVoucherControls}>
+            <input id="cart-returning-voucher" value={inputValue} autoComplete="off" spellCheck={false} maxLength={2048}
+              onChange={(event) => setVoucherInput({ customerId, value: event.target.value })} />
+            <button className={styles.secondaryButton} type="submit" disabled={!inputValue.trim()}>Apply voucher</button>
+          </div>
+          {voucherCode ? <button className={styles.secondaryButton} type="button" onClick={removeVoucher}>Remove voucher</button> : null}
+          {voucherApplied ? <p role="status">Voucher applied. Your account offer is included below.</p> : null}
+        </form>
+        {quotePending ? <p role="status">Confirming your cart total and account offers…</p> : null}
+        {currentResult?.error ? <div><p role="alert">{currentResult.error}</p><button className={styles.secondaryButton} type="button"
+          onClick={() => setVoucherRequest({ customerId, code: voucherCode, persist: voucherRequest.persist, revision: voucherRequest.revision + 1 })}>Retry quote</button></div> : null}
+        {(customerId === null || currentResult?.signedIn === false) ? <p className={styles.cartAssurance}><Link href="/account/sign-in?next=%2Fcart">Sign in for account offers</Link> to check your first-order discount or use an account-bound returning customer voucher.</p> : null}
+        {quote ? <>
+          <dl className={styles.priceLines}>
+            <div><dt>{quote.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt><dd>{formatMarketMoney(quote.totalInclGstCents + quote.discountCents, quote.currency)}</dd></div>
+            {quote.promotion?.key === "first-order-20-v1" ? <div><dt>First-order discount (20%)</dt><dd>−{formatMarketMoney(quote.discountCents, quote.currency)}</dd></div> : null}
+            {quote.promotion?.key === "returning-customer-36-v1" ? <>
+              <div><dt>Returning customer discount (20%)</dt><dd>−{formatMarketMoney(quote.promotion.baseDiscountCents, quote.currency)}</dd></div>
+              <div><dt>Extra discount (20% after base discount)</dt><dd>−{formatMarketMoney(quote.promotion.extraDiscountCents, quote.currency)}</dd></div>
+            </> : null}
+            {quote.taxJurisdiction !== "NONE" ? <div><dt>{quote.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : "Includes Australian GST"}</dt><dd>{formatMarketMoney(quote.gstCents, quote.currency)}</dd></div> : null}
+            <div className={styles.priceTotal}><dt>{quote.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt><dd>{formatMarketMoney(quote.totalInclGstCents, quote.currency)}</dd></div>
+          </dl>
+          {quote.discountCents > 0 ? <p className={styles.cartAssurance}>Discount applies to eligible products. Urgent service and shipping are excluded.</p> : null}
+          <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link>
+        </> : null}
         {cart.items.some((item) => item.kind !== "supply") ? <p className={styles.cartAssurance}>Draft approval comes before custom artwork production.</p> : null}
       </aside>
     </div>

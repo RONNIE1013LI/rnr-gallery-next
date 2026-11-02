@@ -18,6 +18,8 @@ export type MarketPriceBreakdown = PriceBreakdown & Readonly<{
   taxJurisdiction: TaxJurisdiction;
   taxRateBasisPoints: number;
   discountCents: number;
+  baseDiscountCents?: number;
+  extraDiscountCents?: number;
   designSurchargeCents: number;
 }>;
 

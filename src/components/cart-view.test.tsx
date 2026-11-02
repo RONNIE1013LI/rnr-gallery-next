@@ -1,8 +1,11 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { calculateFixedPackage } from "@/domain/pricing/calculate-fixed-package";
 import type { CustomCartItem } from "@/domain/cart/types";
 import { generatedSrcsetDescriptors } from "@/test/image-candidate-assertions";
+import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
+import { setActiveCustomerId } from "@/domain/cart/browser-cart-scope";
+import { readActiveVoucherCode } from "@/domain/cart/checkout-promotion";
 import { CartView } from "./cart-view";
 
 const analytics = vi.hoisted(() => ({
@@ -133,8 +136,16 @@ function marketResponse(market: "NZ" | "AU") {
 }
 
 describe("CartView", () => {
+  afterEach(() => { setActiveCustomerId(null); vi.restoreAllMocks(); });
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (_url: string, options: RequestInit) => {
+      const payload = await marketResponse("NZ").json();
+      const quantity = JSON.parse(String(options.body)).cart.items[0]?.quantity ?? 1;
+      return Response.json({ ...payload, signedIn: false, cart: { ...payload.cart,
+        totalInclGstCents: 7475 * quantity, gstCents: 975 * quantity } });
+    }));
     analytics.emitAnalyticsEvent.mockClear();
   });
 
@@ -146,6 +157,127 @@ describe("CartView", () => {
     expect(screen.getByRole("link", { name: "Browse Canvas" })).toHaveAttribute("href", "/canvas");
     expect(screen.getByRole("link", { name: "Browse Banners" })).toHaveAttribute("href", "/banners");
     expect(screen.getByRole("link", { name: "Design Gallery" })).toHaveAttribute("href", "/design-gallery");
+  });
+
+  it("shows the server first-order discount without changing canonical cart prices", async () => {
+    seedCart();
+    const original = localStorage.getItem("rnr:commerce:v1:guest:cart");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => {
+      const payload = await marketResponse("NZ").json();
+      return Response.json({ signedIn: true, cart: { ...payload.cart,
+        totalInclGstCents: 5980, gstCents: 780, discountCents: 1495,
+        promotion: { key: "first-order-20-v1", percentage: 20 },
+      } });
+    }));
+    render(<CartView />);
+    expect(await screen.findByText("First-order discount (20%)")).toBeVisible();
+    expect(screen.getByText("−NZ$14.95")).toBeVisible();
+    expect(screen.getByText("NZ$59.80")).toBeVisible();
+    expect(localStorage.getItem("rnr:commerce:v1:guest:cart")).toBe(original);
+  });
+
+  it("applies a returning voucher through the server and removes it", async () => {
+    seedCart();
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, options: RequestInit) => {
+      const payload = await marketResponse("NZ").json();
+      const code = JSON.parse(String(options.body)).voucherCode;
+      return Response.json({ signedIn: true, cart: code ? { ...payload.cart,
+        totalInclGstCents: 4784, gstCents: 624, discountCents: 2691,
+        promotion: { key: "returning-customer-36-v1", percentage: 36,
+          baseDiscountCents: 1495, extraDiscountCents: 1196 },
+      } : payload.cart });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CartView />);
+    fireEvent.change(screen.getByLabelText("Returning customer voucher"), { target: { value: "oldcustomercode" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply voucher" }));
+    expect(await screen.findByText("Returning customer discount (20%)")).toBeVisible();
+    expect(screen.getByText("Extra discount (20% after base discount)")).toBeVisible();
+    expect(screen.getByText("NZ$47.84")).toBeVisible();
+    expect(readActiveVoucherCode()).toBe("oldcustomercode");
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("/api/cart/quote");
+    fireEvent.click(screen.getByRole("button", { name: "Remove voucher" }));
+    await waitFor(() => expect(screen.queryByText("Returning customer discount (20%)")).not.toBeInTheDocument());
+    await screen.findByRole("link", { name: "Continue to checkout" });
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)?.[1].body).voucherCode).toBeUndefined();
+    expect(readActiveVoucherCode()).toBe("");
+  });
+
+  it("blocks stale totals on quote failure and supports retry with a guest sign-in prompt", async () => {
+    seedCart();
+    const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ error: { message: "Quote unavailable" } }, { status: 503 }))
+      .mockImplementation(async () => { const payload = await marketResponse("NZ").json(); return Response.json({ ...payload, signedIn: false }); });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CartView />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Quote unavailable");
+    expect(screen.queryByRole("link", { name: "Continue to checkout" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry quote" }));
+    expect(await screen.findByRole("link", { name: "Sign in for account offers" })).toHaveAttribute("href", "/account/sign-in?next=%2Fcart");
+    expect(await screen.findByRole("link", { name: "Continue to checkout" })).toBeVisible();
+  });
+
+  it("rechecks offers when the account changes with an identical cart", async () => {
+    seedCart();
+    localStorage.setItem("rnr:commerce:v1:user:another-account:cart", localStorage.getItem("rnr:commerce:v1:guest:cart")!);
+    const fetchMock = vi.fn().mockImplementation(async () => marketResponse("NZ"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CartView />);
+    await screen.findByRole("link", { name: "Continue to checkout" });
+    act(() => { setActiveCustomerId("another-account"); notifyCartChanged(); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not save a rejected code and can remove the failed request", async () => {
+    seedCart();
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, options: RequestInit) => {
+      return JSON.parse(String(options.body)).voucherCode
+        ? Response.json({ error: { message: "Voucher belongs to another account" } }, { status: 403 })
+        : marketResponse("NZ");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CartView />);
+    await screen.findByRole("link", { name: "Continue to checkout" });
+    fireEvent.change(screen.getByLabelText("Returning customer voucher"), { target: { value: "invalid-code" } });
+    fireEvent.submit(screen.getByLabelText("Returning customer voucher").closest("form")!);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Voucher belongs to another account");
+    expect(readActiveVoucherCode()).toBe("");
+    expect(screen.queryByRole("link", { name: "Continue to checkout" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove voucher" }));
+    await screen.findByRole("link", { name: "Continue to checkout" });
+  });
+
+  it("ignores an older response after the cart quantity changes", async () => {
+    seedCart();
+    let resolveFirst!: (response: Response) => void;
+    const fetchMock = vi.fn().mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveFirst = resolve; }))
+      .mockImplementation(async () => { const payload = await marketResponse("NZ").json(); return Response.json({ ...payload, cart: { ...payload.cart, totalInclGstCents: 14950 } }); });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CartView />);
+    fireEvent.change(screen.getByLabelText("Quantity for Photo Print Canvas"), { target: { value: "2" } });
+    expect(await screen.findAllByText("NZ$149.50")).toHaveLength(2);
+    await act(async () => { resolveFirst(marketResponse("NZ")); });
+    expect(screen.getAllByText("NZ$149.50")).toHaveLength(2);
+    expect(screen.queryByText("NZ$74.75")).not.toBeInTheDocument();
+  });
+
+  it("does not offer checkout when a validated voucher cannot be retained", async () => {
+    seedCart();
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      const payload = await marketResponse("NZ").json();
+      return Response.json({ signedIn: true, cart: { ...payload.cart,
+        totalInclGstCents: 4784, discountCents: 2691,
+        promotion: { key: "returning-customer-36-v1", percentage: 36, baseDiscountCents: 1495, extraDiscountCents: 1196 },
+      } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CartView />);
+    await screen.findByRole("link", { name: "Continue to checkout" });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Storage unavailable"); });
+    fireEvent.change(screen.getByLabelText("Returning customer voucher"), { target: { value: "valid-code" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply voucher" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your voucher could not be saved for checkout");
+    expect(screen.queryByRole("link", { name: "Continue to checkout" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Voucher applied. Your account offer is included below.")).not.toBeInTheDocument();
   });
 
   it("uses Australian storefront links for an empty AU cart", () => {
@@ -161,7 +293,7 @@ describe("CartView", () => {
     seedCart();
     localStorage.setItem("rnr:commerce:v1:guest:checkout:pending", "pending");
     sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", "payment");
-    const fetchMock = vi.fn().mockResolvedValue(marketResponse("AU"));
+    const fetchMock = vi.fn().mockImplementation(async () => marketResponse("AU"));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<CartView market="AU" />);
@@ -218,7 +350,7 @@ describe("CartView", () => {
     }), { status: 409, headers: { "Content-Type": "application/json" } });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(urgent)
-      .mockResolvedValueOnce(marketResponse("AU"));
+      .mockImplementation(async () => marketResponse("AU"));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<CartView market="AU" />);
@@ -227,7 +359,7 @@ describe("CartView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm urgent service and switch" }));
 
     expect(await screen.findAllByText("A$80.00 AUD")).toHaveLength(2);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.filter(([url]) => url !== "/api/cart/quote")).toHaveLength(2);
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({
       market: "AU",
       persistPreference: false,
@@ -327,7 +459,7 @@ describe("CartView", () => {
     fireEvent.change(screen.getByLabelText("Quantity for Photo Print Canvas"), {
       target: { value: "2" },
     });
-    expect(screen.getAllByText("NZ$149.50")).toHaveLength(2);
+    expect(await screen.findAllByText("NZ$149.50")).toHaveLength(2);
     expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0].quantity).toBe(2);
 
     analytics.emitAnalyticsEvent.mockClear();

@@ -235,3 +235,18 @@ describe("first-order 20% offer", () => {
     expect(discounted.gstCents).toBe(0);
   });
 });
+
+it("applies returning-customer 20% then extra20% to merchandise only", () => {
+  const selection={sizeKey:"rollup-wall-200x100",peoplePets:0,urgentWorkingDays:3};
+  const original=quoteMarketConfiguration(defaultProductRegistry,"NZ","banner-bundle",selection);
+  const discounted=quoteMarketConfiguration(defaultProductRegistry,"NZ","banner-bundle",selection,{returningCustomerDiscount:true});
+  const urgent=original.lines.find(line=>line.key==="urgent-service")!;
+  const merchandise=original.totalInclGstCents-urgent.amountInclGstCents!;
+  const base=Math.round(merchandise/5);
+  const extra=Math.round((merchandise-base)/5);
+  expect(discounted.baseDiscountCents).toBe(base);
+  expect(discounted.extraDiscountCents).toBe(extra);
+  expect(discounted.discountCents).toBe(base+extra);
+  expect(discounted.totalInclGstCents).toBe(original.totalInclGstCents-base-extra);
+  expect(discounted.lines.find(line=>line.key==="urgent-service")).toEqual(urgent);
+});

@@ -42,6 +42,7 @@ export type RepriceCartOptions = Readonly<{
   registryRevision?: number;
   supplies?: ReadonlyMap<string, SupplyPurchaseSnapshot>;
   firstOrderDiscount?: boolean;
+  returningCustomerDiscount?: boolean;
 }>;
 
 function validateBundlePayload(
@@ -233,6 +234,7 @@ function repriceItem(
   registry: ProductRegistryDocument,
   market: Market,
   firstOrderDiscount = false,
+  returningCustomerDiscount = false,
 ): RepricedCheckoutItem {
   const normalizedItem = item.productKey === "grave-cover" && item.orientation === "portrait"
     ? { ...item, orientation: undefined }
@@ -306,7 +308,7 @@ function repriceItem(
           ? { urgentWorkingDays: urgentService.workingDays }
           : {}),
       },
-      { firstOrderDiscount },
+      { firstOrderDiscount, returningCustomerDiscount },
     ),
   );
   const lineSubtotalExGstCents = unitPrice.subtotalExGstCents * normalizedItem.quantity;
@@ -455,6 +457,7 @@ export function repriceCart(
         registry,
         market,
         options.firstOrderDiscount,
+        options.returningCustomerDiscount,
       )),
     );
     const supplyQuantities = new Map<string, number>();
@@ -505,7 +508,11 @@ export function repriceCart(
       items,
       ...totals,
       discountCents,
-      ...(discountCents > 0 ? { promotion: { key: "first-order-20-v1" as const, percentage: 20 as const } } : {}),
+      ...(discountCents > 0 ? { promotion: options.returningCustomerDiscount
+        ? { key: "returning-customer-36-v1" as const, percentage: 36 as const,
+            baseDiscountCents: items.reduce((sum, item) => sum + (item.unitPrice.baseDiscountCents ?? 0) * item.quantity, 0),
+            extraDiscountCents: items.reduce((sum, item) => sum + (item.unitPrice.extraDiscountCents ?? 0) * item.quantity, 0) }
+        : { key: "first-order-20-v1" as const, percentage: 20 as const } } : {}),
       designSurchargeCents: 0,
       cartDigest: createCartDigest(
         orderDate,

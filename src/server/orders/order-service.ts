@@ -132,6 +132,7 @@ export function createOrderService({
   productRegistryService,
   suppliesPurchaseService,
   firstOrderOfferEligible,
+  returningCustomerOfferEligible,
   now = () => new Date(),
   createOrderNumber: makeOrderNumber = () => createOrderNumber(),
 }: {
@@ -142,6 +143,7 @@ export function createOrderService({
   }>;
   suppliesPurchaseService?: SuppliesPurchaseService;
   firstOrderOfferEligible?: (customerId: string | null) => Promise<boolean>;
+  returningCustomerOfferEligible?: (customerId: string | null) => Promise<boolean>;
   now?: () => Date;
   createOrderNumber?: () => string | Promise<string>;
 }) {
@@ -194,10 +196,16 @@ export function createOrderService({
         }
         supplies.set(supplySelectionKey(item.supplyProductId, item.supplyVariantId), supply);
       }
-      const firstOrderDiscount = firstOrderOfferEligible
-        ? await firstOrderOfferEligible(state.customerId) : false;
+      const returningCustomerDiscount = state.cartSnapshot.promotion?.key === "returning-customer-36-v1"
+        && Boolean(returningCustomerOfferEligible && await returningCustomerOfferEligible(state.customerId));
+      if (state.cartSnapshot.promotion?.key === "returning-customer-36-v1" && !returningCustomerDiscount) {
+        throw new OrderStateChangedError("This voucher has already been reserved or used. Resume your existing order or remove the voucher and review checkout again.");
+      }
+      const firstOrderDiscount = !returningCustomerDiscount && Boolean(firstOrderOfferEligible
+        && await firstOrderOfferEligible(state.customerId));
       const cart = repriceCart(canonicalInputFrom(state.cartSnapshot), {
         firstOrderDiscount,
+        returningCustomerDiscount,
         supplies,
         now: pricingTime,
         galleryDesigns: new Map(

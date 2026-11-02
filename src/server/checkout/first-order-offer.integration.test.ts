@@ -1,3 +1,4 @@
+import { createReturningCustomerVoucher } from "./returning-customer-voucher";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
@@ -10,7 +11,7 @@ import { normalizeAddress } from "@/domain/address/schema";
 import { createDrizzleOrderRepository, buildWebProductionJobSnapshot } from "@/server/orders/drizzle-order-repository";
 import { createDrizzleInvoiceRepository } from "@/server/invoices/drizzle-invoice-repository";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { assertFirstOrderOfferAvailable, FirstOrderOfferConflictError, isFirstOrderOfferEligible } from "./first-order-offer";
+import { assertFirstOrderOfferAvailable, FirstOrderOfferConflictError, isFirstOrderOfferEligible, isReturningOfferEligible, resolveCustomerOffer, InvalidReturningVoucherError } from "./first-order-offer";
 
 // Run explicitly with RNR_LOCAL_POSTGRES_TESTS=1.
 // This fixture owns its ephemeral loopback-only database; it never reads application credentials or runs migrations.
@@ -53,13 +54,13 @@ async function history(status:string,promotion=false,customerId:string|null="cus
   await pool.query("insert into orders (id,customer_id,customer_email,payment_status,pricing_snapshot) values($1,$2,$3,$4,$5)",[randomUUID(),customerId,"new@example.test",status,JSON.stringify(promotion?{promotion:{key:"first-order-20-v1",percentage:20}}:{})]);
 }
 
-  async function discountedOrderInput() {
+  async function discountedOrderInput(returningCustomerDiscount = false) {
     const now = new Date();
     const cart = repriceCart({version:1, items:[{
       clientItemId:randomUUID(), productKey:"photo-print-canvas", sizeKey:"a4", orientation:"landscape",
       peoplePets:0, photoSubmissionMethod:"later", designText:"Test artwork", notes:"", neededDate:"2027-08-10",
       urgentServiceConfirmed:false, quantity:2, uploadReferences:[],
-    }]}, {now,firstOrderDiscount:true});
+    }]}, {now,firstOrderDiscount:!returningCustomerDiscount,returningCustomerDiscount});
     const address = normalizeAddress({country:"NZ",fullName:"Test Customer",building:"",street:"1 Test Street",suburb:"Auckland Central",region:"Auckland",postcode:"1010",phone:"0211234567",email:"new@example.test"});
     const [session] = await database.insert(checkoutSessions).values({
       tokenDigest:randomUUID(), customerId:"customer-1", expiresAt:new Date(now.getTime()+86_400_000),
@@ -132,4 +133,39 @@ async function history(status:string,promotion=false,customerId:string|null="cus
     expect(results.filter(result=>result.status==="rejected")).toHaveLength(1);
     expect(Number((await pool.query("select count(*) from orders")).rows[0].count)).toBe(1);
   });
+  it("validates an account-bound code without requiring old web history",async()=>{
+    const secret="test-only-voucher-secret-0123456789abcdef";
+    const code=createReturningCustomerVoucher("customer-1",secret);
+    expect(await resolveCustomerOffer(database,"customer-1",code,secret)).toEqual({firstOrderDiscount:false,returningCustomerDiscount:true});
+    await expect(resolveCustomerOffer(database,null,code,secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
+    await expect(resolveCustomerOffer(database,"customer-1",code+"X",secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
+    await expect(resolveCustomerOffer(database,"customer-1",42,secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
+  });
+  it.each(["awaiting_payment","processing","failed","cancelled","paid","refunded"])("never grants a second returning voucher after %s",async(status)=>{
+    await pool.query("insert into orders (id,customer_id,customer_email,payment_status,pricing_snapshot) values($1,$2,$3,$4,$5)",[randomUUID(),"customer-1","new@example.test",status,JSON.stringify({promotion:{key:"returning-customer-36-v1"}})]);
+    expect(await isReturningOfferEligible(database,"customer-1")).toBe(false);
+    await expect(database.transaction(tx=>assertFirstOrderOfferAvailable(tx,"customer-1",false,true))).rejects.toBeInstanceOf(FirstOrderOfferConflictError);
+  });
+  it("permits only one actual returning-customer voucher order after historic orders",async()=>{
+    await history("paid");
+    const inputs=await Promise.all([discountedOrderInput(true),discountedOrderInput(true)]);
+    const repository=createDrizzleOrderRepository(database);
+    const results=await Promise.allSettled(inputs.map(input=>repository.createAtomicOrder(input)));
+    expect(results.filter(result=>result.status==="fulfilled")).toHaveLength(1);
+    expect(results.filter(result=>result.status==="rejected")).toHaveLength(1);
+    const successful=results.find(result=>result.status==="fulfilled") as PromiseFulfilledResult<Awaited<ReturnType<typeof repository.createAtomicOrder>>>;
+    expect(successful.value.totalInclGstCents).toBe(9568);
+    const input=inputs[results[0].status==="fulfilled"?0:1];
+    const [item]=await database.select().from(orderItems).where(eq(orderItems.orderId,successful.value.id));
+    const snapshot=buildWebProductionJobSnapshot({order:successful.value,cart:input.cart,billingAddress:input.billingAddress,
+      deliveryAddress:input.deliveryAddress,deliveryMethod:"pickup",orderItemIds:[item.id],paymentStatus:"paid",now:input.now})!;
+    const [job]=await database.insert(productionJobs).values({...snapshot.job,source:"web",orderId:successful.value.id,webOrderNumber:successful.value.orderNumber}).returning();
+    const seed=await createDrizzleInvoiceRepository(database).getSeed(job.id);
+    expect(seed?.totals?.totalInclGstCents).toBe(9568);
+    expect(seed?.items[0].rateInclGstCents).toBe(4784);
+
+    expect(await isReturningOfferEligible(database,"customer-1")).toBe(false);
+    expect(await repository.createAtomicOrder(inputs[results[0].status==="fulfilled"?0:1])).toMatchObject({id:successful.value.id,totalInclGstCents:9568});
+  });
+
 });

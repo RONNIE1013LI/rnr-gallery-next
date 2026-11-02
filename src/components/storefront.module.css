@@ -6092,3 +6092,34 @@
 .payidInstructions [role="status"]:empty {
   display: none;
 }
+
+
+.cartVoucherForm {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 0;
+}
+
+.cartVoucherForm label {
+  font-weight: 600;
+}
+
+.cartVoucherControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cartVoucherControls input {
+  flex: 1 1 9rem;
+  min-width: 0;
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0.65rem;
+  font: inherit;
+}
+
+.cartVoucherForm p {
+  margin: 0;
+}
