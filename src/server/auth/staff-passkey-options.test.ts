@@ -27,15 +27,3 @@ describe("staff WebAuthn policy", () => {
     expect(() => staffPasskeyOptions("https://example.vercel.app")).toThrow();
   });
 });
-
-it("isolates Preview passkeys to the exact system-provided deployment hostname", () => {
-  const env = { VERCEL: "1", VERCEL_ENV: "preview", VERCEL_URL: "rnr-task-preview-rrg-allery.vercel.app" };
-  const origin = `https://${env.VERCEL_URL}`;
-  const options = staffPasskeyOptions(origin, env);
-  expect(options.rpID).toBe(env.VERCEL_URL);
-  expect(options.origin).toBe(origin);
-  expect(options.authenticatorSelection?.userVerification).toBe("required");
-  expect(() => staffPasskeyOptions("https://other.vercel.app", env)).toThrow();
-  expect(() => staffPasskeyOptions(origin, { ...env, VERCEL_ENV: "production" })).toThrow();
-  expect(staffPasskeyOptions("https://rnrgallery.com", env).rpID).toBe("rnrgallery.com");
-});

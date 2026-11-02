@@ -67,18 +67,10 @@ function parseAppOrigin(value: string) {
   return url;
 }
 
-/** Deployment metadata is trusted only on Vercel Preview, never from request headers. */
-export function getVercelPreviewOrigin(env: AuthEnvironment = process.env): string | null {
-  const hostname = env.VERCEL_URL?.trim() ?? "";
-  if (env.VERCEL !== "1" || env.VERCEL_ENV !== "preview" || hostname.length > 253
-    || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.vercel\.app$/i.test(hostname)) return null;
-  return `https://${hostname.toLowerCase()}`;
-}
-
 export function parseAuthConfig(
   env: AuthEnvironment = process.env,
 ): AuthConfig {
-  const rawURL = env.BETTER_AUTH_URL?.trim() || getVercelPreviewOrigin(env);
+  const rawURL = env.BETTER_AUTH_URL?.trim();
   if (!rawURL) throw new Error("BETTER_AUTH_URL is required");
 
   const secret = env.BETTER_AUTH_SECRET?.trim();

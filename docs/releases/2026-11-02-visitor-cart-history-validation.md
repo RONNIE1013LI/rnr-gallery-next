@@ -1,37 +1,41 @@
-# Issue 34 validation and release boundary — 2026-11-02
+# Issue 34 production release evidence — 2026-11-02
 
-PR: https://github.com/RONNIE1013LI/rnr-gallery-next/pull/35 (Draft; not released).
-Base: authoritative origin/main `6a3404fec4d7a88f58d26abfea7734837be84f54`.
-Earlier unmerged implementation `f6b48cc` from PR33 was incorporated and independently hardened/retested.
+PR: https://github.com/RONNIE1013LI/rnr-gallery-next/pull/35 . Authoritative starting main: `6a3404fec4d7a88f58d26abfea7734837be84f54`.
 
-## Passing evidence
+## Scope and verification
 
-- Final scoped Vitest: **24 files / 225 tests passed**, including pricing, request security, consent/provisioning, retry supersession, identity switch, tab sync, all existing cart producer boundaries, admin rendering/privacy and migration artifacts.
-- Fresh disposable PostgreSQL17 migration replay including0074: PASS. Final cart-storage/explorer/retention integration: **3 files /17 tests passed**. Concurrency, cap500, owner mismatch, missing schema, cascade and expiry covered.
-- `npm run typecheck`: PASS. ESLint on touched TypeScript/TSX: PASS. `npm run db:check`: PASS. `git diff --check`: PASS.
-- Full `npm run build`, including mandatory prebuild source/automation guards: PASS with synthetic auth configuration and loopback disposable DB. No Production connection credentials entered build or test processes.
-- Read-only Production lineage/catalog: **74/74 exact prefix**, **zero catalog differences** from a fresh current-main replay (104 tables,1394 columns,377 indexes,733 constraints,1 sequence). Production migration0074 was NOT executed.
-- Existing Production drift guard: PASS, https://github.com/RONNIE1013LI/rnr-gallery-next/actions/runs/41386176581 . Vercel project `rnr-gallery-staging` retains Production branchmain.
-- Independent code review found four Important issues; expiry/readiness, cross-tab stale retry and independent cart retention batching were fixed and covered by focused tests.
-- Local mobile browser against disposable DB: real product configurator → cart → quantity2 → checkout/start → empty cart. Persisted NZD browser totals:0 →7475 →14950 cents; checkout observation14950 cents. No order or payment was submitted. This is local evidence, not remote Preview or Production acceptance.
+Visitor Journey now receives consented, signed-session-linked browser cart estimates and allowlisted item history. NZD/AUD remain separate; amounts include merchandise GST and exclude shipping. Missing history is distinct from empty carts. Session ownership, row-locked deduplication, idempotency, cap500 and independent bounded90-day retention are enforced. Payment capture and advertising conversion producers are unchanged.
 
-## Failed/unmet release gates
+The earlier release blockers were investigated and resolved:
 
-Full `npm run release:test:isolated` completed with **771 files passed,4 failed,3 skipped;7525 tests passed,3 failed,17 skipped**. Failures:
+- Checkout had a real read race: an initial order lookup could return empty immediately before another request committed; the following checkout-state read then observed completion and incorrectly returned409. The service now re-reads the committed order on that precise boundary, preserving session scope and the same-idempotency-key requirement. Deterministic tests reproduced both successful recovery and rejection of a different key. Existing real concurrent checkout integration passes.
+- The existing Wise admin page already had `manage_payment` authorization; only its protected-page test inventory was missing.
+- Wise's integration guard hardcoded a legacy database name. It now accepts the guarded release runner's actual session-specific names while preserving verified Production separation, loopback-only hosts, strict database naming and rejection of routing query parameters. The legacy runner uses the shared name generator.
 
-1. The migration inventory expected73 entries even on currentmain(74). This task's directly relevant inventory now pins75 and0073/0074; focused verification passes.
-2. `src/server/auth/protected-return-path-reconciliation.test.ts`: Wise settings page absent from protected-page inventory. Reproduced on a clean current-main checkout.
-3. `src/app/api/checkout/order/route.integration.test.ts`: concurrent recovery returns409 where the test expects200. Reproduced on a clean current-main checkout. No payment/order behavior was altered to make this pass.
-4. `src/server/payments/wise-payid-repository.integration.test.ts`: refuses generic isolated release DB names; requires literal `wisepreflight`, while the existing release runner hashes identifiers longer than12 characters. A second gate attempt confirmed this incompatibility and was stopped; owned disposable databases were cleaned up. No safety checks were bypassed or unrelated auth/payment test inventories changed.
+Evidence:
 
-All scoped feature checks were rerun after the final test fixes. The full release gate remains FAIL; focused passes do not override it.
+- Complete `npm run release:test:isolated`: **777 files passed,3 skipped;7,591 tests passed,17 skipped**. Disposable database cleanup PASS.
+- Real Wise + checkout database tests: **25 passed**; cart/explorer/retention integration from prior phase: **17 passed**.
+- Cart and direct producer/admin/privacy tests from prior phase: **225 passed**.
+- After the owner canceled Preview, Preview-only auth changes were reverted to current-main code. The final scoped auth, mutation, checkout, inventory and disposable-DB safety verification: **6 files /72 tests passed**. Production authentication configuration and passkey policy remain unchanged.
+- Final typecheck, touched ESLint, `npm run db:check`, diff checks and full mandatory-prebuild-guarded Production build PASS. Build/test used synthetic auth configuration and isolated databases.
+- Independent reviews found no Important/Critical issues in the checkout fix or test safety repair. Earlier cart concurrency/readiness/retention findings were fixed and covered.
+- Local mobile browser proved configurator→cart→quantity2→checkout/start→empty states persisted as NZD0→7475→14950→0 cents. No order or payment submitted.
 
-`vercel.json` intentionally sets non-main Git deployments disabled (`**:false`). This feature push created no Preview deployment. Controlled remote AU/NZ persistence + authenticated Visitor Journey E2E is therefore unverified. The local disposable registry has AU disabled; AU is covered by automated pricing/market tests, not claimed as browser E2E.
+## Owner release direction and environment safety
 
-Current Production remains READY deployment `dpl_CRGnZfrnUF3qJH9Z7NDQuCfdoRq6`, SHA`6a3404fec4d7a88f58d26abfea7734837be84f54`, refmain. Existing aliases:rnrgallery.com,www.rnrgallery.com,rrgallery.co.nz,www.rrgallery.co.nz. Direct HEAD checks to rnrgallery.com and rrgallery.co.nz returned429, so no live storefront smoke pass is claimed. No new feature is live.
+The owner explicitly instructed “不要preview 直接部署到产品”. Preview acceptance was canceled. The task-only Preview deployment, isolated remote Test database and dedicated runtime role were removed. Any Preview-only authentication support was removed from the release. Shared Test, existing staging hostname, Production environment, domains and firewall settings were not altered.
 
-## Release/rollback constraints
+The temporary remote Test database independently replayed all75 migrations. Existing Test database was not migrated. Local release databases remained session-specific and disposable. No Production credential entered a build or test process.
 
-Keep this PR unmerged until baseline failures and the isolated Preview E2E gate are resolved. Before release, rerun identity, exact-prefix lineage and catalog checks, then use the guarded migration wrapper, validate table/grants/replay and merge protectedmain to trigger normal Git→Vercel Production. Never use`vercel --prod` or promote a feature branch.
+Pre-release source checks verify Production Branch`main`, current main SHA equals the READY Production deployment, Git ref`main`, and all existing aliases:rnrgallery.com,www.rnrgallery.com,rrgallery.co.nz,www.rrgallery.co.nz. Rollback baseline: `6a3404f` / `dpl_CRGnZfrnUF3qJH9Z7NDQuCfdoRq6`.
 
-Rollback is an application revert through protectedmain while retaining the compatible additive schema. Existing first-party analytics disablement stops capture; no destructive schema rollback is required. Initial capture requires success-only provisioning from a genuine pageview. After true cookie expiry, capture waits for a genuine pageview; cart traffic does not create sessions or alter attribution semantics. Browser Web Locks serialize cross-tab delivery where available; retries always re-read shared cart state. Rapid superseded intermediate observations may be dropped as best-effort analytics.
+Read-only Production preflight verifies certified database identity, exact74/74 migration prefix, pending0074 only, and default runtime privileges. Fresh current-main replay is compared with Production catalog before migration. The guarded `scripts/migrate-database.ts` wrapper is the only Production migration execution path. Post-migration lineage/catalog/grants and post-deploy source/aliases are mandatory.
+
+The current request's final Production migration result, merge/deployment SHA, READY status and live smoke evidence are recorded in the PR35 release report and final chat response. This source document does not substitute for those post-release checks.
+
+## Online429 and rollback
+
+Read-only Vercel firewall traffic for `/` and `curl/8.7.1` showed9 challenges over24h:7 system DDoS mitigations,2 managed bot protection, no matching storefront IP rate-limit rule. This supports a security challenge explanation for earlier direct HEAD429 responses; exact earlier request correlation was unavailable. No firewall protection was weakened.
+
+Rollback preserves the additive table and uses an application revert through protectedmain. No destructive schema rollback is needed. Cart traffic never creates analytics sessions or changes attribution semantics; expired identity waits for a genuine pageview. Superseded intermediate states may be dropped as best-effort analytics.

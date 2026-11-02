@@ -221,18 +221,3 @@ describe("parseAuthConfig", () => {
     expect(getLocalOAuthProxyOptions(loopback, { NODE_ENV: "development" })).toBeNull();
   });
 });
-
-describe("deployment-scoped Preview authentication", () => {
-  const preview = { NODE_ENV: "production", VERCEL: "1", VERCEL_ENV: "preview", VERCEL_URL: "rnr-task-preview-rrg-allery.vercel.app", BETTER_AUTH_SECRET: strongSecret };
-  it("uses the current Vercel Preview URL only when no explicit origin is configured", () => {
-    expect(parseAuthConfig(preview).origin).toBe("https://rnr-task-preview-rrg-allery.vercel.app");
-    expect(parseAuthConfig({ ...preview, BETTER_AUTH_URL: "https://staging.rnrgallery.com" }).origin).toBe("https://staging.rnrgallery.com");
-  });
-  it.each([
-    { VERCEL_ENV: "production" }, { VERCEL: undefined }, { VERCEL_URL: "attacker.example" },
-    { VERCEL_URL: "rnr.vercel.app.attacker.example" }, { VERCEL_URL: "rnr.vercel.app/path" },
-    { VERCEL_URL: "user@rnr.vercel.app" }, { VERCEL_URL: "rnr.vercel.app:443" },
-  ])("rejects an unverified Preview origin %j", override => {
-    expect(() => parseAuthConfig({ ...preview, ...override })).toThrow();
-  });
-});
