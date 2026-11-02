@@ -6,12 +6,9 @@ import { createWisePayIdRepository } from "./wise-payid-repository";
 import { createDrizzlePaymentRepository } from "./drizzle-payment-repository";
 import { createWisePayIdWorker, wiseVerifiedResult } from "./wise-payid-reconciliation";
 import type { WiseCredit } from "./wise-payid-matching";
+import { assertWiseDisposableDatabaseEnvironment } from "./test-support/wise-disposable-database";
 
-const url = process.env.TEST_DATABASE_URL;
-if (!url) throw new Error("TEST_DATABASE_URL is required");
-const target = new URL(url);
-if (!["localhost", "127.0.0.1", "[::1]"].includes(target.hostname) || !/^\/rnr_gallery_test_release_gate_[0-9a-f]{8}_wisepreflight_integration$/.test(target.pathname) ||
-  ["host", "hostaddr", "service"].some((key) => target.searchParams.has(key))) throw new Error("Wise integration requires its own disposable local database");
+const url = assertWiseDisposableDatabaseEnvironment(process.env);
 const pool = new Pool({ connectionString: url, max: 16 });
 const database = drizzle(pool);
 const payments = createDrizzlePaymentRepository(database, { websiteAnalyticsV2Enabled: false, onNewInvoiceOrder: () => {} });

@@ -1,11 +1,13 @@
 import type { PasskeyOptions } from "@better-auth/passkey";
+import { getVercelPreviewOrigin } from "./config";
 import { APIError } from "better-auth/api";
 
-export function staffPasskeyOptions(origin: string): PasskeyOptions {
+export function staffPasskeyOptions(origin: string, env: Readonly<Record<string, string | undefined>> = process.env): PasskeyOptions {
   const url = new URL(origin);
   const controlledOrigin = url.origin === "https://rnrgallery.com" || url.origin === "https://staging.rnrgallery.com";
   const localOrigin = url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname);
-  if (!controlledOrigin && !localOrigin) {
+  const previewOrigin = origin === getVercelPreviewOrigin(env);
+  if (!controlledOrigin && !localOrigin && !previewOrigin) {
     throw new Error("Staff Passkeys require a controlled R&R Gallery origin or local development");
   }
   return {

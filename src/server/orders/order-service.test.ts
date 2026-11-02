@@ -415,3 +415,24 @@ it("uses a UUID-backed opaque checkout reference without allocating a numeric bu
   expect(new Set(references).size).toBe(10);
   for (const reference of references) expect(reference).toMatch(/^RNR-PENDING-[0-9A-F-]{36}$/);
 });
+
+describe("completion between the two initial order reads", () => {
+  it("recovers the committed order for the same idempotency key", async () => {
+    const repo = repository({
+      findBySession: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(existingOrder),
+      getCheckoutState: vi.fn().mockResolvedValue({ ...state(), completedAt: now }),
+    });
+    const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => now });
+    await expect(service.createOrder(sessionId, key, reviewed())).resolves.toMatchObject({ orderNumber: existingOrder.orderNumber });
+    expect(repo.createAtomicOrder).not.toHaveBeenCalled();
+  });
+  it("still rejects a different idempotency key after concurrent completion", async () => {
+    const repo = repository({
+      findBySession: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(existingOrder),
+      getCheckoutState: vi.fn().mockResolvedValue({ ...state(), completedAt: now }),
+    });
+    const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => now });
+    await expect(service.createOrder(sessionId, "different-key", reviewed())).rejects.toBeInstanceOf(OrderConflictError);
+    expect(repo.createAtomicOrder).not.toHaveBeenCalled();
+  });
+});
