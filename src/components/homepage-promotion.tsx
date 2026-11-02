@@ -3,14 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { THANK_YOU_OFFER_ENABLED } from "@/domain/promotions/thank-you-offer";
 import type { Market } from "@/domain/markets/types";
 import { useContainedDialog } from "./forms/use-contained-dialog";
 import styles from "./homepage-promotion.module.css";
 
-// Turn off when this limited-time promotion ends.
-const promotionEnabled = true;
-const storageKey = "rnr:homepage-promotion:36-percent:v1";
-const repeatAfterMs = 24 * 60 * 60 * 1_000;
 
 export function HomepagePromotion({ market = "NZ" }: Readonly<{ market?: Market }>) {
   const [open, setOpen] = useState(false);
@@ -20,18 +17,10 @@ export function HomepagePromotion({ market = "NZ" }: Readonly<{ market?: Market 
   const close = () => setOpen(false);
 
   useEffect(() => {
-    if (!promotionEnabled) return;
+    if (!THANK_YOU_OFFER_ENABLED) return;
     const timer = window.setTimeout(() => {
       if (document.visibilityState === "hidden"
         || document.querySelector('[role="dialog"], [role="alertdialog"], .consent-preferences')) return;
-      try {
-        const lastShown = Number(localStorage.getItem(storageKey));
-        if (lastShown > 0 && Date.now() - lastShown < repeatAfterMs) return;
-        // Skip automatic display if the browser cannot remember the frequency cap.
-        localStorage.setItem(storageKey, String(Date.now()));
-      } catch {
-        return;
-      }
       setOpen(true);
     }, 4_000);
     return () => window.clearTimeout(timer);
@@ -84,7 +73,7 @@ export function HomepagePromotion({ market = "NZ" }: Readonly<{ market?: Market 
           </div>
         </div>
         <footer className={styles.footer}>
-          <p>Contact our team before payment to arrange your offer.</p>
+          <p>First-order 20% off applies automatically when signed in. Returning customers: message our team.</p>
         </footer>
       </section>
     </div>,

@@ -54,6 +54,7 @@ export function createCheckoutService({
   gallerySelectionService,
   productRegistryService,
   suppliesPurchaseService,
+  firstOrderOfferEligible,
   now = () => new Date(),
 }: {
   repository: CheckoutStateRepository;
@@ -61,6 +62,7 @@ export function createCheckoutService({
   gallerySelectionService?: GallerySelectionService;
   productRegistryService?: ProductRegistryService;
   suppliesPurchaseService?: SuppliesPurchaseService;
+  firstOrderOfferEligible?: (customerId: string | null) => Promise<boolean>;
   now?: () => Date;
 }) {
   return {
@@ -102,7 +104,11 @@ export function createCheckoutService({
         }
         supplies.set(supplySelectionKey(item.supplyProductId, item.supplyVariantId), supply);
       }
+      const session = firstOrderOfferEligible ? await repository.getCheckoutState(sessionId) : null;
+      const firstOrderDiscount = firstOrderOfferEligible
+        ? await firstOrderOfferEligible(session?.customerId ?? null) : false;
       const cartSnapshot = repriceCart(canonicalCart, {
+        firstOrderDiscount,
         supplies,
         now: now(),
         galleryDesigns,

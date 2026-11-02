@@ -26,6 +26,7 @@ export type OrderPricingSnapshot = Readonly<{
   productTotalInclTaxCents: number;
   designSurchargeCents: number;
   discountCents: number;
+  promotion?: RepricedCheckoutCart["promotion"];
   shipping: Readonly<{
     method: "pickup" | "post";
     serviceCode: string;
@@ -90,6 +91,7 @@ export function buildOrderPricingSnapshot(
     productTotalInclTaxCents: cart.totalInclGstCents,
     designSurchargeCents: cart.designSurchargeCents,
     discountCents: cart.discountCents,
+    ...(cart.promotion ? { promotion: cart.promotion } : {}),
     shipping: Object.freeze(shippingSnapshot),
     taxAmountCents: cart.gstCents + shippingSnapshot.taxCents,
     finalTotalCents: cart.totalInclGstCents + shippingSnapshot.amountInclTaxCents,

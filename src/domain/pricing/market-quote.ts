@@ -72,6 +72,7 @@ export function quoteMarketConfiguration(
   market: Market,
   productKey: string,
   selection: MarketQuoteSelection,
+  options: Readonly<{ firstOrderDiscount?: boolean }> = {},
 ): MarketPriceBreakdown {
   assertMarketCheckoutReady(registry, market);
   const book = registry.markets[market];
@@ -223,13 +224,22 @@ export function quoteMarketConfiguration(
   }
 
   const policy = marketTaxPolicy(market, book.tax);
+  let eligibleGrossCents = 0;
+  let discountCents = 0;
   const converted = grossLines.map((line) => {
-    const amount = includedTaxFromGross(line.amountInclTaxCents, policy);
+    let lineDiscountCents = 0;
+    if (options.firstOrderDiscount && line.key !== "urgent-service") {
+      eligibleGrossCents += line.amountInclTaxCents;
+      const cumulativeDiscountCents = Math.round(eligibleGrossCents / 5);
+      lineDiscountCents = cumulativeDiscountCents - discountCents;
+      discountCents = cumulativeDiscountCents;
+    }
+    const amount = includedTaxFromGross(line.amountInclTaxCents - lineDiscountCents, policy);
     const priceLine: PriceLine = Object.freeze({
       key: line.key,
       label: line.label,
       amountExGstCents: amount.amountExTaxCents,
-      ...(line.preserveGross ? { amountInclGstCents: amount.amountInclTaxCents } : {}),
+      ...((line.preserveGross || lineDiscountCents > 0) ? { amountInclGstCents: amount.amountInclTaxCents } : {}),
     });
     return { amount, priceLine };
   });
@@ -252,7 +262,7 @@ export function quoteMarketConfiguration(
     subtotalExGstCents,
     gstCents,
     totalInclGstCents,
-    discountCents: 0,
+    discountCents,
     designSurchargeCents: 0,
   });
 }

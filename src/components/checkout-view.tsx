@@ -324,7 +324,7 @@ export function CheckoutView({
     push(`${orderHref}#payment`);
   }, [push]);
 
-  const invalidatePlacement = useCallback(() => {
+  const invalidatePlacement = useCallback((message = "Checkout changed. Review delivery and totals again.") => {
     window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
     clearCheckoutIntentCartBackup(window.sessionStorage);
     clearPendingCheckout(window.localStorage);
@@ -338,7 +338,7 @@ export function CheckoutView({
     setPaymentMethods([]);
     setSelectedPaymentMethod(null);
     setPaymentReviewKey("");
-    setMessage("Checkout changed. Review delivery and totals again.");
+    setMessage(message);
   }, [setSelectedPaymentMethod]);
 
   const handlePlacementFailure = useCallback((error: unknown, intent: CheckoutPaymentIntent | null) => {
@@ -347,7 +347,7 @@ export function CheckoutView({
       if (backup) restoreCartIfEmpty(backup);
     }
     placing.current = false;
-    if (error instanceof CheckoutApiError && error.code === "CHECKOUT_CHANGED") invalidatePlacement();
+    if (error instanceof CheckoutApiError && error.code === "CHECKOUT_CHANGED") invalidatePlacement(error.message);
     else setMessage(error instanceof Error ? error.message : "Order could not be created.");
     setPending(null);
   }, [invalidatePlacement, restoreCartIfEmpty]);

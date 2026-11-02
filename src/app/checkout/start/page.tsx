@@ -1,3 +1,4 @@
+import { THANK_YOU_OFFER_ENABLED } from "@/domain/promotions/thank-you-offer";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -39,6 +40,7 @@ export default async function CheckoutStartPage() {
             className={styles.checkoutContinuation}
           >
             <h2 id="checkout-account-title">Check out with your R&amp;R Gallery account</h2>
+            {THANK_YOU_OFFER_ENABLED ? <p>First custom artwork order? Create an account to get 20% off automatically, including customisation. Delivery and urgent service are excluded.</p> : null}
 
             <AuthGateway
               configuredProviders={customerProviders}

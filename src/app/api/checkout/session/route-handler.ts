@@ -1,3 +1,4 @@
+import { isFirstOrderOfferEligible } from "@/server/checkout/first-order-offer";
 import { getSupplyPurchaseService } from "@/server/supplies/purchase-runtime";
 import { ZodError } from "zod";
 import { InvalidCheckoutCartError } from "@/domain/checkout/types";
@@ -61,6 +62,7 @@ function defaults(): Dependencies {
       gallerySelectionService: getGalleryRuntime().selectionService,
       productRegistryService: getProductRegistryRuntime(),
       suppliesPurchaseService: getSupplyPurchaseService(),
+      firstOrderOfferEligible: (customerId) => isFirstOrderOfferEligible(getDatabase(), customerId),
     }),
     getOptionalSession,
   };

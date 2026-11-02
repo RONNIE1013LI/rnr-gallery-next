@@ -637,12 +637,12 @@ describe("CheckoutView", () => {
     expect(screen.getByLabelText("Saved delivery address")).toHaveValue("saved-1");
   });
 
-  it("invalidates reviewed checkout after a server CHECKOUT_CHANGED response", async () => {
+  it.each(["Checkout changed. Review delivery and totals again.", "Your first-order offer is reserved for an existing order. Resume that order from your account or contact our team."])("invalidates checkout while preserving server guidance: %s", async (message) => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
       .mockResolvedValueOnce(methodsResponse)
-      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ error: { code: "CHECKOUT_CHANGED", message: "Changed" } }) });
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ error: { code: "CHECKOUT_CHANGED", message } }) });
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
@@ -650,7 +650,7 @@ describe("CheckoutView", () => {
     await screen.findByText(/No shipping charge/);
     fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
 
-    expect(await screen.findByText("Checkout changed. Review delivery and totals again.")).toBeInTheDocument();
+    expect(await screen.findByText(message)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continue to/ })).toBeDisabled();
     expect(screen.getByText("Review delivery to see authoritative totals.")).toBeInTheDocument();
     expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
@@ -871,7 +871,7 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
 
-    expect(await screen.findByText("Checkout changed. Review delivery and totals again.")).toBeInTheDocument();
+    expect(await screen.findByText("Changed")).toBeInTheDocument();
     expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
     expect(screen.getByRole("button", { name: "Review delivery & totals" })).toBeEnabled();
   });

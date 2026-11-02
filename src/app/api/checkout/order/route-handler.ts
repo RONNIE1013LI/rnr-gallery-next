@@ -1,3 +1,4 @@
+import { isFirstOrderOfferEligible } from "@/server/checkout/first-order-offer";
 import { getSupplyPurchaseService } from "@/server/supplies/purchase-runtime";
 import { attributionHistorySchema, consentedAttributionHistory, readAttributionHistory } from "@/domain/analytics/attribution-history";
 import { z, ZodError } from "zod";
@@ -94,6 +95,7 @@ function defaults(): Dependencies {
       shippingService: createShippingService({ provider: selectShippingProvider() }),
       productRegistryService: getProductRegistryRuntime(),
       suppliesPurchaseService: getSupplyPurchaseService(),
+      firstOrderOfferEligible: (customerId) => isFirstOrderOfferEligible(getDatabase(), customerId),
     }),
     getOptionalSession,
     analyticsConfig,

@@ -444,3 +444,13 @@ describe("checkout service", () => {
     expect(shipping.quotePost).not.toHaveBeenCalled();
   });
 });
+
+it("prices the signed-in first order from server eligibility rather than billing fields", async () => {
+  const repo = repository({getCheckoutState:vi.fn().mockResolvedValue({customerId:"customer-1"})});
+  const eligible = vi.fn(async (customerId:string|null)=>customerId==="customer-1");
+  const service=createCheckoutService({repository:repo,shippingService:shippingService(),now:()=>now,firstOrderOfferEligible:eligible});
+  const result=await service.updateSession(sessionId,{cart:cart(),billingAddress,deliveryMethod:"pickup"});
+  expect(result.cartSnapshot?.discountCents).toBe(1495);
+  expect(result.cartSnapshot?.totalInclGstCents).toBe(5980);
+  expect(eligible).toHaveBeenCalledWith("customer-1");
+});

@@ -211,3 +211,27 @@ describe("market configuration quote", () => {
     )).toBe(46_000);
   });
 });
+
+describe("first-order 20% offer", () => {
+  it.each(["NZ", "AU"] as const)("discounts merchandise/customisation but preserves urgent fees and tax balance for %s", (market) => {
+    const registry = market === "NZ" ? defaultProductRegistry : enabledAustraliaRegistry(true);
+    const selection = { sizeKey: "rollup-wall-200x100", peoplePets: 0, urgentWorkingDays: 3,
+      bundleCounts: { rollUpExtraPhotos: 1, wallBannerExtraPhotos: 2, rollUpBackgroundRemovals: 1, wallBannerBackgroundRemovals: 0 } };
+    const original = quoteMarketConfiguration(registry, market, "banner-bundle", selection);
+    const discounted = quoteMarketConfiguration(registry, market, "banner-bundle", selection, { firstOrderDiscount: true });
+    const urgent = original.lines.find(line => line.key === "urgent-service")!;
+    const expectedDiscount = Math.round((original.totalInclGstCents - urgent.amountInclGstCents!) * 0.2);
+    expect(discounted.discountCents).toBe(expectedDiscount);
+    expect(discounted.totalInclGstCents).toBe(original.totalInclGstCents - expectedDiscount);
+    expect(discounted.lines.find(line => line.key === "urgent-service")).toEqual(urgent);
+    expect(discounted.lines.find(line => line.key.includes("extra-photos"))!.amountExGstCents).toBeLessThan(original.lines.find(line => line.key.includes("extra-photos"))!.amountExGstCents);
+    expect(discounted.subtotalExGstCents + discounted.gstCents).toBe(discounted.totalInclGstCents);
+    expect(discounted.lines.reduce((sum,line)=>sum+line.amountExGstCents,0)).toBe(discounted.subtotalExGstCents);
+  });
+  it("uses exact cents and does not invent Australian GST when unregistered", () => {
+    const discounted=quoteMarketConfiguration(enabledAustraliaRegistry(false), "AU", "banner-bundle", { sizeKey:"rollup-wall-200x100", peoplePets:0 }, {firstOrderDiscount:true});
+    expect(discounted.discountCents).toBe(6800);
+    expect(discounted.totalInclGstCents).toBe(27199);
+    expect(discounted.gstCents).toBe(0);
+  });
+});

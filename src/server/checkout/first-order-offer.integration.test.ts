@@ -1,0 +1,135 @@
+import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import pg from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { sql, SQL, eq } from "drizzle-orm";
+import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
+import { checkoutSessions, orderItems, orderAddresses, orders, user, productionJobs, productionJobItems } from "@/server/db/schema";
+import { repriceCart } from "@/domain/checkout/reprice-cart";
+import { normalizeAddress } from "@/domain/address/schema";
+import { createDrizzleOrderRepository, buildWebProductionJobSnapshot } from "@/server/orders/drizzle-order-repository";
+import { createDrizzleInvoiceRepository } from "@/server/invoices/drizzle-invoice-repository";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { assertFirstOrderOfferAvailable, FirstOrderOfferConflictError, isFirstOrderOfferEligible } from "./first-order-offer";
+
+// Run explicitly with RNR_LOCAL_POSTGRES_TESTS=1.
+// This fixture owns its ephemeral loopback-only database; it never reads application credentials or runs migrations.
+const container = `rnr-first-order-test-${randomUUID().slice(0,8)}`;
+let pool: pg.Pool;
+let database: ReturnType<typeof drizzle>;
+let started = false;
+const describeLocalPostgres = process.env.RNR_LOCAL_POSTGRES_TESTS === "1" ? describe : describe.skip;
+
+describeLocalPostgres("first-order offer eligibility and atomic reservation",()=>{
+beforeAll(async () => {
+  execFileSync("docker", ["run", "--rm", "-d", "--name", container, "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "-e", "POSTGRES_DB=rnr_first_order_test", "-p", "127.0.0.1::5432", "postgres:17-alpine"], {stdio:"pipe"});
+  started = true;
+  const endpoint=execFileSync("docker",["port",container,"5432/tcp"],{encoding:"utf8"}).trim();
+  if(!/^127\.0\.0\.1:\d+$/.test(endpoint)) throw Error("Test database must be loopback-only");
+  pool=new pg.Pool({connectionString:`postgresql://postgres@${endpoint}/rnr_first_order_test`, max:4});
+  for(let attempt=0;attempt<50;attempt++){try{await pool.query("select 1");break;}catch(error){if(attempt===49)throw error;await new Promise(resolve=>setTimeout(resolve,100));}}
+  // Fixture columns/defaults come from the owning schema. No migration files are generated or executed.
+  const dialect = new PgDialect();
+  for (const table of [user, orders, checkoutSessions, orderItems, orderAddresses, productionJobs, productionJobItems]) {
+    const config = getTableConfig(table);
+    const columns = config.columns.map(column => {
+      let value = "";
+      if (column.default instanceof SQL) value = dialect.sqlToQuery(column.default).sql;
+      else if (column.default !== undefined) {
+        value = typeof column.default === "number" || typeof column.default === "boolean"
+          ? String(column.default)
+          : "'" + (typeof column.default === "string" ? column.default : JSON.stringify(column.default)).replaceAll("'", "''") + "'";
+      }
+      return `"${column.name}" ${column.getSQLType()}${value ? ` default ${value}` : ""}`;
+    });
+    await pool.query(`create table "${config.name}" (${columns.join(",")})`);
+  }
+  database=drizzle(pool);
+}, 20_000);
+afterAll(async()=>{await pool?.end();if(started)execFileSync("docker",["rm","-f",container],{stdio:"pipe"});});
+beforeEach(async()=>{await pool.query('truncate orders,"user",checkout_sessions,order_items,order_addresses,production_jobs,production_job_items');await pool.query('insert into "user" (id,email) values ($1,$2)',["customer-1","New@Example.test"]);});
+
+async function history(status:string,promotion=false,customerId:string|null="customer-1") {
+  await pool.query("insert into orders (id,customer_id,customer_email,payment_status,pricing_snapshot) values($1,$2,$3,$4,$5)",[randomUUID(),customerId,"new@example.test",status,JSON.stringify(promotion?{promotion:{key:"first-order-20-v1",percentage:20}}:{})]);
+}
+
+  async function discountedOrderInput() {
+    const now = new Date();
+    const cart = repriceCart({version:1, items:[{
+      clientItemId:randomUUID(), productKey:"photo-print-canvas", sizeKey:"a4", orientation:"landscape",
+      peoplePets:0, photoSubmissionMethod:"later", designText:"Test artwork", notes:"", neededDate:"2027-08-10",
+      urgentServiceConfirmed:false, quantity:2, uploadReferences:[],
+    }]}, {now,firstOrderDiscount:true});
+    const address = normalizeAddress({country:"NZ",fullName:"Test Customer",building:"",street:"1 Test Street",suburb:"Auckland Central",region:"Auckland",postcode:"1010",phone:"0211234567",email:"new@example.test"});
+    const [session] = await database.insert(checkoutSessions).values({
+      tokenDigest:randomUUID(), customerId:"customer-1", expiresAt:new Date(now.getTime()+86_400_000),
+      cartDigest:cart.cartDigest, cartSnapshot:cart, billingAddress:address, deliveryAddress:address, deliveryMethod:"pickup",
+    }).returning();
+    return {sessionId:session.id,expectedCustomerId:"customer-1",expectedVersion:session.version,
+      expectedCartDigest:cart.cartDigest,cart,billingAddress:address,deliveryAddress:address,deliveryMethod:"pickup" as const,
+      shipping:{kind:"pickup" as const},idempotencyKey:randomUUID(),orderNumber:`RNR-TEST-${randomUUID()}`,now};
+  }
+
+  it("persists a discounted order and seeds its invoice at the same net amount without a second discount",async()=>{
+    const input = await discountedOrderInput();
+    const order = await createDrizzleOrderRepository(database).createAtomicOrder(input);
+    const [item] = await database.select().from(orderItems).where(eq(orderItems.orderId,order.id));
+    expect(order.totalInclGstCents).toBe(11960);
+    expect(item.unitTotalInclGstCents).toBe(5980);
+    const snapshot = buildWebProductionJobSnapshot({order,cart:input.cart,billingAddress:input.billingAddress,
+      deliveryAddress:input.deliveryAddress,deliveryMethod:"pickup",orderItemIds:[item.id],paymentStatus:"paid",now:input.now})!;
+    const [job] = await database.insert(productionJobs).values({...snapshot.job,source:"web",orderId:order.id,webOrderNumber:order.orderNumber}).returning();
+    const seed = await createDrizzleInvoiceRepository(database).getSeed(job.id);
+    expect(seed?.items[0].rateInclGstCents).toBe(5980);
+    expect(seed?.items[0].quantityMilli).toBe(2000);
+    expect(seed?.totals).toMatchObject({grossCents:11960,discountCents:0,totalInclGstCents:11960});
+    expect(seed!.totals!.subtotalExGstCents + seed!.totals!.gstCents).toBe(order.totalInclGstCents);
+    const retried = await createDrizzleOrderRepository(database).createAtomicOrder(input);
+    expect(retried.id).toBe(order.id);
+  });
+
+  it("permits only one actual discounted order across two checkout sessions",async()=>{
+    const inputs = await Promise.all([discountedOrderInput(),discountedOrderInput()]);
+    const repository = createDrizzleOrderRepository(database);
+    const results = await Promise.allSettled(inputs.map(input=>repository.createAtomicOrder(input)));
+    expect(results.filter(result=>result.status==="fulfilled")).toHaveLength(1);
+    const failures=results.filter(result=>result.status==="rejected");
+    expect(failures).toHaveLength(1);
+    expect((failures[0] as PromiseRejectedResult).reason).toBeInstanceOf(FirstOrderOfferConflictError);
+    expect(Number((await pool.query("select count(*) from orders")).rows[0].count)).toBe(1);
+  });
+
+  it("requires an authenticated known account and grants accounts with no history",async()=>{
+    expect(await isFirstOrderOfferEligible(database,null)).toBe(false);
+    expect(await isFirstOrderOfferEligible(database,"missing")).toBe(false);
+    expect(await isFirstOrderOfferEligible(database,"customer-1")).toBe(true);
+  });
+  it.each(["paid","refunded","awaiting_payment","processing","failed","cancelled"])("does not create a second first order after %s history",async(status)=>{
+    await history(status);
+    expect(await isFirstOrderOfferEligible(database,"customer-1")).toBe(false);
+  });
+  it("recognizes guest/old-account history through the account email case-insensitively",async()=>{
+    await history("paid",false,null);
+    expect(await isFirstOrderOfferEligible(database,"customer-1")).toBe(false);
+  });
+  it.each(["awaiting_payment","processing","failed","cancelled"])("retains the reserved offer after %s and blocks other payable orders",async(status)=>{
+    await history(status,true);
+    await expect(database.transaction(tx=>assertFirstOrderOfferAvailable(tx,"customer-1",false))).rejects.toBeInstanceOf(FirstOrderOfferConflictError);
+    await expect(database.transaction(tx=>assertFirstOrderOfferAvailable(tx,"customer-1",true))).rejects.toBeInstanceOf(FirstOrderOfferConflictError);
+  });
+  it.each(["paid","refunded"])("allows a subsequent full-price order after %s but never another discounted order",async(status)=>{
+    await history(status,true);
+    await expect(database.transaction(tx=>assertFirstOrderOfferAvailable(tx,"customer-1",false))).resolves.toBeUndefined();
+    await expect(database.transaction(tx=>assertFirstOrderOfferAvailable(tx,"customer-1",true))).rejects.toBeInstanceOf(FirstOrderOfferConflictError);
+  });
+  it("serializes simultaneous sessions so only one can reserve a discounted order",async()=>{
+    const attempt=()=>database.transaction(async tx=>{
+      await assertFirstOrderOfferAvailable(tx,"customer-1",true);
+      await tx.execute(sql`insert into orders (id,customer_id,customer_email,payment_status,pricing_snapshot) values(${randomUUID()},'customer-1','new@example.test','awaiting_payment','{"promotion":{"key":"first-order-20-v1","percentage":20}}'::jsonb)`);
+    });
+    const results=await Promise.allSettled([attempt(),attempt()]);
+    expect(results.filter(result=>result.status==="fulfilled")).toHaveLength(1);
+    expect(results.filter(result=>result.status==="rejected")).toHaveLength(1);
+    expect(Number((await pool.query("select count(*) from orders")).rows[0].count)).toBe(1);
+  });
+});

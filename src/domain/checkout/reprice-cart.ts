@@ -41,6 +41,7 @@ export type RepriceCartOptions = Readonly<{
   market?: Market;
   registryRevision?: number;
   supplies?: ReadonlyMap<string, SupplyPurchaseSnapshot>;
+  firstOrderDiscount?: boolean;
 }>;
 
 function validateBundlePayload(
@@ -231,6 +232,7 @@ function repriceItem(
   galleryDesigns: ReadonlyMap<string, GalleryDesignSnapshot>,
   registry: ProductRegistryDocument,
   market: Market,
+  firstOrderDiscount = false,
 ): RepricedCheckoutItem {
   const normalizedItem = item.productKey === "grave-cover" && item.orientation === "portrait"
     ? { ...item, orientation: undefined }
@@ -304,6 +306,7 @@ function repriceItem(
           ? { urgentWorkingDays: urgentService.workingDays }
           : {}),
       },
+      { firstOrderDiscount },
     ),
   );
   const lineSubtotalExGstCents = unitPrice.subtotalExGstCents * normalizedItem.quantity;
@@ -451,6 +454,7 @@ export function repriceCart(
         options.galleryDesigns ?? new Map(),
         registry,
         market,
+        options.firstOrderDiscount,
       )),
     );
     const supplyQuantities = new Map<string, number>();
@@ -489,6 +493,7 @@ export function repriceCart(
       throw new InvalidCheckoutCartError("Cart item count must be a safe integer.");
     }
 
+    const discountCents = items.reduce((sum, item) => sum + item.unitPrice.discountCents * item.quantity, 0);
     return Object.freeze({
       version: 1,
       market,
@@ -499,7 +504,8 @@ export function repriceCart(
       orderDate,
       items,
       ...totals,
-      discountCents: 0,
+      discountCents,
+      ...(discountCents > 0 ? { promotion: { key: "first-order-20-v1" as const, percentage: 20 as const } } : {}),
       designSurchargeCents: 0,
       cartDigest: createCartDigest(
         orderDate,

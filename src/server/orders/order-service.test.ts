@@ -436,3 +436,29 @@ describe("completion between the two initial order reads", () => {
     expect(repo.createAtomicOrder).not.toHaveBeenCalled();
   });
 });
+
+describe("first-order offer final repricing",()=>{
+  it("rechecks eligibility and persists the reviewed net price",async()=>{
+    const discounted=repriceCart(canonicalCart(),{now,firstOrderDiscount:true});
+    const repo=repository({getCheckoutState:vi.fn().mockResolvedValue({...state(),customerId:"customer-1",cartSnapshot:discounted,cartDigest:discounted.cartDigest})});
+    const service=createOrderService({repository:repo,shippingService:shippingService(),now:()=>now,firstOrderOfferEligible:async()=>true});
+    await service.createOrder(sessionId,key,{...reviewed(),cartDigest:discounted.cartDigest});
+    expect(vi.mocked(repo.createAtomicOrder).mock.calls[0][0].cart).toEqual(discounted);
+  });
+  it("requires a fresh review if another order used the eligibility",async()=>{
+    const discounted=repriceCart(canonicalCart(),{now,firstOrderDiscount:true});
+    const repo=repository({getCheckoutState:vi.fn().mockResolvedValue({...state(),customerId:"customer-1",cartSnapshot:discounted,cartDigest:discounted.cartDigest})});
+    const service=createOrderService({repository:repo,shippingService:shippingService(),now:()=>now,firstOrderOfferEligible:async()=>false});
+    await expect(service.createOrder(sessionId,key,{...reviewed(),cartDigest:discounted.cartDigest})).rejects.toBeInstanceOf(OrderStateChangedError);
+    expect(repo.createAtomicOrder).not.toHaveBeenCalled();
+  });
+  it("retries the original discounted order without consuming eligibility again",async()=>{
+    const repo=repository({findBySession:vi.fn().mockResolvedValue(existingOrder)});
+    const eligibility=vi.fn(async()=>false);
+    const service=createOrderService({repository:repo,shippingService:shippingService(),now:()=>now,firstOrderOfferEligible:eligibility});
+    const result=await service.createOrder(sessionId,key,reviewed());
+    expect(result.orderNumber).toBe(existingOrder.orderNumber);
+    expect(eligibility).not.toHaveBeenCalled();
+    expect(repo.createAtomicOrder).not.toHaveBeenCalled();
+  });
+});

@@ -27,7 +27,7 @@ describe("HomepagePromotion", () => {
     expect(screen.getByText(/extra 20% off the discounted price/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/account/register?next=%2Fshop");
     expect(screen.getByRole("link", { name: "Message our team" })).toHaveAttribute("href", "https://m.me/RandRgallery");
-    expect(screen.getByText(/before payment/)).toBeInTheDocument();
+    expect(screen.getByText(/applies automatically when signed in/)).toBeInTheDocument();
   });
 
   it("uses mobile artwork without cropping and keeps the AU signup destination", () => {
@@ -41,42 +41,25 @@ describe("HomepagePromotion", () => {
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/account/register?next=%2Fau%2Fshop");
   });
 
-  it("does not repeat after close and a home-page remount within 24 hours", () => {
-    const { unmount } = render(<HomepagePromotion />);
-    openPromotion();
-    fireEvent.click(screen.getByRole("button", { name: "Close promotion" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    unmount();
-    render(<HomepagePromotion />);
-    openPromotion();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(localStorage.getItem(storageKey)).toBe(String(now.getTime() + 4_000));
-  });
-
-  it("shows again after 24 hours and tolerates invalid saved data", () => {
-    localStorage.setItem(storageKey, String(now.getTime() - 86_400_000));
-    const { unmount } = render(<HomepagePromotion />);
-    openPromotion();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    unmount();
-    localStorage.setItem(storageKey, "invalid");
-    render(<HomepagePromotion />);
-    openPromotion();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-
-  it("rechecks the frequency cap when another tab has already displayed it", () => {
-    render(<HomepagePromotion />);
+  it("shows again after closing and refreshing even if a previous daily-cap timestamp exists", () => {
     localStorage.setItem(storageKey, String(Date.now()));
+    const { unmount } = render(<HomepagePromotion />);
     openPromotion();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close promotion" }));
+    act(() => vi.advanceTimersByTime(60_000));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    unmount();
+    render(<HomepagePromotion />);
+    openPromotion();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  it.each(["getItem", "setItem"] as const)("skips automatic display when storage %s fails", (method) => {
-    vi.spyOn(Storage.prototype, method).mockImplementation(() => { throw new Error("Storage unavailable"); });
+  it("still shows when browser storage is unavailable", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("Storage unavailable"); });
     render(<HomepagePromotion />);
-    expect(openPromotion).not.toThrow();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    openPromotion();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("contains focus, closes on Escape and restores the previous focus and scrolling", () => {

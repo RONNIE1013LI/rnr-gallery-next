@@ -1,3 +1,4 @@
+import { FirstOrderOfferConflictError } from "@/server/checkout/first-order-offer";
 import { randomUUID } from "node:crypto";
 import {
   defaultProductRegistry,
@@ -130,6 +131,7 @@ export function createOrderService({
   shippingService,
   productRegistryService,
   suppliesPurchaseService,
+  firstOrderOfferEligible,
   now = () => new Date(),
   createOrderNumber: makeOrderNumber = () => createOrderNumber(),
 }: {
@@ -139,6 +141,7 @@ export function createOrderService({
     current(): Promise<Readonly<{ revision?: number; registry: ProductRegistryDocument }>>;
   }>;
   suppliesPurchaseService?: SuppliesPurchaseService;
+  firstOrderOfferEligible?: (customerId: string | null) => Promise<boolean>;
   now?: () => Date;
   createOrderNumber?: () => string | Promise<string>;
 }) {
@@ -191,7 +194,10 @@ export function createOrderService({
         }
         supplies.set(supplySelectionKey(item.supplyProductId, item.supplyVariantId), supply);
       }
+      const firstOrderDiscount = firstOrderOfferEligible
+        ? await firstOrderOfferEligible(state.customerId) : false;
       const cart = repriceCart(canonicalInputFrom(state.cartSnapshot), {
+        firstOrderDiscount,
         supplies,
         now: pricingTime,
         galleryDesigns: new Map(
@@ -247,6 +253,7 @@ export function createOrderService({
           });
           return toPaymentStartDTO(order);
         } catch (error) {
+          if (error instanceof FirstOrderOfferConflictError) throw new OrderStateChangedError(error.message);
           if (error instanceof OrderNumberCollisionError && attempt < 4) continue;
           if (error instanceof RepositoryOrderConflictError) throw new OrderConflictError();
           if (

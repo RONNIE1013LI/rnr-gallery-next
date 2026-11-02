@@ -596,3 +596,17 @@ describe("authoritative checkout repricing", () => {
     expect(changed.cartDigest).not.toBe(original.cartDigest);
   });
 });
+
+describe("first-order cart pricing", () => {
+  it("applies only the server option, includes quantities, and binds the net price to the digest", () => {
+    const input = cart({ quantity: 3, firstOrderDiscount: true, discountCents: 999999 });
+    const original = repriceCart(input, { now: MONDAY_IN_AUCKLAND });
+    const discounted = repriceCart(input, { now: MONDAY_IN_AUCKLAND, firstOrderDiscount: true });
+    expect(original.discountCents).toBe(0);
+    expect(discounted.discountCents).toBe(Math.round(original.items[0].unitPrice.totalInclGstCents / 5) * 3);
+    expect(discounted.totalInclGstCents).toBe(original.totalInclGstCents - discounted.discountCents);
+    expect(discounted.cartDigest).not.toBe(original.cartDigest);
+    expect(discounted.promotion).toEqual({ key: "first-order-20-v1", percentage: 20 });
+    expect(discounted.items[0].lineTotalInclGstCents).toBe(discounted.items[0].unitPrice.totalInclGstCents * 3);
+  });
+});

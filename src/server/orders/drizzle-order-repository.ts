@@ -1,3 +1,4 @@
+import { assertFirstOrderOfferAvailable } from "@/server/checkout/first-order-offer";
 import { invalidateSuppliesInventory } from "@/server/supplies/inventory-cache";
 import { suppliesOrderItems } from "@/server/db/schema/supplies-inventory";
 import { reserveSuppliesForOrder } from "@/server/supplies/inventory";
@@ -457,6 +458,12 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
             !isDeepStrictEqual(locked.deliveryAddress, input.deliveryAddress)
           ) {
             throw new AtomicOrderStateError();
+          }
+
+          if (locked.customerId) {
+            await assertFirstOrderOfferAvailable(transaction, locked.customerId, input.cart.promotion?.key === "first-order-20-v1");
+          } else if (input.cart.promotion) {
+            throw new AtomicOrderStateError("Sign in to use the first-order offer.");
           }
 
           let shippingQuoteId: string | null = null;
