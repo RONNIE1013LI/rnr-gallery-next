@@ -182,6 +182,17 @@ function VisitorDetail({ visitorId, sessionId, canonicalQuery, onClose }: Readon
         {data.sessions.map((session) => {
           const timeline: { id: string; at: string; content: ReactNode }[] = [
             ...session.pageviews.map((view) => ({ id: `page:${view.id}`, at: view.occurredAt, content: <code>{view.pathname}</code> })),
+            ...(session.cartSnapshots ?? []).map((cart) => ({ id: `cart:${cart.id}`, at: cart.occurredAt,
+              content: <details className={styles.acquisitionDetails}>
+                <summary>{cart.stage === "checkout" ? "Checkout cart" : "Cart snapshot"} · {formatAnalyticsMoney(cart.currency, cart.totalInclGstCents)} · {cart.items.reduce((sum, item) => sum + item.quantity, 0)} items</summary>
+                <p className={styles.muted}>Browser cart estimate, including product tax but excluding shipping. Not a confirmed checkout quote or payment.</p>
+                {cart.items.length === 0 ? <p>Cart emptied.</p> : <ul>{cart.items.map((item, index) => <li key={index}>
+                  <strong>{item.productTitle}</strong> · {item.sizeLabel}
+                  {item.peoplePets !== null && item.peoplePets > 0 ? ` · ${item.peoplePets} faces/pets` : ""}
+                  { ` · Qty ${item.quantity} · ${formatAnalyticsMoney(cart.currency, item.unitPriceInclGstCents)} each` }
+                </li>)}</ul>}
+              </details> })),
+
             ...session.conversions.map((order) => ({ id: `order:${order.conversionId}`, at: order.occurredAt,
               content: order.adminHref ? <Link href={order.adminHref}>Order {order.orderNumber} created</Link> : <>Order {order.orderNumber} created</> })),
             ...session.financialEvents.map((event) => ({ id: `payment:${event.id}`, at: event.occurredAt,
@@ -196,6 +207,11 @@ function VisitorDetail({ visitorId, sessionId, canonicalQuery, onClose }: Readon
               <div><dt>Landing / exit</dt><dd>{known(session.entryPage)}<br />{known(session.exitPage)}</dd></div>
               <div><dt>Pageviews / observed span</dt><dd>{session.pageViews} · {duration(session.observedDurationSeconds)}{session.singlePage ? " · Single-page session" : ""}</dd></div>
               <div><dt>Cart / Checkout</dt><dd>{flag(session.cart)} / {flag(session.checkout)}</dd></div>
+              <div><dt>Last recorded cart</dt><dd>{session.cartSnapshots?.length
+                ? <>{formatAnalyticsMoney(session.cartSnapshots[session.cartSnapshots.length - 1]!.currency,
+                  session.cartSnapshots[session.cartSnapshots.length - 1]!.totalInclGstCents)} (browser estimate, excl. shipping)</>
+                : "No cart price snapshot recorded"}</dd></div>
+
               <div><dt>Click ID Type</dt><dd>{known(session.clickIdType)}</dd></div>
               <div><dt>Click ID / referrer</dt><dd>Available below only when captured with a linked order.</dd></div>
             </dl>
