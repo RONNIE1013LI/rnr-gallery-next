@@ -1,3 +1,4 @@
+import { hasAdminPermission } from "@/server/auth/admin-permissions";
 import { FormsWorkbench, type FormsOrderEntryData } from "@/components/forms/forms-workbench";
 import type { ProductionFormField } from "@/components/admin/production-job-form";
 import { getRegistryProducts } from "@/domain/catalogue/product-registry";
@@ -55,6 +56,11 @@ export async function FormsDataListContent({ raw }: Readonly<{
     "view_finance",
   );
   const canViewCustomerContact = hasFormPermission(access.formRole, access.formProfile, "view_customer_contact");
+  const adminPermissions = access.formProfile && "adminPermissions" in access.formProfile
+    ? access.formProfile.adminPermissions : [];
+  const canGenerateVoucher = canViewCustomerContact &&
+    hasAdminPermission(access.formRole, adminPermissions, "view_customers") &&
+    hasAdminPermission(access.formRole, adminPermissions, "manage_prices");
   const canViewPaymentProof = hasFormPermission(access.formRole, access.formProfile, "view_payment_proof");
   const canManageViews = hasFormPermission(access.formRole, access.formProfile, "manage_views");
   const canUpdate = hasFormPermission(access.formRole, access.formProfile, "update_jobs");
@@ -126,6 +132,7 @@ export async function FormsDataListContent({ raw }: Readonly<{
       savedViews={savedViews}
       canUpdate={canUpdate}
       canUpdateFinance={canUpdateFinance}
+      canGenerateVoucher={canGenerateVoucher}
       canUpdateProductionStatus={hasFormPermission(access.formRole, access.formProfile, "update_production_status")}
       canUpdateDeliveryStatus={hasFormPermission(access.formRole, access.formProfile, "update_delivery_status")}
       canViewFiles={canViewFiles}

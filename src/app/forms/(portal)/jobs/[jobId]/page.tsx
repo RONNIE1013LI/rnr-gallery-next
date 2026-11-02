@@ -1,3 +1,4 @@
+import { hasAdminPermission } from "@/server/auth/admin-permissions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -19,6 +20,11 @@ export default async function FormsJobDetailPage({ params }: Props) {
   const canViewFiles = hasFormPermission(access.formRole, access.formProfile, "view_files");
   const canViewPaymentProof = hasFormPermission(access.formRole, access.formProfile, "view_payment_proof");
   const canViewContact = hasFormPermission(access.formRole, access.formProfile, "view_customer_contact");
+  const adminPermissions = access.formProfile && "adminPermissions" in access.formProfile
+    ? access.formProfile.adminPermissions : [];
+  const canGenerateVoucher = canViewContact &&
+    hasAdminPermission(access.formRole, adminPermissions, "view_customers") &&
+    hasAdminPermission(access.formRole, adminPermissions, "manage_prices");
   const canViewAudit = hasFormPermission(access.formRole, access.formProfile, "view_audit");
   const canUpdate = hasFormPermission(access.formRole, access.formProfile, "update_jobs");
   const canManageFinance = hasFormPermission(access.formRole, access.formProfile, "update_finance");
@@ -71,6 +77,7 @@ export default async function FormsJobDetailPage({ params }: Props) {
         assignees={assignees}
         files={proofing.files}
         canManageFinance={canManageFinance}
+        canGenerateVoucher={canGenerateVoucher}
         canUploadFiles={canUploadFiles}
         canDeleteFiles={canDeleteFiles}
         canDeleteJob={access.formRole === "admin"}

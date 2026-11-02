@@ -28,6 +28,7 @@ function FormsJobDrawerSession({
   onClose,
   assignees,
   canManageFinance,
+  canGenerateVoucher = false,
   canUpdate = false,
   canUploadFiles = false,
   canReviewProofs = false,
@@ -40,6 +41,7 @@ function FormsJobDrawerSession({
   onClose: () => void;
   assignees: readonly ProductionAssignee[];
   canManageFinance: boolean;
+  canGenerateVoucher?: boolean;
   canUpdate?: boolean;
   canViewFiles?: boolean;
   canUploadFiles?: boolean;
@@ -127,7 +129,10 @@ function FormsJobDrawerSession({
           <Link href={`/order-system/jobs/${encodeURIComponent(jobId)}`}>Open full editor</Link>
           <button ref={closeButtonRef} type="button" aria-label="Close order editor" onClick={close}>×</button>
         </header>
-        <div className={`${styles.orderEntryDrawerContent} ${styles.formsEditor}`} data-forms-editor onChangeCapture={() => setDirty(true)}>
+        <div className={`${styles.orderEntryDrawerContent} ${styles.formsEditor}`} data-forms-editor onChangeCapture={(event) => {
+          if (event.target instanceof Element && event.target.closest("[data-voucher-controls]")) return;
+          setDirty(true);
+        }}>
           {error ? <div className={styles.formsErrorState} role="alert"><strong>Order unavailable</strong><p>{error}</p><button type="button" onClick={onClose}>Return to data list</button></div> : null}
           {!detail && !error ? <div className={styles.drawerLoading} role="status">Loading order details…</div> : null}
           {detail ? <ExistingProductionJobForm
@@ -135,6 +140,7 @@ function FormsJobDrawerSession({
             assignees={loadedAssignees}
             files={files}
             canManageFinance={canManageFinance}
+            canGenerateVoucher={canGenerateVoucher}
             canUploadFiles={canUploadFiles}
             canDeleteFiles={canDeleteFiles}
             canDeleteJob={canDeleteJob}
@@ -166,6 +172,7 @@ export function FormsJobDrawer(props: Readonly<{
   onClose: () => void;
   assignees: readonly ProductionAssignee[];
   canManageFinance: boolean;
+  canGenerateVoucher?: boolean;
   canUpdate?: boolean;
   canViewFiles?: boolean;
   canUploadFiles?: boolean;

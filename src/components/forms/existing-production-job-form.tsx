@@ -26,6 +26,7 @@ export function ExistingProductionJobForm({
   assignees,
   files,
   canManageFinance,
+  canGenerateVoucher = false,
   canUploadFiles,
   canDeleteFiles,
   canEdit,
@@ -42,6 +43,7 @@ export function ExistingProductionJobForm({
   assignees: readonly ProductionAssignee[];
   files: readonly ProductionFileSummary[];
   canManageFinance: boolean;
+  canGenerateVoucher?: boolean;
   canUploadFiles: boolean;
   canDeleteFiles: boolean;
   canEdit: boolean;
@@ -107,6 +109,7 @@ export function ExistingProductionJobForm({
   return <ProductionJobForm
     assignees={assignees}
     canManageFinance={canManageFinance}
+    canGenerateVoucher={canGenerateVoucher}
     canUploadFiles={canUploadFiles}
     canDeleteFiles={canDeleteFiles}
     canEdit={canEdit}

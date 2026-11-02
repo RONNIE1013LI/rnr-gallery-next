@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import FormsJobDetailPage from "./page";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 
 const { requireFormsPage, detail, assignees, listFiles, listNotifications, notFound } = vi.hoisted(() => ({
   requireFormsPage: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("@/components/forms/existing-production-job-form", () => ({
     jobApiBase: string;
     invoicePdfBase: string;
     canManageFinance: boolean;
+    canGenerateVoucher: boolean;
   }) => <div
     data-testid="forms-job-detail"
     data-email={props.detail.job.customerEmail}
@@ -41,6 +43,7 @@ vi.mock("@/components/forms/existing-production-job-form", () => ({
     data-job-api={props.jobApiBase}
     data-invoice-api={props.invoicePdfBase}
     data-finance-edit={String(props.canManageFinance)}
+    data-voucher={String(props.canGenerateVoucher)}
     data-manual-entry="true"
   />,
 }));
@@ -95,6 +98,18 @@ describe("forms job detail page", () => {
     expect(rendered).toHaveAttribute("data-invoice-api", "/api/forms/invoices");
     expect(rendered).toHaveAttribute("data-finance-edit", "false");
     expect(rendered).toHaveAttribute("data-manual-entry", "true");
+  });
+
+  it.each([
+    ["admin", null, true],
+    ["staff", { adminPermissions: ["view_customers", "manage_prices"], formPermissions: { view_jobs: true, view_customer_contact: true }, assignedOnly: false }, true],
+    ["staff", { adminPermissions: ["view_customers"], formPermissions: { view_jobs: true, view_customer_contact: true }, assignedOnly: false }, false],
+    ["staff", { adminPermissions: ["view_customers", "manage_prices"], formPermissions: { view_jobs: true, view_customer_contact: false }, assignedOnly: false }, false],
+  ])("keeps voucher visibility within existing grants for %s", async (formRole, formProfile, expected) => {
+    requireFormsPage.mockResolvedValue({ user: { id: "artist-1" }, formRole, formProfile: formProfile ? normalizeStaffAccessProfile(formProfile) : null });
+    detail.mockResolvedValue(privateDetail);
+    render(await FormsJobDetailPage({ params }));
+    expect(screen.getByTestId("forms-job-detail")).toHaveAttribute("data-voucher", String(expected));
   });
 
   it("does not expose a job outside an assigned-only staff member's scope", async () => {

@@ -8,6 +8,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClientId } from "@/lib/client-id";
 import { parseCustomerBlock } from "@/domain/forms/customer-block-parser";
+import { OrderVoucherPanel } from "@/components/forms/order-voucher-panel";
+import { THANK_YOU_OFFER_ENABLED } from "@/domain/promotions/thank-you-offer";
 import { FORM_OPTION_SETS } from "@/domain/forms/forms-parity";
 import type { InvoiceBusiness } from "@/server/invoices/invoice-business";
 import type { ProductionFileSummary } from "@/server/production/production-proof-service";
@@ -95,6 +97,7 @@ type Props = Readonly<{
   canEdit?: boolean;
   canPin?: boolean;
   canViewInvoice?: boolean;
+  canGenerateVoucher?: boolean;
   canUpdateProductionStatus?: boolean;
   canUpdateDeliveryStatus?: boolean;
   showTrackingForWebOrder?: boolean;
@@ -415,6 +418,7 @@ export function ProductionJobForm({
   canEdit = true,
   canPin = false,
   canViewInvoice = canManageFinance,
+  canGenerateVoucher = false,
   canUpdateProductionStatus = true,
   canUpdateDeliveryStatus = true,
   showTrackingForWebOrder = false,
@@ -437,6 +441,8 @@ export function ProductionJobForm({
   const [paymentRecovery, setPaymentRecovery] = useState<PaymentRecovery | null>(null);
   const [pasteFeedback, setPasteFeedback] = useState("");
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [voucherOpen, setVoucherOpen] = useState(false);
+  const showVoucher = THANK_YOU_OFFER_ENABLED && manualEntryLayout && existingOrder && !isWebOrder && canGenerateVoucher;
   const [persistedInvoiceId, setPersistedInvoiceId] = useState("");
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceWorkspaceDraft | null>(null);
   const [amountPayableCents, setAmountPayableCents] = useState(existingOrder?.amountPayableCents ?? 0);
@@ -1080,14 +1086,17 @@ export function ProductionJobForm({
       data-validation-errors={invalidFields.length > 0 || undefined}
       onInvalidCapture={(event) => validateFields(event.currentTarget)}
       onFocusCapture={(event) => {
+        if (event.target instanceof Element && event.target.closest("[data-voucher-controls]")) return;
         if (existingOrder) focusedValues.current.set(event.target, fieldValue(event.target));
       }}
       onBlurCapture={(event) => {
+        if (event.target instanceof Element && event.target.closest("[data-voucher-controls]")) return;
         if (!existingOrder || event.target instanceof HTMLSelectElement ||
           (event.target instanceof HTMLInputElement && ["checkbox", "date", "file", "radio"].includes(event.target.type))) return;
         if (focusedValues.current.get(event.target) !== fieldValue(event.target)) requestAutoSave();
       }}
       onChangeCapture={(event) => {
+        if (event.target instanceof Element && event.target.closest("[data-voucher-controls]")) return;
         if (event.target instanceof HTMLSelectElement ||
           (event.target instanceof HTMLInputElement && ["checkbox", "date", "radio"].includes(event.target.type))) requestAutoSave();
       }}
@@ -1104,11 +1113,17 @@ export function ProductionJobForm({
             onClick={() => void togglePinned()}
           >{pinnedAt ? "Pinned" : "Normal"}</button> : null}
         </div>
+        {showVoucher ? <div className={styles.formUtilityVoucherSlot}>
+          <button type="button" disabled={pending} aria-expanded={voucherOpen} aria-controls="order-voucher-panel"
+            onClick={() => setVoucherOpen((open) => !open)}>Generate voucher</button>
+        </div> : null}
         <div>
           {canViewInvoice && !isWebOrder ? <button type="button" onClick={openInvoice} disabled={pending}>Invoice</button> : null}
-          {onBack ? <button type="button" onClick={onBack}>Back</button> : <Link href={backHref}>Back</Link>}
+          {!manualEntryLayout ? onBack ? <button type="button" onClick={onBack}>Back</button> : <Link href={backHref}>Back</Link> : null}
         </div>
       </div>
+
+      {showVoucher && voucherOpen ? <div id="order-voucher-panel" data-voucher-controls><OrderVoucherPanel jobId={existingOrder.id} /></div> : null}
 
       <p className={styles.fieldHint}><RequiredMark />Required field. Phone and Email require at least one.</p>
       <section className={styles.formPanel}>

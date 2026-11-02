@@ -4381,6 +4381,12 @@ button.paymentProofPreviewMedia {
   gap: 8px;
 }
 
+.formUtilityBar .formUtilityVoucherSlot {
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+}
+
 .formUtilityBar .formUtilityTitle {
   min-width: 0;
   white-space: nowrap;

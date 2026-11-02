@@ -76,6 +76,7 @@ export function FormsWorkbench({
   savedViews = [],
   canUpdate = false,
   canUpdateFinance = false,
+  canGenerateVoucher = false,
   canUpdateProductionStatus = false,
   canUpdateDeliveryStatus = false,
   canViewFiles = false,
@@ -98,6 +99,7 @@ export function FormsWorkbench({
   savedViews?: readonly ProductionSavedView[];
   canUpdate?: boolean;
   canUpdateFinance?: boolean;
+  canGenerateVoucher?: boolean;
   canUpdateProductionStatus?: boolean;
   canUpdateDeliveryStatus?: boolean;
   canViewFiles?: boolean;
@@ -411,6 +413,7 @@ export function FormsWorkbench({
         onClose={() => setActiveJobId(null)}
         assignees={assignees}
         canManageFinance={canUpdateFinance}
+        canGenerateVoucher={canGenerateVoucher}
         canUpdate={canUpdate}
         canViewFiles={canViewFiles}
         canUploadFiles={canUploadFiles}

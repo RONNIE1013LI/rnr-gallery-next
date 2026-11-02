@@ -75,6 +75,44 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
   }
 
+  it("places voucher generation in the manual toolbar, removes Back, and keeps voucher controls out of autosave", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      jobId: existingOrder.id, orderNumber: "08000", customerName: "Saved Customer",
+      customerEmail: "saved@example.test", customerKey: "customer-1",
+      expectedUpdatedAt: existingOrder.expectedUpdatedAt, canIssue: true,
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(<ExistingManualEditor assignees={assignees} canManageFinance
+      manualEntryLayout canGenerateVoucher endpoint="/api/forms/jobs" existingOrder={existingOrder} />);
+    const trigger = screen.getByRole("button", { name: "Generate voucher" });
+    expect(trigger.parentElement?.parentElement).toContainElement(screen.getByText("Data entry"));
+    expect(trigger.parentElement?.parentElement).toContainElement(screen.getByRole("button", { name: "Invoice" }));
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Back" })).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    const confirmation = await screen.findByRole("checkbox");
+    expect(confirmation.closest("[data-voucher-controls]")).not.toBeNull();
+    fireEvent.click(confirmation);
+    fireEvent.blur(confirmation);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe(`/api/forms/jobs/${existingOrder.id}/voucher`);
+    expect(container.querySelectorAll("form")).toHaveLength(1);
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("does not offer voucher generation for unsaved, unauthorized, or web orders", () => {
+    const { rerender } = render(<ExistingManualEditor assignees={assignees} canManageFinance
+      manualEntryLayout canGenerateVoucher />);
+    expect(screen.queryByRole("button", { name: "Generate voucher" })).not.toBeInTheDocument();
+    rerender(<ExistingManualEditor assignees={assignees} canManageFinance manualEntryLayout existingOrder={existingOrder} />);
+    expect(screen.queryByRole("button", { name: "Generate voucher" })).not.toBeInTheDocument();
+    rerender(<ExistingManualEditor assignees={assignees} canManageFinance manualEntryLayout canGenerateVoucher
+      existingOrder={{ ...existingOrder, source: "web" }} />);
+    expect(screen.queryByRole("button", { name: "Generate voucher" })).not.toBeInTheDocument();
+  });
+
   it("keeps the pin control beside Data entry and follows the server response", async () => {
     const pinnedAt = "2026-09-24T09:00:00.000Z";
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FormsJobDrawer } from "./forms-job-drawer";
 
 vi.mock("./existing-production-job-form", () => ({
-  ExistingProductionJobForm: ({ files, assignees, onBack }: { files: unknown[]; assignees: unknown[]; onBack?: () => void }) => <div data-testid="drawer-detail" data-files={files.length} data-notifications="0" data-assignees={assignees.length} data-manual-entry="true"><label>Internal notes<input aria-label="Internal notes" defaultValue="" /></label><button type="button" onClick={onBack}>Back</button></div>,
+  ExistingProductionJobForm: ({ files, assignees, onBack, canGenerateVoucher }: { files: unknown[]; assignees: unknown[]; onBack?: () => void; canGenerateVoucher?: boolean }) => <div data-testid="drawer-detail" data-files={files.length} data-notifications="0" data-assignees={assignees.length} data-manual-entry="true" data-voucher={String(canGenerateVoucher)}><div data-voucher-controls><label>Verified old order<input aria-label="Verified old order" type="checkbox" /></label></div><label>Internal notes<input aria-label="Internal notes" defaultValue="" /></label><button type="button" onClick={onBack}>Back</button></div>,
 }));
 
 const detail = {
@@ -65,6 +65,20 @@ describe("FormsJobDrawer", () => {
     first.unmount();
     render(<FormsJobDrawer jobId="job-2" onClose={vi.fn()} assignees={[]} canManageFinance={false} />);
     expect(await screen.findByRole("separator", { name: "Resize order editor" })).toHaveAttribute("aria-valuenow", "884");
+  });
+
+  it("passes voucher access and keeps voucher controls separate from unsaved order changes", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const onClose = vi.fn();
+    render(<FormsJobDrawer jobId="job-1" onClose={onClose} assignees={[]} canManageFinance={false} canGenerateVoucher />);
+    expect(await screen.findByTestId("drawer-detail")).toHaveAttribute("data-voucher", "true");
+    fireEvent.click(screen.getByLabelText("Verified old order"));
+    expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close order editor" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("requires confirmation before closing after an editor value changes", async () => {
