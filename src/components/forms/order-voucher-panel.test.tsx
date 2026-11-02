@@ -11,7 +11,7 @@ describe("order voucher panel", () => {
     const fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => context }).mockResolvedValueOnce({ ok: true, json: async () => ({ code: "THANKYOU-EXAMPLE" }) });
     vi.stubGlobal("fetch", fetch);
     const { container } = render(<form onSubmit={submit}><OrderVoucherPanel jobId="job-1" /></form>);
-    const previousOrder = await screen.findByLabelText("Previous order number (5 digits)");
+    const previousOrder = await screen.findByLabelText("Previous order number");
     expect(previousOrder).toHaveValue("08087");
     expect(previousOrder).toHaveAttribute("readonly");
     expect(container.querySelectorAll("form")).toHaveLength(1);
@@ -25,6 +25,18 @@ describe("order voucher panel", () => {
     expect(await screen.findByLabelText("Voucher code")).toHaveValue("THANKYOU-EXAMPLE");
     expect(submit).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenLastCalledWith("/api/forms/jobs/job-1/voucher", expect.objectContaining({ method: "POST", body: JSON.stringify({ previousOrderNumber: "08087", verified: true, expectedUpdatedAt: context.expectedUpdatedAt }) }));
+  });
+
+  it("generates using a saved legacy web order reference", async () => {
+    const orderNumber = "RNR-2026-ABC123";
+    const fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ ...context, orderNumber }) }).mockResolvedValueOnce({ ok: true, json: async () => ({ code: "THANKYOU-EXAMPLE" }) });
+    vi.stubGlobal("fetch", fetch);
+    render(<OrderVoucherPanel jobId="job-1" />);
+    expect(await screen.findByLabelText("Previous order number")).toHaveValue(orderNumber);
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Generate voucher" }));
+    expect(await screen.findByLabelText("Voucher code")).toHaveValue("THANKYOU-EXAMPLE");
+    expect(fetch).toHaveBeenLastCalledWith("/api/forms/jobs/job-1/voucher", expect.objectContaining({ body: JSON.stringify({ previousOrderNumber: orderNumber, verified: true, expectedUpdatedAt: context.expectedUpdatedAt }) }));
   });
 
   it("does not expose generation when no eligible registered account exists", async () => {
@@ -48,8 +60,8 @@ describe("order voucher panel", () => {
     vi.stubGlobal("fetch", fetch);
     const { rerender } = render(<OrderVoucherPanel jobId="job-1" />);
     rerender(<OrderVoucherPanel jobId="job-2" />);
-    expect(await screen.findByLabelText("Previous order number (5 digits)")).toHaveValue("08088");
+    expect(await screen.findByLabelText("Previous order number")).toHaveValue("08088");
     resolveOld({ ok: true, json: async () => context });
-    await waitFor(() => expect(screen.getByLabelText("Previous order number (5 digits)")).toHaveValue("08088"));
+    await waitFor(() => expect(screen.getByLabelText("Previous order number")).toHaveValue("08088"));
   });
 });

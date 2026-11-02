@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { THANK_YOU_OFFER_ENABLED } from "@/domain/promotions/thank-you-offer";
+import { THANK_YOU_OFFER_ENABLED, VOUCHER_ORDER_REFERENCE_PATTERN } from "@/domain/promotions/thank-you-offer";
 import { getAdminCustomerRuntime } from "@/server/admin/admin-customer-runtime";
 import { writeAdminAudit, type AdminAuditInput } from "@/server/admin/audit-service";
 import type { AdminPermission } from "@/server/auth/admin-permissions";
@@ -43,10 +43,10 @@ export function createAdminCustomerVoucherRoute(dependencies?: Dependencies) {
         try { body = await parseBoundedJson(request, 1024); }
         catch (error) {
           if (error instanceof MutationRequestError) throw error;
-          throw new HttpError("Enter a verified previous order number (5 digits).", 422);
+          throw new HttpError("Enter a verified previous order number.", 422);
         }
-        if (!body || typeof body !== "object" || !("previousOrderNumber" in body) || typeof body.previousOrderNumber !== "string" || !/^[0-9]{5}$/.test(body.previousOrderNumber) || !("verified" in body) || body.verified !== true) {
-          throw new HttpError("Enter a verified previous order number (5 digits).", 422);
+        if (!body || typeof body !== "object" || !("previousOrderNumber" in body) || typeof body.previousOrderNumber !== "string" || !VOUCHER_ORDER_REFERENCE_PATTERN.test(body.previousOrderNumber) || !("verified" in body) || body.verified !== true) {
+          throw new HttpError("Enter a verified previous order number.", 422);
         }
         const { customerKey } = await context.params;
         const detail = await deps.detail(customerKey);

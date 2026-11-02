@@ -442,7 +442,7 @@ export function ProductionJobForm({
   const [pasteFeedback, setPasteFeedback] = useState("");
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [voucherOpen, setVoucherOpen] = useState(false);
-  const showVoucher = THANK_YOU_OFFER_ENABLED && manualEntryLayout && existingOrder && !isWebOrder && canGenerateVoucher;
+  const showVoucher = THANK_YOU_OFFER_ENABLED && manualEntryLayout && existingOrder && canGenerateVoucher;
   const [persistedInvoiceId, setPersistedInvoiceId] = useState("");
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceWorkspaceDraft | null>(null);
   const [amountPayableCents, setAmountPayableCents] = useState(existingOrder?.amountPayableCents ?? 0);

@@ -29,7 +29,7 @@ describe("admin returning voucher issuance", () => {
   it("rejects untrusted origin and invalid manual verification", async () => {
     const { deps, route } = setup();
     expect((await route.POST(request(undefined, "https://attacker.test"), context)).status).toBe(403);
-    for (const body of [null, {}, { previousOrderNumber: "1234", verified: true }, { previousOrderNumber: "123456", verified: true }, { previousOrderNumber: "12345", verified: false }, { previousOrderNumber: "12345", verified: "true" }]) {
+    for (const body of [null, {}, { previousOrderNumber: "1234", verified: true }, { previousOrderNumber: "not-an-order", verified: true }, { previousOrderNumber: "12345", verified: false }, { previousOrderNumber: "12345", verified: "true" }]) {
       expect((await route.POST(request(body), context)).status).toBe(422);
     }
     expect(deps.audit).not.toHaveBeenCalled();

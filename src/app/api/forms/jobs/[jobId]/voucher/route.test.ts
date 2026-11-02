@@ -58,12 +58,12 @@ describe("saved Forms order voucher", () => {
       expect(deps.issue).not.toHaveBeenCalled();
     }
   });
-  it("enforces assigned-only scope and rejects web or invalid manual references", async () => {
+  it("enforces assigned-only scope and rejects invalid references", async () => {
     const { deps, route } = setup();
     deps.requirePermission.mockResolvedValue({ ...access, formRole: "staff", formProfile: { adminPermissions: ["view_customers", "manage_prices"], formPermissions: ["view_jobs", "view_customer_contact"], assignedOnly: true } } as never);
     expect((await route.GET(new Request(origin), context)).status).toBe(404);
     deps.requirePermission.mockResolvedValue(access);
-    for (const patch of [{ source: "web" }, { jobNumber: "invalid" }]) {
+    for (const patch of [{ jobNumber: "invalid" }]) {
       const saved = await deps.detail("job-1");
       deps.detail.mockResolvedValueOnce({ job: { ...saved.job, ...patch } });
       expect((await route.POST(request(), context)).status).toBe(422);
@@ -106,6 +106,17 @@ describe("saved Forms order voucher", () => {
     expect(await deps.issue.mock.calls[0][1].params).toEqual({ customerKey: "customer-1" });
     expect(adminDeps.audit).toHaveBeenCalledWith(expect.objectContaining({ resourceId: "customer-1", afterSummary: expect.objectContaining({ previousOrderNumber: "08087", verified: true }) }));
     expect(JSON.stringify(adminDeps.audit.mock.calls)).not.toContain(code);
+  });
+  it.each(["08088", "RNR-2026-ABC123"])("loads and issues from an automatic web order %s", async (orderNumber) => {
+    const { deps, adminDeps, route } = setup();
+    const saved = await deps.detail("job-1");
+    deps.detail.mockResolvedValue({ job: { ...saved.job, source: "web", jobNumber: orderNumber } });
+    expect(await (await route.GET(new Request(origin), context)).json()).toMatchObject({ orderNumber, canIssue: true });
+    const response = await route.POST(request({ previousOrderNumber: orderNumber, expectedUpdatedAt: version, verified: true }), context);
+    expect(response.status).toBe(200);
+    const { code } = await response.json();
+    expect(verifyReturningCustomerVoucher(code, "customer-1", secret)).toBe(true);
+    expect(adminDeps.audit).toHaveBeenCalledWith(expect.objectContaining({ afterSummary: expect.objectContaining({ previousOrderNumber: orderNumber }) }));
   });
   it("retains existing used-offer and audit-failure checks on POST", async () => {
     const { adminDeps, route } = setup();

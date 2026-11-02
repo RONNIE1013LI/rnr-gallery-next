@@ -1,5 +1,6 @@
 "use client";
 
+import { VOUCHER_ORDER_REFERENCE_PATTERN } from "@/domain/promotions/thank-you-offer";
 import { useState } from "react";
 import styles from "./admin.module.css";
 
@@ -16,7 +17,7 @@ export function ReturningCustomerVoucher({ customerKey, savedOrder }: Readonly<{
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const eligible = /^[0-9]{5}$/.test(previousOrderNumber) && verified;
+  const eligible = (savedOrder ? VOUCHER_ORDER_REFERENCE_PATTERN.test(previousOrderNumber) : /^[0-9]{5}$/.test(previousOrderNumber)) && verified;
 
   async function generate() {
     if (!eligible || pending) return;
@@ -38,14 +39,14 @@ export function ReturningCustomerVoucher({ customerKey, savedOrder }: Readonly<{
   }
 
   const controls = <>
-    <label>Previous order number (5 digits)<input inputMode="numeric" pattern="[0-9]{5}" maxLength={5} required={!savedOrder} readOnly={Boolean(savedOrder)} value={previousOrderNumber} onChange={(event) => { setPreviousOrderNumber(event.target.value); setVerified(false); }} /></label>
+    <label>{savedOrder ? "Previous order number" : "Previous order number (5 digits)"}<input inputMode={savedOrder ? undefined : "numeric"} pattern={savedOrder ? undefined : "[0-9]{5}"} maxLength={savedOrder ? undefined : 5} required={!savedOrder} readOnly={Boolean(savedOrder)} value={previousOrderNumber} onChange={(event) => { setPreviousOrderNumber(event.target.value); setVerified(false); }} /></label>
     <label className={`${styles.fullField} ${styles.checkboxField}`}><input type="checkbox" checked={verified} onChange={(event) => setVerified(event.target.checked)} /><span>I have verified that this previous order belongs to this customer.</span></label>
     <button type={savedOrder ? "button" : "submit"} onClick={savedOrder ? generate : undefined} disabled={!eligible || pending}>{pending ? "Generating…" : "Generate voucher"}</button>
   </>;
 
   return <section className={styles.panel} data-voucher-controls onKeyDown={savedOrder ? (event) => { if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault(); } : undefined}>
     <h2>Returning customer voucher</h2>
-    <p>Manually verify this customer’s previous 5-digit order, including offline orders. This voucher is bound to this registered account and can be redeemed once per account during the thank-you offer.</p>
+    <p>Manually verify this customer’s previous order, including online and offline orders. This voucher is bound to this registered account and can be redeemed once per account during the thank-you offer.</p>
     <p>20% off plus an extra 20% off the reduced merchandise and customisation price (36% total). Shipping and urgent fees are excluded. Generating again returns the same code; it does not reset redemption.</p>
     {savedOrder ? <div className={styles.formGrid}>{controls}</div> : <form className={styles.formGrid} onSubmit={(event) => { event.preventDefault(); void generate(); }}>{controls}</form>}
     {code ? <div className={styles.formGrid}><label className={styles.fullField}>Voucher code<input readOnly value={code} onFocus={(event) => event.target.select()} /></label><button type="button" onClick={copy}>{copied ? "Copied" : "Copy voucher"}</button><p className={styles.mutedText}>No customer message has been sent.</p></div> : null}

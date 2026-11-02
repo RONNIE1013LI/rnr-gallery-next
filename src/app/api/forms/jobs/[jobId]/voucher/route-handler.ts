@@ -1,8 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { createAdminCustomerVoucherRoute } from "@/app/api/admin/customers/[customerKey]/voucher/route-handler";
-import { displayFormReference } from "@/domain/forms/forms-parity";
-import { THANK_YOU_OFFER_ENABLED } from "@/domain/promotions/thank-you-offer";
+import { THANK_YOU_OFFER_ENABLED, VOUCHER_ORDER_REFERENCE_PATTERN } from "@/domain/promotions/thank-you-offer";
 import { getAdminProductionRuntime } from "@/server/admin/admin-production-runtime";
 import type { AdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPermission } from "@/server/auth/require-admin";
@@ -36,7 +35,7 @@ type Dependencies = Readonly<{
 const noStore = { "Cache-Control": "no-store" };
 const inputSchema = z.object({
   expectedUpdatedAt: z.string().datetime(),
-  previousOrderNumber: z.string().regex(/^[0-9]{5}$/),
+  previousOrderNumber: z.string().max(100).regex(VOUCHER_ORDER_REFERENCE_PATTERN),
   verified: z.literal(true),
 }).strict();
 const unavailable = "An offer is already reserved or this returning-customer voucher has been used. Resume the existing order or review the customer account.";
@@ -74,9 +73,9 @@ export function createFormsJobVoucherRoute(dependencies?: Dependencies) {
       throw new HttpError("Order not found.", 404);
     }
     const job = detail.job;
-    const orderNumber = displayFormReference(job.source, job.jobNumber);
-    if (job.source !== "manual" || !/^[0-9]{5}$/.test(orderNumber)) {
-      throw new HttpError("Choose a saved manual order with a five-digit reference number.", 422);
+    const orderNumber = job.jobNumber.trim();
+    if (!VOUCHER_ORDER_REFERENCE_PATTERN.test(orderNumber)) {
+      throw new HttpError("Choose a saved order with a valid order reference.", 422);
     }
     return { jobId, job, orderNumber };
   }

@@ -102,7 +102,7 @@ describe("ProductionJobForm", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
-  it("does not offer voucher generation for unsaved, unauthorized, or web orders", () => {
+  it("hides voucher generation for unsaved or unauthorized orders and shows it for saved web orders", () => {
     const { rerender } = render(<ExistingManualEditor assignees={assignees} canManageFinance
       manualEntryLayout canGenerateVoucher />);
     expect(screen.queryByRole("button", { name: "Generate voucher" })).not.toBeInTheDocument();
@@ -110,7 +110,7 @@ describe("ProductionJobForm", () => {
     expect(screen.queryByRole("button", { name: "Generate voucher" })).not.toBeInTheDocument();
     rerender(<ExistingManualEditor assignees={assignees} canManageFinance manualEntryLayout canGenerateVoucher
       existingOrder={{ ...existingOrder, source: "web" }} />);
-    expect(screen.queryByRole("button", { name: "Generate voucher" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate voucher" })).toBeInTheDocument();
   });
 
   it("keeps the pin control beside Data entry and follows the server response", async () => {
