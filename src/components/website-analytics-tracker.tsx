@@ -43,7 +43,8 @@ function postWebsiteAnalyticsPageview(body: unknown): Promise<Response> {
 
 async function sendWebsiteAnalyticsPageview(body: unknown): Promise<void> {
   const send = async () => {
-    await postWebsiteAnalyticsPageview(body);
+    const response = await postWebsiteAnalyticsPageview(body);
+    if (response.ok) window.dispatchEvent(new Event("rnr:website-analytics:pageview-complete"));
   };
   const locks = analyticsLockManager();
   if (!locks) {

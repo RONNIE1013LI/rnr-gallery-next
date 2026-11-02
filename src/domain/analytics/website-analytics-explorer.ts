@@ -64,12 +64,25 @@ export type ExplorerFinancialEvent = Readonly<{
   id: string; orderId: string | null; occurredAt: string;
   type: "receipt" | "refund" | "reversal"; amountCents: number; currency: WebsiteAnalyticsCurrency;
 }>;
+export type ExplorerCartSnapshot = Readonly<{
+  id: string;
+  occurredAt: string;
+  stage: "cart" | "checkout";
+  currency: "NZD" | "AUD";
+  totalInclGstCents: number;
+  items: readonly Readonly<{
+    productKey: string; productTitle: string; sizeLabel: string;
+    peoplePets: number | null; quantity: number; unitPriceInclGstCents: number;
+  }>[];
+}>;
+
 export type ExplorerVisitorResponse = Readonly<{
   visitor: Readonly<{ visitorId: string; firstSeenAt: string; lastSeenAt: string; sessionCount: number; observedReturning: boolean }> | null;
   sessions: readonly (ExplorerSession & Readonly<{
     pageviews: readonly ExplorerPageview[]; conversions: readonly ExplorerConversion[];
     financialEvents: readonly ExplorerFinancialEvent[];
     pageviewsTotal: number; pageviewsTruncated: boolean;
+    cartSnapshots?: readonly ExplorerCartSnapshot[];
   }>)[];
   total: number; page: number; pageSize: number; pageCount: number; truncated: boolean;
   metadata: ExplorerMetadata; notices: readonly string[];

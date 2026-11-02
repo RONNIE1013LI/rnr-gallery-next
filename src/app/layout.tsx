@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AnalyticsRuntimeController } from "@/components/analytics-runtime-controller";
 import { WebsiteAnalyticsTracker } from "@/components/website-analytics-tracker";
+import { CartSnapshotTracker } from "@/components/cart-snapshot-tracker";
 import { TikTokEventsController } from "@/components/tiktok-events-controller";
 import { tiktokConfig } from "@/domain/analytics/tiktok";
 import { MetaPixelController } from "@/components/meta-pixel-controller";
@@ -116,6 +117,7 @@ export default async function RootLayout({
           </Suspense>
           <Suspense fallback={null}>
             <WebsiteAnalyticsTracker enabled={firstPartyAnalyticsEnabled} />
+            <CartSnapshotTracker enabled={firstPartyAnalyticsEnabled} />
           </Suspense>
           <SiteChrome
             initialCustomerId={session?.user.id ?? null}
