@@ -42,7 +42,7 @@ function pageHref(params: Record<string, string | string[] | undefined>, page: n
 export default async function AdminUsersPage({ searchParams }: Props) {
   const params = await searchParams;
   const query = queryString(params);
-  await requireAdminPage(`/admin/users${query ? `?${query}` : ""}`, "manage_roles");
+  await requireAdminPage(`/admin/users${query ? `?${query}` : ""}`, "manage_roles", { readOnly: true });
   const filters = parseAdminUserFilters(params);
   const result = await getAdminUserRuntime().list(params);
 

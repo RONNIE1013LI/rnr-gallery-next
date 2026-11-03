@@ -59,6 +59,7 @@ export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ accoun
   const [pendingMutation, setPendingMutation] = useState<PendingMutation | null>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const [verificationRequired, setVerificationRequired] = useState(false);
   const payload = accessPayload(role, profile, formPreset);
   const fingerprint = JSON.stringify(payload);
   const unchanged = fingerprint === savedFingerprint;
@@ -69,6 +70,7 @@ export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ accoun
     if (pending || locked || unchanged) return;
     setPending(true);
     setMessage("");
+    setVerificationRequired(false);
     const mutation = pendingMutation?.fingerprint === fingerprint
       ? pendingMutation
       : { fingerprint, idempotencyKey: createClientId() };
@@ -79,8 +81,15 @@ export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ accoun
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...payload, idempotencyKey: mutation.idempotencyKey }),
       });
-      const responseBody = await response.json().catch(() => null) as { error?: string; result?: { changed?: boolean } } | null;
-      if (!response.ok) throw new Error(responseBody?.error || "The employee access could not be updated.");
+      const responseBody = await response.json().catch(() => null) as { error?: string; code?: string; result?: { changed?: boolean } } | null;
+      if (!response.ok) {
+        if (responseBody?.code === "mfa_required" || responseBody?.code === "step_up_required") {
+          setVerificationRequired(true);
+          setMessage("No changes have been saved. Verify your identity in the new tab, then return to this tab and click Save employee access again. Keep this tab open to retain your changes.");
+          return;
+        }
+        throw new Error(responseBody?.error || "The employee access could not be updated.");
+      }
       setSavedFingerprint(fingerprint);
       setMessage(responseBody?.result?.changed === false ? "No change was needed." : "Employee access saved.");
     } catch (error) {
@@ -93,7 +102,7 @@ export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ accoun
   return <form className={styles.employeeAccessForm} onSubmit={submit}>
     <div className={styles.employeeAccountSummary}>
       <div><strong>{account.name}</strong><span>{account.email}</span></div>
-      <label><span>Account type</span><select aria-label="Account type" value={role} disabled={locked || pending} onChange={(event) => { setRole(event.target.value as AdminUserRole); setMessage(""); }}>{roles.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      <label><span>Account type</span><select aria-label="Account type" value={role} disabled={locked || pending} onChange={(event) => { setRole(event.target.value as AdminUserRole); if (!verificationRequired) setMessage(""); }}>{roles.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
     </div>
     {locked ? <div className={styles.safetyBanner} role="note"><strong>Current account — access is locked.</strong><p>Another database administrator must make changes to this account.</p></div> : null}
     {role === "admin" ? <div className={styles.fullAccessNote} role="note"><strong>Full access to all Admin and Forms permissions.</strong><p>Administrator accounts are not limited by employee permission selections.</p></div> : null}
@@ -102,6 +111,7 @@ export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ accoun
     {role === "customer" ? <div className={styles.fullAccessNote} role="note"><strong>Customer account</strong><p>This account has no Admin or Forms permissions.</p></div> : null}
     <div className={styles.employeeFormActions}>
       <p role="status">{message || (locked ? "This account cannot be changed here." : presetMissing ? "Choose a Forms profile before saving." : "Changes take effect on the next permission check.")}</p>
+      {verificationRequired ? <a href={`/account/security?next=${encodeURIComponent(`/admin/users/${encodeURIComponent(account.id)}`)}`} target="_blank" rel="noopener noreferrer">Verify identity</a> : null}
       <button className={styles.primaryAdminButton} disabled={locked || pending || unchanged || presetMissing} type="submit">{pending ? "Saving…" : "Save employee access"}</button>
     </div>
   </form>;

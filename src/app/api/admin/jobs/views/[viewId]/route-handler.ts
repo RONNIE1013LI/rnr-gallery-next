@@ -19,7 +19,7 @@ export function createProductionSavedViewRoute(dependencies?: Dependencies) {
     async DELETE(request: Request, context: Readonly<{ params: Promise<{ viewId: string }> }>) {
       try {
         const saved = getAdminProductionSavedViewRuntime();
-        const deps = dependencies ?? { requirePermission: requireAdminPermission, remove: saved.remove };
+        const deps: Dependencies = dependencies ?? { requirePermission: requireAdminPermission, remove: saved.remove };
         const access = await deps.requirePermission("manage_production_views");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
         const { viewId } = await context.params;

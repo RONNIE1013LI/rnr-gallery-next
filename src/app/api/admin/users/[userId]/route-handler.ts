@@ -9,6 +9,7 @@ import {
 import type { AdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { HttpError } from "@/server/auth/require-session";
+import { StaffSecurityError } from "@/server/auth/staff-security-runtime";
 import {
   assertTrustedMutationRequest,
   parseBoundedJson,
@@ -31,6 +32,9 @@ type Dependencies = Readonly<{
 type Context = Readonly<{ params: Promise<{ userId: string }> }>;
 
 function errorResponse(error: unknown) {
+  if (error instanceof StaffSecurityError && (error.reason === "mfa_required" || error.reason === "step_up_required")) {
+    return Response.json({ error: error.message, code: error.reason }, { status: error.status, headers: noStore });
+  }
   if (error instanceof HttpError) {
     return Response.json({ error: error.message }, { status: error.status, headers: noStore });
   }

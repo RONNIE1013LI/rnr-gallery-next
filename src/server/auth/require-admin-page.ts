@@ -1,6 +1,6 @@
 import { StaffSecurityError } from "./staff-security-runtime";
 import { redirect } from "next/navigation";
-import { requireAdminPermission } from "./require-admin";
+import { requireAdminPermission, type AdminPermissionOptions } from "./require-admin";
 import type { AdminPermission } from "./admin-permissions";
 import { HttpError } from "./require-session";
 import { safeAuthReturnPath } from "./safe-return-path";
@@ -30,9 +30,10 @@ export async function requireAdminPageFrom<T>(
 export function requireAdminPage(
   requestedPath = "/admin",
   permission: AdminPermission = "access_admin",
+  options?: AdminPermissionOptions,
 ) {
   return requireAdminPageFrom(
-    () => requireAdminPermission(permission),
+    () => requireAdminPermission(permission, options),
     redirect,
     requestedPath,
   );

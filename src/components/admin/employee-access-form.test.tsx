@@ -18,7 +18,7 @@ const staffAccount: AdminUserAccount = {
   assignedOnly: false, createdAt: new Date("2026-08-18T00:00:00Z"), updatedAt: new Date("2026-08-18T00:00:00Z"),
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("EmployeeAccessForm", () => {
   it("updates a Staff profile with the exact PATCH DTO", async () => {
@@ -41,6 +41,48 @@ describe("EmployeeAccessForm", () => {
       assignedOnly: false,
       idempotencyKey: "employee-access-0001",
     });
+  });
+
+  it.each(["mfa_required", "step_up_required"])("keeps the draft after %s and saves only on an explicit retry", async (code) => {
+    const storageWrite = vi.spyOn(Storage.prototype, "setItem");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "Verify your identity before this action.", code }), { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: { changed: true } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "employee-verification-retry-0001" });
+    render(<EmployeeAccessForm account={staffAccount} currentUserId="admin-1" />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Update order status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save employee access" }));
+    const verify = await screen.findByRole("link", { name: "Verify identity" });
+    expect(screen.getByRole("status")).toHaveTextContent("No changes have been saved.");
+    expect(screen.getByRole("status")).toHaveTextContent("return to this tab and click Save employee access again");
+    expect(verify).toHaveAttribute("href", "/account/security?next=%2Fadmin%2Fusers%2Femployee-1");
+    expect(verify).toHaveAttribute("target", "_blank");
+    expect(verify).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.getByRole("checkbox", { name: "Update order status" })).toBeChecked();
+    // Returning focus from the verification tab never triggers a mutation.
+    fireEvent.focus(window);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Save employee access" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save employee access" }));
+    await screen.findByText("Employee access saved.");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(storageWrite).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls[1][1].body).toBe(fetchMock.mock.calls[0][1].body);
+    expect(screen.queryByRole("link", { name: "Verify identity" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save employee access" })).toBeDisabled();
+  });
+
+  it("does not treat a generic 401 as a verification request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Sign in again." }), { status: 401 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<EmployeeAccessForm account={staffAccount} currentUserId="admin-1" />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Update order status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save employee access" }));
+    await screen.findByText("Sign in again.");
+    expect(screen.queryByRole("link", { name: "Verify identity" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Update order status" })).toBeChecked();
   });
 
   it("locks the signed-in administrator and shows Admin access as read-only", () => {

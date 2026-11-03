@@ -13,7 +13,7 @@ describe("employee detail page", () => {
     getById.mockResolvedValue({ id: "employee-1", name: "Studio Employee", email: "studio@example.test", role: "staff" });
     render(await AdminEmployeeDetailPage({ params: Promise.resolve({ userId: "employee-1" }) }));
 
-    expect(requireAdminPage).toHaveBeenCalledWith("/admin/users/employee-1", "manage_roles");
+    expect(requireAdminPage).toHaveBeenCalledWith("/admin/users/employee-1", "manage_roles", { readOnly: true });
     expect(getById).toHaveBeenCalledWith("employee-1");
     expect(screen.getByRole("heading", { name: "Studio Employee" })).toBeInTheDocument();
   });

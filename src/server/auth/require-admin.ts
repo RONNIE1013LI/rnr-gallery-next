@@ -93,7 +93,9 @@ async function accessForUser(userId: string): Promise<StoredAdminAccess> {
   };
 }
 
-export async function requireAdminPermission(permission: AdminPermission) {
+export type AdminPermissionOptions = Readonly<{ readOnly?: boolean }>;
+
+export async function requireAdminPermission(permission: AdminPermission, options?: AdminPermissionOptions) {
   const [{ headers }, { auth }] = await Promise.all([
     import("next/headers"),
     import("@/server/auth"),
@@ -103,7 +105,7 @@ export async function requireAdminPermission(permission: AdminPermission) {
     accessForUser,
     await headers(),
     permission,
-    (session, permission) => import("./staff-security-runtime").then(({ assertStaffSecurity }) => assertStaffSecurity(session, permission)),
+    (session, permission) => import("./staff-security-runtime").then(({ assertStaffSecurity }) => assertStaffSecurity(session, permission, options?.readOnly ? "read-only" : false)),
   );
 }
 

@@ -66,6 +66,7 @@ export function StaffAccountSecurity({ returnTo }: { returnTo: string }) {
     {message && <p className={styles.message} role="status">{message}</p>}
     <section className={styles.panel}>
       <h2>Verify your identity</h2>
+      <p>Passkey or authenticator verification authorizes sensitive staff changes for 30 minutes in this session. Viewing users does not require repeated verification during a verified staff session.</p>
       <div className={styles.actions}><button className={buttons.primaryButton} disabled={busy} onClick={() => void run(async () => { checked(await authClient.signIn.passkey()); await finishVerification(); })}>Use a passkey</button>
         <Link className={buttons.secondaryButton} href={`/account/sign-in?next=${encodeURIComponent(returnTo)}`}>Sign in with password</Link></div>
       <form onSubmit={(event) => { event.preventDefault(); void run(async () => { checked(await authClient.twoFactor.verifyTotp({ code, trustDevice: false })); await finishVerification(); }); }}>

@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDatabase } from "@/server/db/client";
 import { adminAuditLogs, session as nativeSession, staffSecurity, staffSecurityPolicy, staffSessionSecurity } from "@/server/db/schema";
 import { HttpError } from "./require-session";
-import { evaluateStaffSession, staffRoleAllows, STAFF_ELEVATION_MS, type StaffRole } from "./staff-security-policy";
+import { evaluateStaffSession, staffRoleAllows, type StaffRole } from "./staff-security-policy";
 
 export class StaffSecurityError extends HttpError {
   constructor(public readonly reason: "mfa_required" | "step_up_required" | "expired" | "disabled") {
@@ -11,6 +11,7 @@ export class StaffSecurityError extends HttpError {
   }
 }
 export type SecuritySession = { user: { id: string; email?: string }; session?: { id: string; createdAt: Date | string; expiresAt: Date | string } };
+const RECOVERY_PASSKEY_ENROLLMENT_MS = 5 * 60_000;
 // manage_payment is an operational Payment Requests grant, not configuration access.
 const elevatedPermissions = new Set(["manage_roles", "export_production_jobs", "manage_production_fields"]);
 
@@ -40,7 +41,7 @@ export async function loadStaffSecurity(userId: string) {
 export async function assertStaffSecurity(
   authSession: SecuritySession,
   permission?: string,
-  forceElevated = false,
+  forceElevated: boolean | "read-only" = false,
   revokeSession: (sessionId: string) => Promise<void> = async (sessionId) => {
     const [row] = await getDatabase().select({ token: nativeSession.token }).from(nativeSession).where(eq(nativeSession.id, sessionId)).limit(1);
     if (!row) return;
@@ -75,7 +76,7 @@ export async function assertStaffSecurity(
     sessionCreatedAt: createdAt, sessionExpiresAt: new Date(session.expiresAt).getTime(),
     rolloutAt, lastActiveAt: security.lastActiveAt.getTime(),
     mfaAt: security.mfaAt?.getTime() ?? null, elevatedAt: security.elevatedAt?.getTime() ?? null,
-  }, now.getTime(), forceElevated || Boolean(permission && elevatedPermissions.has(permission)));
+  }, now.getTime(), forceElevated === true || (forceElevated !== "read-only" && Boolean(permission && elevatedPermissions.has(permission))));
   if (decision !== "allowed") {
     if (decision === "expired" || decision === "disabled") await revokeSession(session.id);
     throw new StaffSecurityError(decision);
@@ -122,5 +123,5 @@ export async function canEnrollReplacementPasskey(current: SecuritySession) {
   const now = Date.now();
   const verifiedAt = security?.mfaAt?.getTime();
   const createdAt = new Date(current.session.createdAt).getTime();
-  return security?.factor === "recovery" && verifiedAt !== undefined && verifiedAt <= now && now - verifiedAt < STAFF_ELEVATION_MS && createdAt <= now && now - createdAt < STAFF_ELEVATION_MS;
+  return security?.factor === "recovery" && verifiedAt !== undefined && verifiedAt <= now && now - verifiedAt < RECOVERY_PASSKEY_ENROLLMENT_MS && createdAt <= now && now - createdAt < RECOVERY_PASSKEY_ENROLLMENT_MS;
 }

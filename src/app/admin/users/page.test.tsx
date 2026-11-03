@@ -33,7 +33,7 @@ describe("admin users page", () => {
 
     render(await AdminUsersPage({ searchParams: Promise.resolve({ q: "studio", role: "staff" }) }));
 
-    expect(requireAdminPage).toHaveBeenCalledWith("/admin/users?q=studio&role=staff", "manage_roles");
+    expect(requireAdminPage).toHaveBeenCalledWith("/admin/users?q=studio&role=staff", "manage_roles", { readOnly: true });
     expect(screen.getByText("Studio User")).toBeInTheDocument();
     expect(screen.getByText("studio@example.test")).toBeInTheDocument();
     expect(screen.getByText("1 active session")).toBeInTheDocument();

@@ -10,7 +10,7 @@ export const metadata = { title: "Employee access | R&R Gallery Admin" };
 
 export default async function AdminEmployeeDetailPage({ params }: Props) {
   const { userId } = await params;
-  const access = await requireAdminPage(`/admin/users/${encodeURIComponent(userId)}`, "manage_roles");
+  const access = await requireAdminPage(`/admin/users/${encodeURIComponent(userId)}`, "manage_roles", { readOnly: true });
   const account = await getAdminUserRuntime().getById(userId);
   if (!account) notFound();
   return <section className={`${styles.pageSection} ${styles.narrowPage}`}>

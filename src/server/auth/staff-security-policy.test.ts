@@ -64,7 +64,13 @@ describe("staff security policy", () => {
   it("requires a recent strong factor for elevated operations, including old sessions", () => {
     expect(evaluateStaffSession(state, now, true)).toBe("step_up_required");
     expect(evaluateStaffSession({ ...state, elevatedAt: now - 60_000 }, now, true)).toBe("allowed");
-    expect(evaluateStaffSession({ ...state, elevatedAt: now - 5 * 60_000 }, now, true)).toBe("step_up_required");
+    expect(evaluateStaffSession({ ...state, elevatedAt: now - 30 * 60_000 }, now, true)).toBe("step_up_required");
+  });
+  it.each([10, 29, 30 - 1 / 60_000])("reuses elevation for %s minutes", (minutes) => {
+    expect(evaluateStaffSession({ ...state, elevatedAt: now - minutes * 60_000 }, now, true)).toBe("allowed");
+  });
+  it.each([30, 30 + 1 / 60_000])("expires elevation at %s minutes", (minutes) => {
+    expect(evaluateStaffSession({ ...state, elevatedAt: now - minutes * 60_000 }, now, true)).toBe("step_up_required");
   });
   it("fails closed for unknown roles and invalid timestamps", () => {
     expect(staffRoleAllows("unknown", "view_orders")).toBe(false);

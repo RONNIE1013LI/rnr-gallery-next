@@ -11,6 +11,8 @@ describe("staff account security", () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => state });
     vi.stubGlobal("fetch", fetcher);
     render(<StaffAccountSecurity returnTo="/admin" />);
+    expect(screen.getByText(/authorizes sensitive staff changes for 30 minutes/)).toBeInTheDocument();
+    expect(screen.getByText(/five minutes to add a replacement passkey/)).toBeInTheDocument();
     await screen.findByRole("heading", { name: "Staff access" });
     fireEvent.change(screen.getByLabelText("Staff name"), { target: { value: "Synthetic designer" } });
     fireEvent.change(screen.getByLabelText("Staff email"), { target: { value: "designer@example.test" } });

@@ -3,7 +3,7 @@ import { ADMIN_PERMISSION_KEYS } from "./admin-permissions";
 
 export const STAFF_ROLES = ["owner", "admin", "staff", "customer_service", "designer", "production", "temporary"] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
-export const STAFF_ELEVATION_MS = 5 * 60_000;
+export const STAFF_ELEVATION_MS = 30 * 60_000;
 
 const grants: Record<Exclude<StaffRole, "owner">, readonly string[]> = {
   admin: ADMIN_PERMISSION_KEYS.filter((key) => ![
