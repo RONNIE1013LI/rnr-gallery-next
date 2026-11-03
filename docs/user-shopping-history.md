@@ -2,9 +2,11 @@
 
 ## Release status
 
-Implementation is on `codex/user-shopping-history`. **Do not merge/deploy until the approved database change is applied.** Pageview inserts and cart snapshot reads now use `user_id`; deploying first would interrupt existing anonymous analytics.
+Implementation is on `codex/user-shopping-history`. **Apply approved migration 0075 before merging/deploying the application.** Deploying the new writers first would interrupt existing anonymous analytics.
 
-The current user-provided AGENTS.md migration freeze applies. No formal migration has been generated, changed or executed. Production database access/writes and Production release have not been performed for this feature. Historical reconciliation reports do not replace a current exact-prefix/database-identity check or the required approval.
+The owner explicitly approved the database change and Production release on 2026-11-04. Fresh certified Production identity and all 75 migration hashes/order/timestamps matched. A fresh isolated 75-migration replay matched the complete Production schema with zero catalog differences. The migration freeze is therefore closed for this approved feature only. Other features remain outside this authorization.
+
+Migration 0075 adds only the two fields, foreign keys and indexes below. Prior migrations are unchanged. Release uses the existing guarded migration wrapper, then main-only automatic Vercel deployment. Application rollback point: `615fe12eb5a032dfe5ad9166dee8f2e7db62a217`; nullable columns can remain on rollback.
 
 ## Behavior
 
@@ -17,20 +19,22 @@ The current user-provided AGENTS.md migration freeze applies. No formal migratio
 - Cart totals are browser estimates. Submitted orders use exact `orders.customer_id`, independently of analytics consent, and show current payment status. Submission is not a payment-success event. Orders without this account ID are not guessed from email.
 - Missing schema/query failures show unavailable, not an empty activity history. Raw-event retention is unchanged.
 
-## Required additive database change (not yet generated)
+## Approved additive database change (migration 0075)
 
 - `website_analytics_pageviews.user_id`: nullable text, references `user.id`, ON DELETE SET NULL.
 - `website_analytics_cart_snapshots.user_id`: same association.
 - B-tree `(user_id, occurred_at, id)` on each table, with names from the ORM declarations.
 - No historical identity backfill, data deletion, new environment variables, auth/payment configuration changes, or new tables.
 
-After explicit freeze closure and separate database approval: verify the exact current journal prefix and database identity; produce/review only this delta; run isolated formal replay and upgrade validation plus scoped integration tests; apply the approved additive change before the application release. Follow the existing main-only automatic Vercel release and Production guard. Keep the previous application commit as rollback; the nullable columns can safely remain if rolling back code.
+Fresh replay and incremental upgrade must agree before Production migration. After migration, require exact 76/76 lineage, catalog equality with the isolated target, and runtime privileges. No historical identity backfill or destructive schema rollback is required.
 
 ## Verification
 
 - 90 scoped unit/component/schema-contract tests passed.
-- The task-owned loopback fixture exercised nine real PostgreSQL storage/query scenarios, including shared-browser isolation, retries, inferred cart changes, orders, user deletion, missing schema and subsecond ordering.
-- The committed integration suite uses standard `TEST_DATABASE_URL` and the repository's identity safety guard, with a unique per-run fixture schema and cleanup. Re-running it and the existing database suites through the standard gate is pending verified Production identity metadata. No safety metadata was fabricated and no safety check was disabled.
-- Typecheck, affected TypeScript/TSX lint and application build passed.
-- Component-only desktop/mobile browser fixture showed no horizontal overflow at 1280px/390px. This is not authenticated Next.js/Production end-to-end evidence.
-- Formal migration replay, Production migration, authenticated live UI and Production release remain unverified/not performed.
+- 17 directly affected PostgreSQL tests passed through the standard identity safety gate: account history, pageview storage and cart snapshots.
+- Migration artifact contract tests passed; a focused 0075-only rerun passed. Existing migration/snapshot lineage is unchanged except the new append.
+- Isolated 75→76 upgrade passed; catalog delta is exactly two columns, two indexes and two foreign-key constraints. Fresh 76-migration replay also passed and its catalog equals the upgrade with zero differences.
+- Typecheck, affected lint and application build passed. Final deployment source/Production checks are mandatory.
+- Component-only desktop/mobile browser fixture showed no horizontal overflow at 1280px/390px. Authenticated Production UI has not been exercised.
+- The full isolated suite was stopped immediately at the owner's request to limit verification to this feature. It is not a passing gate. Its disposable databases were cleaned; the relevant tests above passed independently.
+- Production migration/source/domain verification results are reported in the release response; this implementation document is not a substitute for live post-release evidence.

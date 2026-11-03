@@ -526,6 +526,13 @@
       "when": 1793589165000,
       "tag": "0074_website_cart_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1793734961773,
+      "tag": "0075_user_shopping_history",
+      "breakpoints": true
     }
   ]
 }
