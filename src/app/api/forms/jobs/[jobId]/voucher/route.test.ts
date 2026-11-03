@@ -138,4 +138,35 @@ describe("saved Forms order voucher", () => {
     expect(await response.text()).not.toContain("private lookup failure");
     expect(deps.issue).not.toHaveBeenCalled();
   });
+  it("reads campaign state for each GET and POST without looking up jobs when disabled", async () => {
+    const { deps } = setup();
+    let available = true;
+    const enabled = vi.fn(async () => available);
+    const route = createFormsJobVoucherRoute({ ...deps, enabled });
+    expect((await route.GET(new Request(origin), context)).status).toBe(200);
+    available = false;
+    deps.detail.mockClear();
+    deps.accountForEmail.mockClear();
+    for (const response of [await route.GET(new Request(origin), context), await route.POST(request(), context)]) {
+      expect(response.status).toBe(409);
+      expect(await response.json()).not.toHaveProperty("code");
+    }
+    expect(deps.detail).not.toHaveBeenCalled();
+    expect(deps.accountForEmail).not.toHaveBeenCalled();
+    expect(deps.issue).not.toHaveBeenCalled();
+    available = true;
+    expect((await route.POST(request(), context)).status).toBe(200);
+    expect(enabled).toHaveBeenCalledTimes(4);
+  });
+  it("fails closed for campaign read errors on GET and POST", async () => {
+    const { deps } = setup();
+    const route = createFormsJobVoucherRoute({ ...deps, enabled: vi.fn().mockRejectedValue(new Error("private state failure")) });
+    for (const response of [await route.GET(new Request(origin), context), await route.POST(request(), context)]) {
+      expect(response.status).toBe(500);
+      expect(await response.text()).not.toContain("private state failure");
+    }
+    expect(deps.detail).not.toHaveBeenCalled();
+    expect(deps.accountForEmail).not.toHaveBeenCalled();
+    expect(deps.issue).not.toHaveBeenCalled();
+  });
 });

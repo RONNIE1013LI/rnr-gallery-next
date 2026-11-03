@@ -1,3 +1,5 @@
+const offerState = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/server/promotions/thank-you-offer-state", () => ({ getPublicThankYouOfferEnabled: async () => offerState.enabled }));
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -136,4 +138,14 @@ describe("forms data list page", () => {
     expect(listFields).toHaveBeenCalledOnce();
     expect(listAssignees).toHaveBeenCalledOnce();
   });
+  it.each([true, false])("passes the campaign state %s to the voucher toolbar", async (enabled) => {
+    offerState.enabled = enabled;
+    try {
+      requireFormsPage.mockResolvedValue({ user: { id: "admin-1" }, formRole: "admin", formProfile: null });
+      listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
+      const page = await FormsDataListContent({ raw: {} });
+      expect(page.props.canGenerateVoucher).toBe(enabled);
+    } finally { offerState.enabled = true; }
+  });
+
 });

@@ -1,4 +1,6 @@
-// Disable together when the limited-time homepage promotion ends.
+export const THANK_YOU_OFFER_CONTENT_KEY = "promotions.thank_you.enabled";
+
+// Compatibility default for an installation with no persisted campaign setting.
 export const THANK_YOU_OFFER_ENABLED = true;
 
 // Current orders use numeric references; older online orders use RNR references.

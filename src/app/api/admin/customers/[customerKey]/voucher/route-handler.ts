@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { THANK_YOU_OFFER_ENABLED, VOUCHER_ORDER_REFERENCE_PATTERN } from "@/domain/promotions/thank-you-offer";
+import { VOUCHER_ORDER_REFERENCE_PATTERN } from "@/domain/promotions/thank-you-offer";
 import { getAdminCustomerRuntime } from "@/server/admin/admin-customer-runtime";
 import { writeAdminAudit, type AdminAuditInput } from "@/server/admin/audit-service";
 import type { AdminPermission } from "@/server/auth/admin-permissions";
@@ -9,6 +9,7 @@ import { isReturningOfferEligible } from "@/server/checkout/first-order-offer";
 import { createReturningCustomerVoucher } from "@/server/checkout/returning-customer-voucher";
 import { getDatabase } from "@/server/db/client";
 import { assertTrustedMutationRequest, MutationRequestError, parseBoundedJson } from "@/server/http/mutation-request";
+import { isThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 
 type Dependencies = Readonly<{
   requirePermission: (permission: AdminPermission) => Promise<{ user: { id: string; email?: string } }>;
@@ -16,7 +17,7 @@ type Dependencies = Readonly<{
   audit: (input: AdminAuditInput) => Promise<unknown>;
   canIssue: (customerId: string) => Promise<boolean>;
   secret: () => string;
-  enabled: boolean;
+  enabled: boolean | (() => Promise<boolean>);
   trustedOrigin?: string;
 }>;
 type Context = Readonly<{ params: Promise<{ customerKey: string }> }>;
@@ -29,7 +30,7 @@ export function createAdminCustomerVoucherRoute(dependencies?: Dependencies) {
     audit: async (input) => writeAdminAudit(getDatabase(), input),
     canIssue: (customerId) => isReturningOfferEligible(getDatabase(), customerId),
     secret: () => process.env.BETTER_AUTH_SECRET ?? "",
-    enabled: THANK_YOU_OFFER_ENABLED,
+    enabled: isThankYouOfferEnabled,
   });
   return {
     async POST(request: Request, context: Context) {
@@ -38,7 +39,7 @@ export function createAdminCustomerVoucherRoute(dependencies?: Dependencies) {
         const access = await deps.requirePermission("view_customers");
         await deps.requirePermission("manage_prices");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
-        if (!deps.enabled) throw new HttpError("The thank-you offer is currently unavailable.", 409);
+        if (!(typeof deps.enabled === "function" ? await deps.enabled() : deps.enabled)) throw new HttpError("The thank-you offer is currently unavailable.", 409);
         let body: unknown;
         try { body = await parseBoundedJson(request, 1024); }
         catch (error) {

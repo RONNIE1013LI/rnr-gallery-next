@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   contentDefinitions,
   parseContentValue,
   resolvePublishedContent,
+  saveContentDraft,
 } from "./content-service";
 
 describe("admin content service", () => {
@@ -81,7 +82,7 @@ describe("admin content service", () => {
       .toEqual(["email.invoice_sent.subject", "email.invoice_sent.body", "email.invoice_sent.action_label"]);
     expect(email.every((entry) => entry.key.startsWith("email."))).toBe(true);
     expect(contentDefinitions.filter((entry) => entry.surface === "system").map((entry) => entry.key))
-      .toEqual(["advertising.meta.enabled"]);
+      .toEqual(["promotions.thank_you.enabled", "advertising.meta.enabled"]);
   });
 
   it("uses an enabled sales-first Meta default and accepts only the two switch states", () => {
@@ -91,6 +92,25 @@ describe("admin content service", () => {
     expect(parseContentValue("advertising.meta.enabled", "disabled")).toBe("disabled");
     expect(() => parseContentValue("advertising.meta.enabled", "true"))
       .toThrow("Advertising tracking must be enabled or disabled");
+  });
+
+  it("rejects campaign drafts before any database write so publishing permission cannot be bypassed", async () => {
+    const transaction = vi.fn();
+    const database = { transaction } as unknown as Parameters<typeof saveContentDraft>[0];
+    await expect(saveContentDraft(database, {userId:"admin", email:"admin@example.test"}, {
+      key:"promotions.thank_you.enabled", value:"disabled", idempotencyKey:"test-draft-123",
+    })).rejects.toThrow("Promotion setting must be published directly.");
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("allowlists the anniversary switch as system content with an enabled default", () => {
+    expect(contentDefinitions.find((entry) => entry.key === "promotions.thank_you.enabled"))
+      .toMatchObject({ surface: "system", defaultValue: "enabled" });
+    expect(parseContentValue("promotions.thank_you.enabled", "enabled")).toBe("enabled");
+    expect(parseContentValue("promotions.thank_you.enabled", "disabled")).toBe("disabled");
+    for (const value of ["true", "false", "ENABLED", "on"]) {
+      expect(() => parseContentValue("promotions.thank_you.enabled", value)).toThrow("Promotion must be enabled or disabled");
+    }
   });
 
   it("validates customer email signature contact fields", () => {

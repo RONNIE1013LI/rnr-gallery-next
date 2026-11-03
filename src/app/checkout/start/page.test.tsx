@@ -1,3 +1,5 @@
+const offerState = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/server/promotions/thank-you-offer-state", () => ({ getPublicThankYouOfferEnabled: async () => offerState.enabled }));
 import { readFileSync } from "node:fs";
 
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -79,6 +81,15 @@ describe("CheckoutStartPage", () => {
     expect(css).toMatch(
       /\.checkoutGuestDescription\s*\{[\s\S]*?white-space:\s*nowrap;/,
     );
+  });
+
+  it("removes the first-order promotion invitation when disabled", async () => {
+    offerState.enabled = false;
+    try {
+      render(await CheckoutStartPage());
+      expect(screen.queryByText(/First custom artwork order/)).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Continue as Guest" })).toBeInTheDocument();
+    } finally { offerState.enabled = true; }
   });
 
 });

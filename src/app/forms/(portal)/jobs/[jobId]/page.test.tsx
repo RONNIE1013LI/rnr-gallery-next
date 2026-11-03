@@ -1,3 +1,5 @@
+const offerState = vi.hoisted(() => ({ enabled: true }));
+vi.mock("@/server/promotions/thank-you-offer-state", () => ({ getPublicThankYouOfferEnabled: async () => offerState.enabled }));
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -136,4 +138,14 @@ describe("forms job detail page", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Web-RNR-2026-ABC123" })).toBeInTheDocument();
     expect(screen.getByText("Web-RNR-2026-ABC123", { selector: "nav span" })).toBeInTheDocument();
   });
+  it("hides voucher generation when the campaign is off even for Admin", async () => {
+    offerState.enabled = false;
+    try {
+      requireFormsPage.mockResolvedValue({ user: { id: "admin-1" }, formRole: "admin", formProfile: null });
+      detail.mockResolvedValue(privateDetail);
+      render(await FormsJobDetailPage({ params }));
+      expect(screen.getByTestId("forms-job-detail")).toHaveAttribute("data-voucher", "false");
+    } finally { offerState.enabled = true; }
+  });
+
 });

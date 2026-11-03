@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultProductRegistry,
   parseProductRegistry,
@@ -480,13 +480,15 @@ describe("ProductPageContent", () => {
 
 
 describe("canvas advertising page promotion", () => {
-  it.each(["NZ", "AU"] as const)("shows the shared promotion after four seconds on the %s canvas landing page", (market) => {
+  beforeEach(() => vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ enabled: true }) })));
+  afterEach(() => vi.unstubAllGlobals());
+  it.each(["NZ", "AU"] as const)("shows the shared promotion after four seconds on the %s canvas landing page", async (market) => {
     vi.useFakeTimers();
     try {
       render(<ProductPageContent product={getProductBySlug("digital-oil-painting-canvas")!} selection={null} market={market} />);
-      act(() => vi.advanceTimersByTime(3999));
+      await act(async () => vi.advanceTimersByTimeAsync(3999));
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-      act(() => vi.advanceTimersByTime(1));
+      await act(async () => vi.advanceTimersByTimeAsync(1));
       expect(screen.getByRole("dialog", {name:"Limited-time offer: save 36% in total"})).toBeInTheDocument();
       expect(screen.getByRole("link",{name:"Sign up"})).toHaveAttribute("href", market === "AU" ? "/account/register?next=%2Fau%2Fshop" : "/account/register?next=%2Fshop");
       fireEvent.click(screen.getByRole("button",{name:"Close promotion"}));

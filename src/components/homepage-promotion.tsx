@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { THANK_YOU_OFFER_ENABLED } from "@/domain/promotions/thank-you-offer";
 import type { Market } from "@/domain/markets/types";
 import { useContainedDialog } from "./forms/use-contained-dialog";
 import styles from "./homepage-promotion.module.css";
@@ -17,13 +16,22 @@ export function HomepagePromotion({ market = "NZ" }: Readonly<{ market?: Market 
   const close = () => setOpen(false);
 
   useEffect(() => {
-    if (!THANK_YOU_OFFER_ENABLED) return;
-    const timer = window.setTimeout(() => {
+    const controller = new AbortController();
+    let active = true;
+    const enabled = fetch("/api/promotions/thank-you-offer", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => response.ok && (await response.json()).enabled === true)
+      .catch(() => false);
+    const timer = window.setTimeout(async () => {
+      if (!await enabled || !active) return;
       if (document.visibilityState === "hidden"
         || document.querySelector('[role="dialog"], [role="alertdialog"], .consent-preferences')) return;
       setOpen(true);
     }, 4_000);
-    return () => window.clearTimeout(timer);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearTimeout(timer);
+    };
   }, []);
 
   useContainedDialog({

@@ -5,7 +5,7 @@ import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { sql, SQL, eq } from "drizzle-orm";
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
-import { checkoutSessions, orderItems, orderAddresses, orders, user, productionJobs, productionJobItems } from "@/server/db/schema";
+import { contentEntries, checkoutSessions, orderItems, orderAddresses, orders, user, productionJobs, productionJobItems } from "@/server/db/schema";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import { normalizeAddress } from "@/domain/address/schema";
 import { createDrizzleOrderRepository, buildWebProductionJobSnapshot } from "@/server/orders/drizzle-order-repository";
@@ -31,7 +31,7 @@ beforeAll(async () => {
   for(let attempt=0;attempt<50;attempt++){try{await pool.query("select 1");break;}catch(error){if(attempt===49)throw error;await new Promise(resolve=>setTimeout(resolve,100));}}
   // Fixture columns/defaults come from the owning schema. No migration files are generated or executed.
   const dialect = new PgDialect();
-  for (const table of [user, orders, checkoutSessions, orderItems, orderAddresses, productionJobs, productionJobItems]) {
+  for (const table of [contentEntries, user, orders, checkoutSessions, orderItems, orderAddresses, productionJobs, productionJobItems]) {
     const config = getTableConfig(table);
     const columns = config.columns.map(column => {
       let value = "";
@@ -48,7 +48,7 @@ beforeAll(async () => {
   database=drizzle(pool);
 }, 20_000);
 afterAll(async()=>{await pool?.end();if(started)execFileSync("docker",["rm","-f",container],{stdio:"pipe"});});
-beforeEach(async()=>{await pool.query('truncate orders,"user",checkout_sessions,order_items,order_addresses,production_jobs,production_job_items');await pool.query('insert into "user" (id,email) values ($1,$2)',["customer-1","New@Example.test"]);});
+beforeEach(async()=>{await pool.query('truncate content_entries,orders,"user",checkout_sessions,order_items,order_addresses,production_jobs,production_job_items');await pool.query('insert into "user" (id,email) values ($1,$2)',["customer-1","New@Example.test"]);});
 
 async function history(status:string,promotion=false,customerId:string|null="customer-1") {
   await pool.query("insert into orders (id,customer_id,customer_email,payment_status,pricing_snapshot) values($1,$2,$3,$4,$5)",[randomUUID(),customerId,"new@example.test",status,JSON.stringify(promotion?{promotion:{key:"first-order-20-v1",percentage:20}}:{})]);
@@ -87,6 +87,37 @@ async function history(status:string,promotion=false,customerId:string|null="cus
     expect(seed!.totals!.subtotalExGstCents + seed!.totals!.gstCents).toBe(order.totalInclGstCents);
     const retried = await createDrizzleOrderRepository(database).createAtomicOrder(input);
     expect(retried.id).toBe(order.id);
+  });
+
+  async function setPromotion(value: "enabled" | "disabled") {
+    await pool.query("delete from content_entries where key = 'promotions.thank_you.enabled'");
+    await database.insert(contentEntries).values({key:"promotions.thank_you.enabled",groupName:"Promotions",label:"Anniversary promotion",draftValue:value,publishedValue:value});
+  }
+
+  it.each([false, true])("rejects a stale promotional quote after disabling (returning=%s)", async (returning) => {
+    const input = await discountedOrderInput(returning);
+    await setPromotion("disabled");
+    expect(await isFirstOrderOfferEligible(database, "customer-1")).toBe(false);
+    expect(await isReturningOfferEligible(database, "customer-1")).toBe(false);
+    await expect(createDrizzleOrderRepository(database).createAtomicOrder(input))
+      .rejects.toThrow("This promotion has ended");
+    expect(Number((await pool.query("select count(*) from orders")).rows[0].count)).toBe(0);
+  });
+
+  it.each([false, true])("preserves existing submitted order retry and history through disabling/re-enabling (returning=%s)", async (returning) => {
+    const input = await discountedOrderInput(returning);
+    const repository = createDrizzleOrderRepository(database);
+    const order = await repository.createAtomicOrder(input);
+    const [stored] = await database.select({pricingSnapshot:orders.pricingSnapshot}).from(orders).where(eq(orders.id,order.id));
+    await setPromotion("disabled");
+    expect(await repository.createAtomicOrder(input)).toMatchObject({id:order.id,totalInclGstCents:order.totalInclGstCents});
+    const [retried] = await database.select({pricingSnapshot:orders.pricingSnapshot}).from(orders).where(eq(orders.id,order.id));
+    expect(retried.pricingSnapshot).toEqual(stored.pricingSnapshot);
+    await setPromotion("enabled");
+    expect(await isFirstOrderOfferEligible(database, "customer-1")).toBe(false);
+    expect(await isReturningOfferEligible(database, "customer-1")).toBe(false);
+    await expect(repository.createAtomicOrder(await discountedOrderInput(returning)))
+      .rejects.toBeInstanceOf(FirstOrderOfferConflictError);
   });
 
   it("permits only one actual discounted order across two checkout sessions",async()=>{

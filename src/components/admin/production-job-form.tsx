@@ -9,7 +9,6 @@ import { useRouter } from "next/navigation";
 import { createClientId } from "@/lib/client-id";
 import { parseCustomerBlock } from "@/domain/forms/customer-block-parser";
 import { OrderVoucherPanel } from "@/components/forms/order-voucher-panel";
-import { THANK_YOU_OFFER_ENABLED } from "@/domain/promotions/thank-you-offer";
 import { FORM_OPTION_SETS } from "@/domain/forms/forms-parity";
 import type { InvoiceBusiness } from "@/server/invoices/invoice-business";
 import type { ProductionFileSummary } from "@/server/production/production-proof-service";
@@ -442,7 +441,7 @@ export function ProductionJobForm({
   const [pasteFeedback, setPasteFeedback] = useState("");
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [voucherOpen, setVoucherOpen] = useState(false);
-  const showVoucher = THANK_YOU_OFFER_ENABLED && manualEntryLayout && existingOrder && canGenerateVoucher;
+  const showVoucher = manualEntryLayout && existingOrder && canGenerateVoucher;
   const [persistedInvoiceId, setPersistedInvoiceId] = useState("");
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceWorkspaceDraft | null>(null);
   const [amountPayableCents, setAmountPayableCents] = useState(existingOrder?.amountPayableCents ?? 0);

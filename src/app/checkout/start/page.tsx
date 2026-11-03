@@ -1,4 +1,4 @@
-import { THANK_YOU_OFFER_ENABLED } from "@/domain/promotions/thank-you-offer";
+import { getPublicThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -19,6 +19,7 @@ export default async function CheckoutStartPage() {
     redirect("/checkout");
   }
 
+  const offerEnabled = await getPublicThankYouOfferEnabled();
   const configuredProviders = getConfiguredSocialProviderIds(process.env);
   const customerProviders = configuredProviders.includes("google")
     ? (["google"] as const)
@@ -40,7 +41,7 @@ export default async function CheckoutStartPage() {
             className={styles.checkoutContinuation}
           >
             <h2 id="checkout-account-title">Check out with your R&amp;R Gallery account</h2>
-            {THANK_YOU_OFFER_ENABLED ? <p>First custom artwork order? Create an account to get 20% off automatically, including customisation. Delivery and urgent service are excluded.</p> : null}
+            {offerEnabled ? <p>First custom artwork order? Create an account to get 20% off automatically, including customisation. Delivery and urgent service are excluded.</p> : null}
 
             <AuthGateway
               configuredProviders={customerProviders}

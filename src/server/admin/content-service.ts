@@ -1,3 +1,4 @@
+import { THANK_YOU_OFFER_CONTENT_KEY } from "@/domain/promotions/thank-you-offer";
 import { eq } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { adminAuditLogs, contentEntries, user } from "@/server/db/schema";
@@ -33,6 +34,17 @@ const storefrontContentDefinitions = Object.freeze([
 ] as const);
 
 const systemContentDefinitions = Object.freeze([
+  {
+    key: THANK_YOU_OFFER_CONTENT_KEY,
+    group: "Promotions",
+    label: "Anniversary promotion",
+    description: "Controls new first-order offers and returning-customer vouchers. Existing submitted order prices are preserved.",
+    maxLength: 8,
+    multiline: false,
+    defaultValue: "enabled",
+    surface: "system" as const,
+    allowedVariables: Object.freeze([]) as readonly string[],
+  },
   {
     key: "advertising.meta.enabled",
     group: "Advertising",
@@ -86,6 +98,11 @@ export function parseContentValue(key: string, input: unknown): string {
     && value !== "enabled"
     && value !== "disabled") {
     throw new ContentValidationError("Advertising tracking must be enabled or disabled");
+  }
+  if (definition.key === THANK_YOU_OFFER_CONTENT_KEY
+    && value !== "enabled"
+    && value !== "disabled") {
+    throw new ContentValidationError("Promotion must be enabled or disabled");
   }
   if (definition.surface === "email") {
     const isEditableEmailBody = definition.key.endsWith(".body");
@@ -191,6 +208,9 @@ export async function saveContentDraft(
   actor: ContentActor,
   input: ContentMutationInput,
 ) {
+  if (input.key === THANK_YOU_OFFER_CONTENT_KEY) {
+    throw new ContentValidationError("Promotion setting must be published directly.");
+  }
   const definition = definitionFor(input.key);
   if (!definition) throw new ContentValidationError("Unknown content field");
   const value = parseContentValue(input.key, input.value);

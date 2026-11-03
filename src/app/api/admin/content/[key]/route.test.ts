@@ -17,6 +17,37 @@ function request(body: unknown) {
 }
 
 describe("admin content route", () => {
+  it("protects promotion publication with both permissions and invalidates public state only on success", async () => {
+    const requirePermission = vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "admin@example.test" } });
+    const publish = vi.fn().mockResolvedValue("published");
+    const revalidatePublic = vi.fn();
+    const route = createAdminContentRoute({ requirePermission, publish, saveDraft: vi.fn(), revalidatePublic, trustedOrigin: origin });
+    const context = { params: Promise.resolve({ key: "promotions.thank_you.enabled" }) };
+    const body = { action: "publish", value: "disabled", idempotencyKey: "promotion-publish-0001" };
+    for (const permission of ["manage_content", "publish_content"]) {
+      requirePermission.mockImplementation(async (requested) => {
+        if (requested === permission) throw new HttpError("Forbidden", 403);
+        return { user: { id: "admin-1", email: "admin@example.test" } };
+      });
+      expect((await route.PATCH(request(body), context)).status).toBe(403);
+      expect(publish).not.toHaveBeenCalled();
+      expect(revalidatePublic).not.toHaveBeenCalled();
+    }
+    requirePermission.mockResolvedValue({ user: { id: "admin-1", email: "admin@example.test" } });
+    requirePermission.mockClear();
+    const response = await route.PATCH(request(body), context);
+    expect(response.status).toBe(200);
+    expect(requirePermission.mock.calls.map(([permission]) => permission)).toEqual(["manage_content", "publish_content"]);
+    expect(publish).toHaveBeenCalledWith(
+      { userId: "admin-1", email: "admin@example.test" },
+      expect.objectContaining({ key: "promotions.thank_you.enabled", value: "disabled", idempotencyKey: "promotion-publish-0001" }),
+    );
+    expect(revalidatePublic).toHaveBeenCalledOnce();
+    publish.mockRejectedValue(new Error("publication failed"));
+    expect((await route.PATCH(request(body), context)).status).toBe(500);
+    expect(revalidatePublic).toHaveBeenCalledOnce();
+  });
+
   it("requires content permission before reading the body", async () => {
     const saveDraft = vi.fn();
     const route = createAdminContentRoute({

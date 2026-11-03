@@ -55,6 +55,33 @@ describe("admin returning voucher issuance", () => {
     expect(JSON.stringify(deps.audit.mock.calls)).not.toContain(code);
     expect(JSON.stringify(deps.audit.mock.calls)).not.toContain(secret);
   });
+  it("reads current campaign state on every request and blocks lookup and signing when disabled", async () => {
+    const { deps } = setup();
+    const enabled = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const secret = vi.fn(() => "test-only-returning-voucher-secret-123456789");
+    const route = createAdminCustomerVoucherRoute({ ...deps, enabled, secret });
+    expect((await route.POST(request(), context)).status).toBe(200);
+    deps.detail.mockClear();
+    deps.audit.mockClear();
+    secret.mockClear();
+    const disabled = await route.POST(request(), context);
+    expect(disabled.status).toBe(409);
+    expect(await disabled.json()).not.toHaveProperty("code");
+    expect(deps.detail).not.toHaveBeenCalled();
+    expect(deps.audit).not.toHaveBeenCalled();
+    expect(secret).not.toHaveBeenCalled();
+    expect((await route.POST(request(), context)).status).toBe(200);
+    expect(enabled).toHaveBeenCalledTimes(3);
+  });
+  it("fails closed without exposing campaign read errors", async () => {
+    const { deps } = setup();
+    const route = createAdminCustomerVoucherRoute({ ...deps, enabled: vi.fn().mockRejectedValue(new Error("private state failure")) });
+    const response = await route.POST(request(), context);
+    expect(response.status).toBe(500);
+    expect(await response.text()).not.toContain("private state failure");
+    expect(deps.detail).not.toHaveBeenCalled();
+    expect(deps.audit).not.toHaveBeenCalled();
+  });
   it("withholds the code if the audit cannot be recorded", async () => {
     const { deps, route } = setup();
     deps.audit.mockRejectedValue(new Error("private database error"));

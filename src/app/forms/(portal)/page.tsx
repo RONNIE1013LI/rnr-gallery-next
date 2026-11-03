@@ -1,3 +1,4 @@
+import { getPublicThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 import { hasAdminPermission } from "@/server/auth/admin-permissions";
 import { FormsWorkbench, type FormsOrderEntryData } from "@/components/forms/forms-workbench";
 import type { ProductionFormField } from "@/components/admin/production-job-form";
@@ -60,7 +61,7 @@ export async function FormsDataListContent({ raw }: Readonly<{
     ? access.formProfile.adminPermissions : [];
   const canGenerateVoucher = canViewCustomerContact &&
     hasAdminPermission(access.formRole, adminPermissions, "view_customers") &&
-    hasAdminPermission(access.formRole, adminPermissions, "manage_prices");
+    hasAdminPermission(access.formRole, adminPermissions, "manage_prices") && await getPublicThankYouOfferEnabled();
   const canViewPaymentProof = hasFormPermission(access.formRole, access.formProfile, "view_payment_proof");
   const canManageViews = hasFormPermission(access.formRole, access.formProfile, "manage_views");
   const canUpdate = hasFormPermission(access.formRole, access.formProfile, "update_jobs");

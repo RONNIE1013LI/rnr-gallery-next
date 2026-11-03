@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { createAdminCustomerVoucherRoute } from "@/app/api/admin/customers/[customerKey]/voucher/route-handler";
-import { THANK_YOU_OFFER_ENABLED, VOUCHER_ORDER_REFERENCE_PATTERN } from "@/domain/promotions/thank-you-offer";
+import { VOUCHER_ORDER_REFERENCE_PATTERN } from "@/domain/promotions/thank-you-offer";
 import { getAdminProductionRuntime } from "@/server/admin/admin-production-runtime";
 import type { AdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPermission } from "@/server/auth/require-admin";
@@ -12,6 +12,7 @@ import { user } from "@/server/db/schema";
 import { requireFormPermission, type FormAccess } from "@/server/forms/require-forms";
 import type { FormPermission } from "@/server/forms/forms-permissions";
 import { assertTrustedMutationRequest, MutationRequestError, parseBoundedJson } from "@/server/http/mutation-request";
+import { isThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 
 type SavedJob = Readonly<{
   source: "manual" | "web";
@@ -29,7 +30,7 @@ type Dependencies = Readonly<{
   accountForEmail: (email: string) => Promise<string | null>;
   canIssue: (customerId: string) => Promise<boolean>;
   issue: ReturnType<typeof createAdminCustomerVoucherRoute>["POST"];
-  enabled: boolean;
+  enabled: boolean | (() => Promise<boolean>);
   trustedOrigin?: string;
 }>;
 const noStore = { "Cache-Control": "no-store" };
@@ -58,7 +59,7 @@ export function createFormsJobVoucherRoute(dependencies?: Dependencies) {
     },
     canIssue: (customerId) => isReturningOfferEligible(getDatabase(), customerId),
     issue: createAdminCustomerVoucherRoute().POST,
-    enabled: THANK_YOU_OFFER_ENABLED,
+    enabled: isThankYouOfferEnabled,
   });
 
   async function savedContext(deps: Dependencies, context: Context) {
@@ -66,7 +67,7 @@ export function createFormsJobVoucherRoute(dependencies?: Dependencies) {
     await deps.requirePermission("view_customer_contact");
     await deps.requireAdminPermission("view_customers");
     await deps.requireAdminPermission("manage_prices");
-    if (!deps.enabled) throw new HttpError("The thank-you offer is currently unavailable.", 409);
+    if (!(typeof deps.enabled === "function" ? await deps.enabled() : deps.enabled)) throw new HttpError("The thank-you offer is currently unavailable.", 409);
     const { jobId } = await context.params;
     const detail = await deps.detail(jobId);
     if (!detail || (access.formProfile?.assignedOnly && detail.job.assignedUserId !== access.user.id)) {

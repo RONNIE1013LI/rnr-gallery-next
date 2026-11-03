@@ -1,5 +1,5 @@
 import { verifyReturningCustomerVoucher } from "./returning-customer-voucher";
-import { THANK_YOU_OFFER_ENABLED } from "@/domain/promotions/thank-you-offer";
+import { isThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 import { sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 
@@ -32,7 +32,7 @@ async function hasHistory(database: OfferDatabase, customerId: string, email: st
 }
 
 export async function isFirstOrderOfferEligible(database: OfferDatabase, customerId: string | null): Promise<boolean> {
-  if (!THANK_YOU_OFFER_ENABLED || !customerId) return false;
+  if (!customerId || !await isThankYouOfferEnabled(database)) return false;
   const email = await accountEmail(database, customerId);
   return email !== null && !await hasHistory(database, customerId, email);
 }
@@ -41,6 +41,9 @@ export async function isFirstOrderOfferEligible(database: OfferDatabase, custome
 // retain their reservation because an earlier external payment can still settle.
 export async function assertFirstOrderOfferAvailable(transaction: OfferDatabase, customerId: string, claimingOffer: boolean, claimingReturningOffer = false): Promise<void> {
   await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`first-order-customer:${customerId}`}, 0))`);
+  if ((claimingOffer || claimingReturningOffer) && !await isThankYouOfferEnabled(transaction)) {
+    throw new FirstOrderOfferConflictError("This promotion has ended. Refresh your checkout to see current pricing.");
+  }
   const email = await accountEmail(transaction, customerId);
   if (!email) throw new FirstOrderOfferConflictError();
   await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`first-order-offer:${email}`}, 0))`);
@@ -61,7 +64,7 @@ export class InvalidReturningVoucherError extends Error {
 }
 
 export async function isReturningOfferEligible(database: OfferDatabase, customerId: string | null): Promise<boolean> {
-  if (!THANK_YOU_OFFER_ENABLED || !customerId) return false;
+  if (!customerId || !await isThankYouOfferEnabled(database)) return false;
   const email = await accountEmail(database, customerId);
   return email !== null && !await hasHistory(database, customerId, email, "returning")
     && !await hasHistory(database, customerId, email, "reserved");
