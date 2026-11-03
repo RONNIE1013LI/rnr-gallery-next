@@ -94,6 +94,7 @@ describe("AdminShell", () => {
     expect(screen.getAllByRole("navigation", { name: "Administration" })).toHaveLength(1);
     for (const [name, href] of [
       ["Dashboard", "/admin"],
+      ["Promotions", "/admin/settings/promotions"],
       ["Orders", "/admin/orders"],
       ["Production", "/admin/jobs"],
       ["Customers", "/admin/customers"],
@@ -147,6 +148,31 @@ describe("AdminShell", () => {
     expect(screen.queryByRole("link", { name: "Payment Requests" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Audit Log" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { permissions: ["manage_content"] as const, shown: false },
+    { permissions: ["publish_content"] as const, shown: false },
+    { permissions: ["manage_content", "publish_content"] as const, shown: true },
+  ])("shows Promotions only with both required permissions: $shown", ({ permissions, shown }) => {
+    render(<AdminShell administrator={{ name: "Staff", email: "staff@example.test", role: "staff", permissions }}><p>Content</p></AdminShell>);
+    expect(Boolean(screen.queryByRole("link", { name: "Promotions" }))).toBe(shown);
+  });
+
+  it("puts Promotions directly below Dashboard on desktop and mobile, with current-page state", () => {
+    navigation.pathname = "/admin/settings/promotions";
+    render(<AdminShell administrator={{ name: "Owner", email: "owner@example.test", role: "admin", permissions: [] }}><p>Content</p></AdminShell>);
+    const desktop = screen.getByRole("navigation", { name: "Administration" });
+    const links = within(desktop).getAllByRole("link");
+    expect(links.slice(0, 2).map(link => link.textContent)).toEqual(["Dashboard", "Promotions"]);
+    expect(within(desktop).getByRole("link", { name: "Promotions" })).toHaveAttribute("aria-current", "page");
+    fireEvent.click(screen.getByRole("button", { name: "Open administration menu" }));
+    const mobile = screen.getByRole("navigation", { name: "Administration menu" });
+    const promotion = within(mobile).getByRole("link", { name: "Promotions" });
+    expect(promotion).toHaveAttribute("href", "/admin/settings/promotions");
+    promotion.addEventListener("click", event => event.preventDefault());
+    fireEvent.click(promotion);
+    expect(screen.queryByRole("navigation", { name: "Administration menu" })).not.toBeInTheDocument();
   });
 
   it("renders only navigation groups that contain a permitted destination", () => {

@@ -91,6 +91,12 @@ function Navigation({ ariaLabel = "Administration", role, permissions, pathname,
           {dashboardNavigation.label}
         </Link>
       ) : null}
+      {canOpen("manage_content") && canOpen("publish_content") ? (
+        <Link className={styles.navigationHome} href="/admin/settings/promotions" onClick={onNavigate}
+          aria-current={isActiveDestination(pathname, "/admin/settings/promotions") ? "page" : undefined}>
+          Promotions
+        </Link>
+      ) : null}
       {navigationGroups.map((group) => {
         const items = group.items.filter((item) => canOpen(item.permission));
         const expanded = !collapsible || expandedGroup === group.label;
