@@ -8,6 +8,7 @@ import {
 
 export type WebsiteAnalyticsRecord = Readonly<{
   eventId: string;
+  userId?: string;
   sessionId: string;
   visitorDigest: string;
   occurredAt: Date;
@@ -41,6 +42,7 @@ export function createWebsiteAnalyticsRepository(database: Database) {
 
         const [pageview] = await transaction.insert(websiteAnalyticsPageviews).values({
           id: input.eventId,
+          userId: input.userId ?? null,
           sessionId: input.sessionId,
           occurredAt: input.occurredAt,
           localDate: input.localDate,

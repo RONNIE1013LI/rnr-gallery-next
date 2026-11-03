@@ -1,11 +1,13 @@
 import { sql } from "drizzle-orm";
-import { bigint, check, index, jsonb, pgTable, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { bigint, check, index, jsonb, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import type { CartSnapshotItem, CartSnapshotStage } from "@/domain/analytics/cart-snapshot";
+import { user } from "./auth";
 import { websiteAnalyticsSessions } from "./analytics";
 
 /** Browser-entered estimates, not payment or authoritative checkout totals. */
 export const websiteAnalyticsCartSnapshots = pgTable("website_analytics_cart_snapshots", {
   id: uuid("id").primaryKey(),
+  userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
   sessionId: uuid("session_id").notNull()
     .references(() => websiteAnalyticsSessions.id, { onDelete: "cascade" }),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
@@ -15,6 +17,7 @@ export const websiteAnalyticsCartSnapshots = pgTable("website_analytics_cart_sna
   items: jsonb("items").$type<readonly CartSnapshotItem[]>().notNull(),
   fingerprint: varchar("fingerprint", { length: 64 }).notNull(),
 }, (table) => [
+  index("website_analytics_cart_snapshots_user_time_idx").on(table.userId, table.occurredAt, table.id),
   index("website_analytics_cart_snapshots_session_time_idx").on(table.sessionId, table.occurredAt),
   index("website_analytics_cart_snapshots_time_idx").on(table.occurredAt),
   check("website_analytics_cart_snapshots_fingerprint_valid", sql`${table.fingerprint} ~ '^[a-f0-9]{64}$'`),

@@ -1,3 +1,4 @@
+import { getAnalyticsUserId } from "@/server/analytics/website-analytics-user";
 import { parseAdvertisingConsent, ADVERTISING_CONSENT_COOKIE } from "@/domain/consent/advertising-consent";
 import { classifyWebsiteAttribution } from "@/domain/analytics/website-attribution";
 import { normalizeCountryCode } from "@/domain/analytics/website-analytics";
@@ -33,6 +34,7 @@ const BOT_USER_AGENT = /(?:bot|crawler|spider|slurp|headless|lighthouse|monitori
 type Dependencies = Readonly<{
   config?: WebsiteAnalyticsConfig;
   trustedOrigin?: string;
+  getUserId?: (headers: Headers) => Promise<string | null>;
   environment?: string;
   now?: () => Date;
   record?: (input: WebsiteAnalyticsRecord) => Promise<unknown>;
@@ -151,7 +153,9 @@ export function createWebsitePageviewRoute(dependencies: Dependencies = {}) {
         ? renewWebsiteAnalyticsSession(existingSession.sessionId, config.cookieSecret, now)
         : createdSession!.sessionCookie;
 
+      const userId = await (dependencies.getUserId ?? getAnalyticsUserId)(request.headers);
       await (dependencies.record ?? recordWebsiteAnalyticsPageview)({
+        ...(userId ? { userId } : {}),
         eventId: payload.eventId,
         sessionId,
         visitorDigest: websiteAnalyticsVisitorDigest(visitorId, config.cookieSecret),

@@ -1,3 +1,4 @@
+import { getAnalyticsUserId } from "@/server/analytics/website-analytics-user";
 import { cartSnapshotSchema } from "@/domain/analytics/cart-snapshot";
 import { ADVERTISING_CONSENT_COOKIE, parseAdvertisingConsent } from "@/domain/consent/advertising-consent";
 import { readWebsiteAnalyticsConfig, type WebsiteAnalyticsConfig } from "@/server/analytics/website-analytics-config";
@@ -21,6 +22,7 @@ type Dependencies = Readonly<{
   config?: WebsiteAnalyticsConfig;
   now?: () => Date;
   trustedOrigin?: string;
+  getUserId?: (headers: Headers) => Promise<string | null>;
   record?: (input: CartSnapshotInput) => Promise<"saved" | "duplicate" | "unlinked" | "unavailable">;
 }>;
 
@@ -47,7 +49,9 @@ export function createCartSnapshotRoute(dependencies: Dependencies = {}) {
       }
       const data = cartSnapshotSchema.safeParse(body);
       if (!data.success) return Response.json({ error: "Invalid cart snapshot" }, { status: 422, headers: noStore });
+      const userId = await (dependencies.getUserId ?? getAnalyticsUserId)(request.headers);
       const result = await (dependencies.record ?? recordWebsiteCartSnapshot)({
+        ...(userId ? { userId } : {}),
         sessionId: session.sessionId,
         visitorDigest: websiteAnalyticsVisitorDigest(visitor.visitorId, config.cookieSecret),
         snapshot: data.data,

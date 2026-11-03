@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createWebsiteAnalyticsIdentity, websiteAnalyticsVisitorDigest } from "@/server/analytics/website-analytics-cookies";
 import { createCartSnapshotRoute } from "./route-handler";
 
+vi.mock("@/server/analytics/website-analytics-user", () => ({ getAnalyticsUserId: vi.fn().mockResolvedValue(null) }));
+
 const secret = "test-cookie-secret-with-minimum-32-bytes";
 const now = new Date("2026-11-02T03:00:00Z");
 const identity = createWebsiteAnalyticsIdentity(secret, now);
@@ -88,5 +90,28 @@ describe("cart endpoint rejection boundaries", () => {
     record.mockRejectedValueOnce(new Error("private connection string"));
     const result = await route(request(valid)); expect(result.status).toBe(503);
     expect(await result.text()).not.toContain("private");
+  });
+});
+
+
+describe("authenticated event identity", () => {
+  it("uses only the server authenticated account", async () => {
+    const record = vi.fn().mockResolvedValue("saved");
+    const getUserId = vi.fn().mockResolvedValue("customer-a");
+    const POST = createCartSnapshotRoute({config: { enabled: true, cookieSecret: secret }, now: () => now,
+      trustedOrigin: origin, record, getUserId});
+    await POST(request(valid));
+    expect(getUserId).toHaveBeenCalledWith(expect.any(Headers));
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ userId: "customer-a" }));
+    getUserId.mockResolvedValue("customer-b");
+    await POST(request(valid));
+    expect(record).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "customer-b" }));
+  });
+  it("does not resolve account identity without analytics consent", async () => {
+    const getUserId = vi.fn(); const record = vi.fn();
+    const POST = createCartSnapshotRoute({config: { enabled: true, cookieSecret: secret }, now: () => now,
+      trustedOrigin: origin, record, getUserId});
+    await POST(request(valid, { analytics: false }));
+    expect(getUserId).not.toHaveBeenCalled(); expect(record).not.toHaveBeenCalled();
   });
 });

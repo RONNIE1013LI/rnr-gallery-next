@@ -26,6 +26,7 @@ import type {
 } from "@/server/analytics/website-analytics-attribution-v2";
 import { customerServiceConversations } from "./customer-service";
 import { orders } from "./orders";
+import { user } from "./auth";
 import { productionJobs } from "./production";
 
 export type WebsiteAnalyticsChannel =
@@ -84,6 +85,7 @@ export const websiteAnalyticsPageviews = pgTable(
   "website_analytics_pageviews",
   {
     id: uuid("id").primaryKey(),
+    userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
     sessionId: uuid("session_id")
       .notNull()
       .references(() => websiteAnalyticsSessions.id, { onDelete: "cascade" }),
@@ -92,6 +94,7 @@ export const websiteAnalyticsPageviews = pgTable(
     pathname: varchar("pathname", { length: 512 }).notNull(),
   },
   (table) => [
+    index("website_analytics_pageviews_user_time_idx").on(table.userId, table.occurredAt, table.id),
     index("website_analytics_pageviews_session_idx").on(table.sessionId),
     index("website_analytics_pageviews_local_path_session_idx")
       .on(table.localDate, table.pathname, table.sessionId),

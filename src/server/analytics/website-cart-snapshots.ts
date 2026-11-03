@@ -6,6 +6,7 @@ import { websiteAnalyticsCartSnapshots, websiteAnalyticsSessions } from "@/serve
 
 type Database = ReturnType<typeof getDatabase>;
 export type CartSnapshotInput = Readonly<{
+  userId?: string;
   sessionId: string;
   visitorDigest: string;
   snapshot: CartSnapshot;
@@ -29,19 +30,19 @@ export function createCartSnapshotRecorder(database: Database) {
           eq(websiteAnalyticsSessions.visitorDigest, visitorDigest)))
         .limit(1).for("update");
       if (!session) return "unlinked";
-      const [latest] = await tx.select({ fingerprint: websiteAnalyticsCartSnapshots.fingerprint })
+      const [latest] = await tx.select({ fingerprint: websiteAnalyticsCartSnapshots.fingerprint, userId: websiteAnalyticsCartSnapshots.userId })
         .from(websiteAnalyticsCartSnapshots)
         .where(eq(websiteAnalyticsCartSnapshots.sessionId, sessionId))
         .orderBy(desc(websiteAnalyticsCartSnapshots.occurredAt), desc(websiteAnalyticsCartSnapshots.id))
         .limit(1);
-      if (latest?.fingerprint === fingerprint) return "duplicate";
+      if (latest?.fingerprint === fingerprint && latest.userId === (input.userId ?? null)) return "duplicate";
       // Per-session cap protects operational storage from excessive client updates.
       const [counter] = await tx.select({ count: sql<number>`count(*)::int` })
         .from(websiteAnalyticsCartSnapshots)
         .where(eq(websiteAnalyticsCartSnapshots.sessionId, sessionId));
       if ((counter?.count ?? 0) >= 500) return "duplicate";
       await tx.insert(websiteAnalyticsCartSnapshots).values({
-        id: snapshot.eventId, sessionId, stage: snapshot.stage, occurredAt: sql`clock_timestamp()`,
+        id: snapshot.eventId, userId: input.userId ?? null, sessionId, stage: snapshot.stage, occurredAt: sql`clock_timestamp()`,
         currency: snapshot.currency, totalInclGstCents: snapshot.totalInclGstCents,
         items: snapshot.items, fingerprint,
       }).onConflictDoNothing();

@@ -6025,3 +6025,46 @@ button.paymentProofPreviewMedia {
 }
 .reviewRichText:focus { outline: 2px solid #365e49; outline-offset: 2px; }
 .reviewRichText p { margin: 0; }
+
+.userActivityList {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0 0;
+}
+
+.userActivityList > li {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--admin-border, #e8e8eb);
+  overflow-wrap: anywhere;
+}
+
+.userActivityList time {
+  color: var(--admin-muted);
+  font-size: 12px;
+}
+
+.userActivityList strong,
+.userActivityList a {
+  display: block;
+}
+
+.userActivityList a {
+  color: #345c45;
+  margin-top: 6px;
+}
+
+.userActivityList p,
+.userActivityList ul {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .userActivityList > li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}

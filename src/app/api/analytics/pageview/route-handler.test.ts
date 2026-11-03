@@ -6,6 +6,8 @@ import {
 } from "@/server/analytics/website-analytics-cookies";
 import { createWebsitePageviewRoute } from "./route-handler";
 
+vi.mock("@/server/analytics/website-analytics-user", () => ({ getAnalyticsUserId: vi.fn().mockResolvedValue(null) }));
+
 const origin = "https://rnrgallery.com";
 const secret = "test-only-cookie-secret-at-least-32-bytes";
 const now = new Date("2026-08-29T10:00:00.000Z");
@@ -237,5 +239,28 @@ describe("website pageview route", () => {
     });
     expect((await POST(request(body))).status).toBe(204);
     expect(record).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("authenticated event identity", () => {
+  it("uses only the server authenticated account", async () => {
+    const record = vi.fn().mockResolvedValue("saved");
+    const getUserId = vi.fn().mockResolvedValue("customer-a");
+    const POST = createWebsitePageviewRoute({config: { enabled: true, cookieSecret: secret }, now: () => now,
+      trustedOrigin: origin, record, getUserId});
+    await POST(request(body));
+    expect(getUserId).toHaveBeenCalledWith(expect.any(Headers));
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ userId: "customer-a" }));
+    getUserId.mockResolvedValue("customer-b");
+    await POST(request(body));
+    expect(record).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "customer-b" }));
+  });
+  it("does not resolve account identity without analytics consent", async () => {
+    const getUserId = vi.fn(); const record = vi.fn();
+    const POST = createWebsitePageviewRoute({config: { enabled: true, cookieSecret: secret }, now: () => now,
+      trustedOrigin: origin, record, getUserId});
+    await POST(request(body, { cookie: `rnr-consent-v1=${consent(false, false)}` }));
+    expect(getUserId).not.toHaveBeenCalled(); expect(record).not.toHaveBeenCalled();
   });
 });

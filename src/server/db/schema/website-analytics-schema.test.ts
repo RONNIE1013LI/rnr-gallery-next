@@ -298,8 +298,9 @@ describe("website analytics schema contract", () => {
       localDate: expect.anything(),
       pathname: expect.anything(),
     }));
-    expect(config.foreignKeys).toHaveLength(1);
-    expect(config.foreignKeys[0].onDelete).toBe("cascade");
+    expect(config.foreignKeys).toHaveLength(2);
+    expect(config.foreignKeys.find(key => key.reference().columns.includes(columns.sessionId))?.onDelete).toBe("cascade");
+    expect(config.foreignKeys.find(key => key.reference().columns.includes(columns.userId))?.onDelete).toBe("set null");
   });
 
   it("contains only dashboard-query indexes and approved checks", () => {
@@ -313,6 +314,7 @@ describe("website analytics schema contract", () => {
       "website_analytics_sessions_internal_local_date_idx",
     ]);
     expect(pageviewConfig.indexes.map((index) => index.config.name)).toEqual([
+      "website_analytics_pageviews_user_time_idx",
       "website_analytics_pageviews_session_idx",
       "website_analytics_pageviews_local_path_session_idx",
     ]);
