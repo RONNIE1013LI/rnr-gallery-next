@@ -1,4 +1,5 @@
 import { CataloguePage } from "@/components/catalogue-page";
+import { HomepagePromotion } from "@/components/homepage-promotion";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import { getRegistryProducts } from "@/domain/catalogue/product-registry";
 import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
@@ -41,6 +42,7 @@ export default async function ShopPage() {
       products={products}
       pricesInclTaxCents={pricesInclTaxCents}
     >
+      <HomepagePromotion />
       {suppliesEnabled ? <SuppliesEntry /> : null}
     </CataloguePage>
   );
