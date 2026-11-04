@@ -12,7 +12,7 @@ export function ConfiguratorPriceTotal({ totalCents, firstOrderTotalCents, curre
     <dt>{taxRegistered ? "Total incl GST" : "Total"}{showOffer ? <small className={styles.configuratorOfferLabel}>First-order price</small> : null}</dt>
     <dd className={showOffer ? styles.configuratorOfferPrices : undefined}>
       {showOffer ? <strong className={styles.configuratorOfferPrice}>20% OFF · now {formatMarketMoney(firstOrderTotalCents, currency)}</strong> : null}
-      <span>{formatMarketMoney(totalCents, currency)}</span>
+      <span className={showOffer ? styles.configuratorOriginalPrice : undefined}>{formatMarketMoney(totalCents, currency)}</span>
       {showOffer ? <small className={styles.configuratorOfferTerms}>Eligible first orders only. Sign up or sign in; 20% off is applied automatically in your cart. Shipping and urgent fees are excluded.</small> : null}
     </dd>
   </div>;

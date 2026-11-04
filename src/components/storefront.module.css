@@ -6175,3 +6175,10 @@
     text-align: left;
   }
 }
+
+.configuratorOriginalPrice {
+  text-decoration-line: line-through;
+  text-decoration-color: #b42318;
+  text-decoration-thickness: 2px;
+  white-space: nowrap;
+}
