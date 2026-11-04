@@ -125,9 +125,10 @@ async function history(status:string,promotion=false,customerId:string|null="cus
     expect(retried.pricingSnapshot).toEqual(stored.pricingSnapshot);
     await setPromotion("enabled");
     expect(await isFirstOrderOfferEligible(database, "customer-1")).toBe(true);
-    expect(await isReturningOfferEligible(database, "customer-1")).toBe(true);
-    await expect(repository.createAtomicOrder(await discountedOrderInput(returning)))
-      .resolves.toMatchObject({ totalInclGstCents: order.totalInclGstCents });
+    expect(await isReturningOfferEligible(database, "customer-1")).toBe(!returning);
+    const next = repository.createAtomicOrder(await discountedOrderInput(returning));
+    if (returning) await expect(next).rejects.toThrow("already been reserved or used");
+    else await expect(next).resolves.toMatchObject({ totalInclGstCents: order.totalInclGstCents });
   });
 
   it("permits discounted orders across multiple checkout sessions",async()=>{
@@ -180,21 +181,23 @@ async function history(status:string,promotion=false,customerId:string|null="cus
     await expect(resolveCustomerOffer(database,"customer-1",code+"X",secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
     await expect(resolveCustomerOffer(database,"customer-1",42,secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
   });
-  it.each(["awaiting_payment","processing","failed","cancelled","paid","refunded"])("permits the returning voucher again after %s",async(status)=>{
+  it.each(["awaiting_payment","processing","failed","cancelled","paid","refunded"])("blocks the returning voucher after %s while keeping base 20% available",async(status)=>{
     await pool.query("insert into orders (id,customer_id,customer_email,payment_status,pricing_snapshot) values($1,$2,$3,$4,$5)",[randomUUID(),"customer-1","new@example.test",status,JSON.stringify({promotion:{key:"returning-customer-36-v1"}})]);
-    expect(await isReturningOfferEligible(database,"customer-1")).toBe(true);
-    await expect(database.transaction(tx=>assertFirstOrderOfferAvailable(tx,"customer-1",false,true))).resolves.toBeUndefined();
+    expect(await isReturningOfferEligible(database,"customer-1")).toBe(false);
+    expect(await isFirstOrderOfferEligible(database,"customer-1")).toBe(true);
+    await expect(database.transaction(tx=>assertFirstOrderOfferAvailable(tx,"customer-1",false,true))).rejects.toThrow("already been reserved or used");
   });
-  it("permits repeated actual returning-customer voucher orders and preserves invoice pricing",async()=>{
+  it("permits only one concurrent returning-voucher order and preserves invoice pricing",async()=>{
     await history("paid");
     const inputs=await Promise.all([discountedOrderInput(true),discountedOrderInput(true)]);
     const repository=createDrizzleOrderRepository(database);
     const results=await Promise.allSettled(inputs.map(input=>repository.createAtomicOrder(input)));
-    expect(results.filter(result=>result.status==="fulfilled")).toHaveLength(2);
-    expect(results.filter(result=>result.status==="rejected")).toHaveLength(0);
+    expect(results.filter(result=>result.status==="fulfilled")).toHaveLength(1);
+    expect(results.filter(result=>result.status==="rejected")).toHaveLength(1);
     const successful=results.find(result=>result.status==="fulfilled") as PromiseFulfilledResult<Awaited<ReturnType<typeof repository.createAtomicOrder>>>;
     expect(successful.value.totalInclGstCents).toBe(9568);
-    const input=inputs[0];
+    const winningIndex=results[0].status==="fulfilled"?0:1;
+    const input=inputs[winningIndex];
     const [item]=await database.select().from(orderItems).where(eq(orderItems.orderId,successful.value.id));
     const snapshot=buildWebProductionJobSnapshot({order:successful.value,cart:input.cart,billingAddress:input.billingAddress,
       deliveryAddress:input.deliveryAddress,deliveryMethod:"pickup",orderItemIds:[item.id],paymentStatus:"paid",now:input.now})!;
@@ -203,8 +206,33 @@ async function history(status:string,promotion=false,customerId:string|null="cus
     expect(seed?.totals?.totalInclGstCents).toBe(9568);
     expect(seed?.items[0].rateInclGstCents).toBe(4784);
 
-    expect(await isReturningOfferEligible(database,"customer-1")).toBe(true);
-    expect(await repository.createAtomicOrder(inputs[0])).toMatchObject({id:successful.value.id,totalInclGstCents:9568});
+    expect(await isReturningOfferEligible(database,"customer-1")).toBe(false);
+    expect(await repository.createAtomicOrder(input)).toMatchObject({id:successful.value.id,totalInclGstCents:9568});
+  });
+
+  it("rechecks campaign state after waiting for a returning-voucher lock", async () => {
+    const blocker = await pool.connect();
+    let outcome: Promise<{ value: unknown; error: unknown }> | undefined;
+    try {
+      await blocker.query("begin");
+      await blocker.query("select pg_advisory_xact_lock(hashtextextended($1,0))", ["returning-voucher-customer:customer-1"]);
+      const repository = createDrizzleOrderRepository(database);
+      outcome = repository.createAtomicOrder(await discountedOrderInput(true))
+        .then(value => ({ value, error: null }), error => ({ value: null, error }));
+      let waiting = false;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const locks = await pool.query("select exists(select 1 from pg_locks where locktype='advisory' and not granted) as waiting");
+        if (locks.rows[0]?.waiting) { waiting = true; break; }
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe(true);
+      await setPromotion("disabled");
+    } finally {
+      await blocker.query("rollback"); blocker.release();
+    }
+    const result = await outcome!;
+    expect(result.error).toMatchObject({ message: "This promotion has ended. Refresh your checkout to see current pricing." });
+    expect(Number((await pool.query("select count(*) from orders")).rows[0].count)).toBe(0);
   });
 
 });

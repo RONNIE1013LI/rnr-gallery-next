@@ -85,7 +85,7 @@ export function HomepagePromotion({ market = "NZ" }: Readonly<{ market?: Market 
           </div>
         </div>
         <footer className={styles.footer}>
-          <p>Returning customers: message our team with your previous order number to claim your account-bound voucher. Sign in and reuse it for an extra 20% off on every order during the promotion (36% total).</p>
+          <p>Returning customers: message our team with your previous order number to claim your account-bound voucher. Sign in and apply it to one order for an extra 20% off (36% total). Each voucher can be used once.</p>
         </footer>
       </section>
     </div>,

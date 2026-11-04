@@ -95,7 +95,7 @@ describe("admin returning voucher issuance", () => {
     const secret = vi.fn(() => "unused-signing-secret");
     const response = await createAdminCustomerVoucherRoute({ ...deps, secret }).POST(request(), context);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "The promotion is unavailable or this customer does not have a registered account. Review the promotion setting and customer account." });
+    expect(await response.json()).toEqual({ error: "The promotion is unavailable, or this account-bound voucher has already been reserved or used. Review the promotion setting and customer account." });
     expect(deps.canIssue).toHaveBeenCalledWith("customer-1");
     expect(secret).not.toHaveBeenCalled();
     expect(deps.audit).not.toHaveBeenCalled();

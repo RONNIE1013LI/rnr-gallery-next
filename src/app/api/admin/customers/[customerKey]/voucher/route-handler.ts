@@ -54,7 +54,7 @@ export function createAdminCustomerVoucherRoute(dependencies?: Dependencies) {
         if (!detail) throw new HttpError("Customer not found.", 404);
         if (!detail.account) throw new HttpError("The customer must register an account before a voucher can be generated.", 422);
         if (!await deps.canIssue(detail.account.id)) {
-          throw new HttpError("The promotion is unavailable or this customer does not have a registered account. Review the promotion setting and customer account.", 409);
+          throw new HttpError("The promotion is unavailable, or this account-bound voucher has already been reserved or used. Review the promotion setting and customer account.", 409);
         }
         const code = createReturningCustomerVoucher(detail.account.id, deps.secret());
         await deps.audit({

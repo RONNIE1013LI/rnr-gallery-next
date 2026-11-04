@@ -78,7 +78,7 @@ export function PromotionSettingsForm({ initialEnabled }: Readonly<{ initialEnab
       </p>
       <p className={styles.mutedText}>
         Submitted orders and their payment amounts are retained. The cart voucher field stays available.
-        While enabled, the base 20% discount and valid account-bound returning vouchers can be used on multiple orders.
+        While enabled, the base 20% discount applies on every order; each account-bound returning voucher can be used once. Re-enabling does not reset voucher usage.
       </p>
       <p className={styles.mutedText}>After saving, refresh any already-open storefront or order-system pages to see the updated display.</p>
       <div>

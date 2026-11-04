@@ -51,10 +51,15 @@ describe("unlimited promotional orders", () => {
     expect(await resolveCustomerOffer(database, null, undefined, "")).toEqual({ firstOrderDiscount: true, returningCustomerDiscount: false });
     expect(execute).not.toHaveBeenCalled();
   });
-  it("allows the same valid account voucher repeatedly but rejects another account or guest", async () => {
-    const { database } = enabledDatabase(); const secret = "test-only-voucher-secret-0123456789abcdef";
+  it("allows an unused account voucher once and rejects reuse, another account and guests", async () => {
+    const { database, execute } = enabledDatabase(); const secret = "test-only-voucher-secret-0123456789abcdef";
     const code = createReturningCustomerVoucher("repeat-customer", secret);
-    for (let n = 0; n < 2; n++) expect(await resolveCustomerOffer(database, "repeat-customer", code, secret)).toEqual({ firstOrderDiscount: false, returningCustomerDiscount: true });
+    execute.mockReset().mockResolvedValue({ rows: [] });
+    execute.mockResolvedValueOnce({ rows: [{ email: "returning@example.test" }] }).mockResolvedValueOnce({ rows: [] });
+    expect(await resolveCustomerOffer(database, "repeat-customer", code, secret)).toEqual({ firstOrderDiscount: false, returningCustomerDiscount: true });
+    execute.mockResolvedValueOnce({ rows: [{ email: "returning@example.test" }] }).mockResolvedValueOnce({ rows: [{ id: "reserved-order" }] });
+    await expect(resolveCustomerOffer(database, "repeat-customer", code, secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
+    expect(await resolveCustomerOffer(database, "repeat-customer", undefined, secret)).toEqual({ firstOrderDiscount: true, returningCustomerDiscount: false });
     await expect(resolveCustomerOffer(database, "other", code, secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
     await expect(resolveCustomerOffer(database, null, code, secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
   });

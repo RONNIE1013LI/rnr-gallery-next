@@ -32,7 +32,7 @@ describe("HomepagePromotion", () => {
     expect(screen.getByText("NO CODE NEEDED")).toBeVisible();
     expect(screen.getByText("EVERY ORDER: 20% OFF")).toBeVisible();
     expect(screen.getByText("Your 20% discount is automatically applied in your cart on every order during the promotion.")).toBeVisible();
-    expect(screen.getByText(/claim your account-bound voucher.*reuse it for an extra 20% off on every order/)).toBeVisible();
+    expect(screen.getByText(/claim your account-bound voucher.*Each voucher can be used once/)).toBeVisible();
   });
 
   it("uses mobile artwork without cropping and keeps the AU signup destination", async () => {
