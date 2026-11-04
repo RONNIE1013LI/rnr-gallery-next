@@ -31,6 +31,7 @@ import {
 } from "@/domain/scheduling/urgent-service";
 import { createClientId } from "@/lib/client-id";
 import type { ProductConfiguratorProps } from "./product-configurator";
+import { ConfiguratorPriceTotal } from "./configurator-price-total";
 import { PurchaseTrustStrip } from "./purchase-trust-strip";
 import {
   SourcePhotoCustomisation,
@@ -117,6 +118,7 @@ export function BannerBundleConfigurator({
   createId = createClientId,
   selectedDesign = null,
   initialSizeKey,
+  firstOrderOfferEnabled = false,
 }: BannerBundleConfiguratorProps) {
   const [sizeKey, setSizeKey] = useState(
     initialSizeKey && schema.sizes.some((size) => size.key === initialSizeKey)
@@ -212,8 +214,8 @@ export function BannerBundleConfigurator({
     })),
     [emptyBundleCounts, market, product.key, registry, schema.sizes],
   );
-  const quote = useMemo(
-    () => quoteMarketConfiguration(registry, market, product.key, {
+  const { quote, firstOrderQuote } = useMemo(() => {
+    const selection = {
       sizeKey,
       peoplePets: 0,
       bundleCounts: {
@@ -232,8 +234,16 @@ export function BannerBundleConfigurator({
         urgentServiceConfirmed && urgentService?.requiresConfirmation
           ? urgentService.workingDays
           : undefined,
-    }),
+    };
+    return {
+      quote: quoteMarketConfiguration(registry, market, product.key, selection),
+      firstOrderQuote: firstOrderOfferEnabled
+        ? quoteMarketConfiguration(registry, market, product.key, selection, { firstOrderDiscount: true })
+        : null,
+    };
+  },
     [
+      firstOrderOfferEnabled,
       market,
       product.key,
       registry,
@@ -399,10 +409,9 @@ export function BannerBundleConfigurator({
                 <dt>{market === "NZ" ? "Includes GST (15%)" : "Includes Australian GST"}</dt>
                 <dd>{formatMarketMoney(quote.gstCents, currency)}</dd>
               </div> : null}
-              <div className={styles.priceTotal}>
-                <dt>{taxRegistered ? "Total incl GST" : "Total"}</dt>
-                <dd>{formatMarketMoney(quote.totalInclGstCents, currency)}</dd>
-              </div>
+              <ConfiguratorPriceTotal totalCents={quote.totalInclGstCents}
+                firstOrderTotalCents={firstOrderQuote?.totalInclGstCents ?? null}
+                currency={currency} taxRegistered={taxRegistered} />
             </dl>
             <PurchaseTrustStrip />
             <button

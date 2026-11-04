@@ -59,6 +59,7 @@ export function ConfigurePageContent({
   selectedDesign,
   relatedDesigns,
   initialSizeKey,
+  firstOrderOfferEnabled = false,
 }: Readonly<{
   product: Product;
   schema: ProductConfigurationSchema;
@@ -69,6 +70,7 @@ export function ConfigurePageContent({
   selectedDesign: GalleryDesignSelection | null;
   relatedDesigns: readonly ProductConfiguratorRelatedDesign[];
   initialSizeKey?: string;
+  firstOrderOfferEnabled?: boolean;
 }>) {
   const sharedProps = {
     product,
@@ -80,6 +82,7 @@ export function ConfigurePageContent({
     selectedDesign,
     relatedDesigns,
     initialSizeKey,
+    firstOrderOfferEnabled,
   };
   const analyticsSizeKey = initialSizeKey ?? schema.defaultSizeKey;
   const analyticsEvent = buildConfigureViewEvent({

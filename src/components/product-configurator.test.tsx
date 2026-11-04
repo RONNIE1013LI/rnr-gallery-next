@@ -1019,4 +1019,26 @@ describe("ProductConfigurator", () => {
       price: { totalInclGstCents: 12_075 },
     });
   });
+  it("previews the first-order price, updates with customisation and preserves base cart pricing", () => {
+    render(<ProductConfigurator product={product} schema={schema} registry={defaultProductRegistry}
+      firstOrderOfferEnabled orderDate="2026-08-03" createId={() => "preview-only-item"} />);
+    const summary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(within(summary).getByText("20% OFF · now NZ$96.60")).toBeInTheDocument();
+    expect(within(summary).getByText("NZ$120.75")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Increase Face or Pets" }));
+    expect(within(summary).getByText("20% OFF · now NZ$115.00")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
+    fireEvent.change(screen.getByLabelText("Production completion date"), { target: { value: "2026-08-05" } });
+    fireEvent.click(screen.getByLabelText("Confirm urgent service"));
+    expect(within(summary).getByText("20% OFF · now NZ$165.00")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add to Cart — Send Photos Later" }));
+    const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
+    expect(stored.items[0].price.totalInclGstCents).toBe(19375);
+  });
+  it("hides the first-order preview when the campaign is disabled", () => {
+    render(<ProductConfigurator product={product} schema={schema} registry={defaultProductRegistry}
+      firstOrderOfferEnabled={false} orderDate="2026-08-03" />);
+    expect(screen.queryByText(/20% OFF/)).not.toBeInTheDocument();
+  });
+
 });

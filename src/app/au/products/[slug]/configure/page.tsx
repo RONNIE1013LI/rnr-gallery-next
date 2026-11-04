@@ -1,3 +1,4 @@
+import { getPublicThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AustraliaUnavailable } from "@/components/market-unavailable";
@@ -76,6 +77,7 @@ export default async function AustraliaConfigurePage({ params, searchParams }: C
   return (
     <ConfigurePageContent
       product={product}
+      firstOrderOfferEnabled={await getPublicThankYouOfferEnabled()}
       schema={schema}
       pricing={registry.pricing}
       registry={registry}

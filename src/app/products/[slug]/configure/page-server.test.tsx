@@ -2,16 +2,17 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import ConfigurePage from "./page";
 
-const mocks = vi.hoisted(() => ({ candidates: vi.fn(), available: vi.fn() }));
+const mocks = vi.hoisted(() => ({ candidates: vi.fn(), available: vi.fn(), offerEnabled: vi.fn() }));
 vi.mock("@/server/admin/product-registry-runtime", () => ({ getSafePublicProductRegistry: async () => ({ registry: defaultProductRegistry }) }));
 vi.mock("@/server/gallery/gallery-runtime", () => ({ getGalleryRuntime: () => ({
   repository: { listActiveCandidates: mocks.candidates },
   store: { isAvailable: mocks.available },
   selectionService: { resolve: async () => null },
 }) }));
+vi.mock("@/server/promotions/thank-you-offer-state", () => ({ getPublicThankYouOfferEnabled: mocks.offerEnabled }));
 vi.mock("./page-content", () => ({ ConfigurePageContent: () => null }));
 
-beforeEach(() => { vi.clearAllMocks(); mocks.available.mockResolvedValue(true); });
+beforeEach(() => { vi.clearAllMocks(); mocks.available.mockResolvedValue(true); mocks.offerEnabled.mockResolvedValue(false); });
 it("limits oil banner inspiration to eight available designs", async () => {
   const designs = Array.from({ length: 12 }, (_, index) => ({
     id: String(index).padStart(64, "0"), productSlug: "digital-oil-painting-banner", productTypeSlug: "wall-hanging-banners",
@@ -53,4 +54,10 @@ it("falls back when exact style images are unavailable and prefers available exa
   expect((await ConfigurePage(props)).props.relatedDesigns.map((d: { id: string }) => d.id)).toEqual(["exact", "family"]);
   mocks.available.mockImplementation(async (key: string) => key !== "exact.jpg");
   expect((await ConfigurePage(props)).props.relatedDesigns.map((d: { id: string }) => d.id)).toEqual(["family"]);
+});
+
+it.each([true, false])("forwards the saved promotion state %s to Configure", async enabled => {
+  mocks.offerEnabled.mockResolvedValue(enabled); mocks.candidates.mockResolvedValue([]);
+  const result = await ConfigurePage({params: Promise.resolve({slug: "digital-oil-painting-canvas"}), searchParams: Promise.resolve({})});
+  expect(result.props.firstOrderOfferEnabled).toBe(enabled);
 });

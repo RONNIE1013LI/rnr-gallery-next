@@ -1,3 +1,4 @@
+import { getPublicThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 import { galleryDesignTypeForProduct } from "@/domain/gallery/taxonomy";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
@@ -108,6 +109,7 @@ export default async function ConfigurePage({ params, searchParams }: ConfigureP
 
   return <ConfigurePageContent
     product={product}
+    firstOrderOfferEnabled={await getPublicThankYouOfferEnabled()}
     schema={schema}
     pricing={registry.pricing}
     registry={registry}

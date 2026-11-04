@@ -43,6 +43,7 @@ import { useContainedDialog } from "./forms/use-contained-dialog";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { CanvasProductPreview } from "./canvas-product-preview";
 import { RollUpBannerPreview } from "./roll-up-banner-preview";
+import { ConfiguratorPriceTotal } from "./configurator-price-total";
 import { PurchaseTrustStrip } from "./purchase-trust-strip";
 import { AnalyticsEventTracker } from "./analytics-event-tracker";
 import {
@@ -78,6 +79,7 @@ export type ProductConfiguratorProps = Readonly<{
   selectedDesign?: GalleryDesignSelection | null;
   relatedDesigns?: readonly ProductConfiguratorRelatedDesign[];
   initialSizeKey?: string;
+  firstOrderOfferEnabled?: boolean;
 }>;
 
 export function ProductConfigurator({
@@ -91,6 +93,7 @@ export function ProductConfigurator({
   selectedDesign = null,
   relatedDesigns = [],
   initialSizeKey,
+  firstOrderOfferEnabled = false,
 }: ProductConfiguratorProps) {
   const ProductPreview = product.slug === "roll-up-banner" ? RollUpBannerPreview : fabricBannerDefaults[product.slug] ? FabricBannerPreview : CanvasProductPreview;
   const designInspiration = selectedDesign;
@@ -244,18 +247,18 @@ export function ProductConfigurator({
     })),
     [market, orientation, pricing, product.key, registry, schema],
   );
-  const quote = useMemo(
-    () => registry
-      ? quoteMarketConfiguration(registry, market, product.key, {
-          sizeKey,
-          peoplePets,
-          sourcePhotoCount: uploadReferences.length,
-          extraBackgroundRemovalCount: activeBackgroundRemovalUploadIds.length,
-          urgentWorkingDays: urgentServiceConfirmed && urgentService?.requiresConfirmation
-            ? urgentService.workingDays
-            : undefined,
-        })
-      : quoteConfiguration(
+  const { quote, firstOrderQuote } = useMemo(() => {
+    const selection = {
+      sizeKey,
+      peoplePets,
+      sourcePhotoCount: uploadReferences.length,
+      extraBackgroundRemovalCount: activeBackgroundRemovalUploadIds.length,
+      urgentWorkingDays: urgentServiceConfirmed && urgentService?.requiresConfirmation
+        ? urgentService.workingDays
+        : undefined,
+    };
+    return {
+      quote: registry ? quoteMarketConfiguration(registry, market, product.key, selection) : quoteConfiguration(
           schema,
           {
             sizeKey,
@@ -268,7 +271,13 @@ export function ProductConfigurator({
           },
           { peoplePetsPricing: pricing },
         ),
+      firstOrderQuote: firstOrderOfferEnabled && registry
+        ? quoteMarketConfiguration(registry, market, product.key, selection, { firstOrderDiscount: true })
+        : null,
+    };
+  },
     [
+      firstOrderOfferEnabled,
       peoplePets,
       market,
       pricing,
@@ -478,10 +487,9 @@ export function ProductConfigurator({
               <dt>{market === "NZ" ? "Includes GST (15%)" : "Includes Australian GST"}</dt>
               <dd>{formatMarketMoney(quote.gstCents, currency)}</dd>
             </div> : null}
-            <div className={styles.priceTotal}>
-              <dt>{taxRegistered ? "Total incl GST" : "Total"}</dt>
-              <dd>{formatMarketMoney(quote.totalInclGstCents, currency)}</dd>
-            </div>
+            <ConfiguratorPriceTotal totalCents={quote.totalInclGstCents}
+              firstOrderTotalCents={firstOrderQuote?.totalInclGstCents ?? null}
+              currency={currency} taxRegistered={taxRegistered} />
           </dl>
           <PurchaseTrustStrip />
           <button

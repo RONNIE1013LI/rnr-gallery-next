@@ -522,4 +522,14 @@ describe("BannerBundleConfigurator", () => {
     expect(narrow).toMatch(/\.previewDetails > div\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
     expect(narrow).toMatch(/\.previewDetails dd\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow-wrap:\s*anywhere;/);
   });
+  it("shows the same first-order preview for banner bundles and follows the campaign flag", () => {
+    const view = render(<BannerBundleConfigurator product={product} schema={schema} registry={defaultProductRegistry}
+      firstOrderOfferEnabled orderDate="2026-08-17" />);
+    const summary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(within(summary).getByText(/20% OFF · now NZ\$/)).toBeInTheDocument();
+    view.rerender(<BannerBundleConfigurator product={product} schema={schema} registry={defaultProductRegistry}
+      firstOrderOfferEnabled={false} orderDate="2026-08-17" />);
+    expect(screen.queryByText(/20% OFF/)).not.toBeInTheDocument();
+  });
+
 });
