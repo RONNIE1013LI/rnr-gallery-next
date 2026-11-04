@@ -39,7 +39,7 @@ const inputSchema = z.object({
   previousOrderNumber: z.string().max(100).regex(VOUCHER_ORDER_REFERENCE_PATTERN),
   verified: z.literal(true),
 }).strict();
-const unavailable = "An offer is already reserved or this returning-customer voucher has been used. Resume the existing order or review the customer account.";
+const unavailable = "The promotion is unavailable or this customer does not have a registered account. Review the promotion setting and customer account.";
 const registerFirst = "The customer must register an account using this saved email before a voucher can be generated.";
 
 function errorResponse(error: unknown) {

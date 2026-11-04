@@ -38,7 +38,7 @@ const systemContentDefinitions = Object.freeze([
     key: THANK_YOU_OFFER_CONTENT_KEY,
     group: "Promotions",
     label: "Anniversary promotion",
-    description: "Controls new first-order offers and returning-customer vouchers. Existing submitted order prices are preserved.",
+    description: "Controls reusable 20% promotional pricing and returning-customer vouchers. Existing submitted order prices are preserved.",
     maxLength: 8,
     multiline: false,
     defaultValue: "enabled",

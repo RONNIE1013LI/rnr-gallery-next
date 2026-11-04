@@ -460,11 +460,9 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
             throw new AtomicOrderStateError();
           }
 
-          if (locked.customerId) {
-            await assertFirstOrderOfferAvailable(transaction, locked.customerId, input.cart.promotion?.key === "first-order-20-v1", input.cart.promotion?.key === "returning-customer-36-v1");
-          } else if (input.cart.promotion) {
-            throw new AtomicOrderStateError("Sign in to use the first-order offer.");
-          }
+          await assertFirstOrderOfferAvailable(transaction, locked.customerId,
+            input.cart.promotion?.key === "first-order-20-v1",
+            input.cart.promotion?.key === "returning-customer-36-v1");
 
           let shippingQuoteId: string | null = null;
           const shippingSnapshot = input.shipping.kind === "pickup"

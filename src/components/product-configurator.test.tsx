@@ -1023,6 +1023,9 @@ describe("ProductConfigurator", () => {
     render(<ProductConfigurator product={product} schema={schema} registry={defaultProductRegistry}
       firstOrderOfferEnabled orderDate="2026-08-03" createId={() => "preview-only-item"} />);
     const summary = screen.getByRole("complementary", { name: "Order summary" });
+    const currentPrice = screen.getByLabelText("Current price");
+    expect(within(currentPrice).getByText("NZ$120.75 incl GST")).toHaveClass(styles.configuratorOriginalPrice);
+    expect(within(currentPrice).getByText("20% OFF · now NZ$96.60 incl GST")).toHaveClass(styles.configuratorOfferPrice);
     expect(within(summary).getByText("20% OFF · now NZ$96.60")).toBeInTheDocument();
     expect(within(summary).getByText("NZ$120.75")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Increase Face or Pets" }));

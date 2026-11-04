@@ -170,7 +170,7 @@ describe("CartView", () => {
       } });
     }));
     render(<CartView />);
-    expect(await screen.findByText("First-order discount (20%)")).toBeVisible();
+    expect(await screen.findByText("Promotion discount (20%)")).toBeVisible();
     expect(screen.getByText("−NZ$14.95")).toBeVisible();
     expect(screen.getByText("NZ$59.80")).toBeVisible();
     expect(localStorage.getItem("rnr:commerce:v1:guest:cart")).toBe(original);

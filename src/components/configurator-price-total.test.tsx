@@ -7,7 +7,7 @@ describe("configurator total preview", () => {
     const offer = screen.getByText("20% OFF · now NZ$96.60");
     expect(offer.tagName).toBe("STRONG"); expect(offer.className).toContain("configuratorOfferPrice");
     expect(screen.getByText("NZ$120.75")).toBeInTheDocument();
-    expect(screen.getByText("First-order price")).toBeInTheDocument();
+    expect(screen.getByText("Promotional price")).toBeInTheDocument();
   });
   it("keeps the ordinary total when the promotion is off", () => {
     render(<dl><ConfiguratorPriceTotal totalCents={12075} firstOrderTotalCents={null} currency="NZD" taxRegistered /></dl>);

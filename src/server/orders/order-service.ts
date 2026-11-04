@@ -199,7 +199,7 @@ export function createOrderService({
       const returningCustomerDiscount = state.cartSnapshot.promotion?.key === "returning-customer-36-v1"
         && Boolean(returningCustomerOfferEligible && await returningCustomerOfferEligible(state.customerId));
       if (state.cartSnapshot.promotion?.key === "returning-customer-36-v1" && !returningCustomerDiscount) {
-        throw new OrderStateChangedError("This voucher has already been reserved or used. Resume your existing order or remove the voucher and review checkout again.");
+        throw new OrderStateChangedError("This voucher is unavailable for your account or the promotion has ended. Remove the voucher and review checkout again.");
       }
       const firstOrderDiscount = !returningCustomerDiscount && Boolean(firstOrderOfferEligible
         && await firstOrderOfferEligible(state.customerId));

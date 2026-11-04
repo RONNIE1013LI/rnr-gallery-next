@@ -30,9 +30,9 @@ describe("HomepagePromotion", () => {
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute("href", "/account/register?next=%2Fshop");
     expect(screen.getByRole("link", { name: "Message our team" })).toHaveAttribute("href", "https://m.me/RandRgallery");
     expect(screen.getByText("NO CODE NEEDED")).toBeVisible();
-    expect(screen.getByText("FIRST ORDER: 20% OFF")).toBeVisible();
-    expect(screen.getByText("Sign up and sign in. Your 20% discount is automatically applied in your cart.")).toBeVisible();
-    expect(screen.getByText("Returning customers: message our team with your previous order number to claim your account-bound voucher.")).toBeVisible();
+    expect(screen.getByText("EVERY ORDER: 20% OFF")).toBeVisible();
+    expect(screen.getByText("Your 20% discount is automatically applied in your cart on every order during the promotion.")).toBeVisible();
+    expect(screen.getByText(/claim your account-bound voucher.*reuse it for an extra 20% off on every order/)).toBeVisible();
   });
 
   it("uses mobile artwork without cropping and keeps the AU signup destination", async () => {

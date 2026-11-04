@@ -41,7 +41,7 @@ export default async function CheckoutStartPage() {
             className={styles.checkoutContinuation}
           >
             <h2 id="checkout-account-title">Check out with your R&amp;R Gallery account</h2>
-            {offerEnabled ? <p>First custom artwork order? Create an account to get 20% off automatically, including customisation. Delivery and urgent service are excluded.</p> : null}
+            {offerEnabled ? <p>Every order gets 20% off automatically during this promotion, including customisation. Sign in to apply your returning-customer voucher for an extra 20% off. Delivery and urgent service are excluded.</p> : null}
 
             <AuthGateway
               configuredProviders={customerProviders}

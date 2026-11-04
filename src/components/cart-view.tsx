@@ -390,11 +390,11 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
         {quotePending ? <p role="status">Confirming your cart total and account offers…</p> : null}
         {currentResult?.error ? <div><p role="alert">{currentResult.error}</p><button className={styles.secondaryButton} type="button"
           onClick={() => setVoucherRequest({ customerId, code: voucherCode, persist: voucherRequest.persist, revision: voucherRequest.revision + 1 })}>Retry quote</button></div> : null}
-        {(customerId === null || currentResult?.signedIn === false) ? <p className={styles.cartAssurance}><Link href="/account/sign-in?next=%2Fcart">Sign in for account offers</Link> to check your first-order discount or use an account-bound returning customer voucher.</p> : null}
+        {(customerId === null || currentResult?.signedIn === false) ? <p className={styles.cartAssurance}><Link href="/account/sign-in?next=%2Fcart">Sign in for account offers</Link> to use your account-bound returning customer voucher for an extra 20% off.</p> : null}
         {quote ? <>
           <dl className={styles.priceLines}>
             <div><dt>{quote.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt><dd>{formatMarketMoney(quote.totalInclGstCents + quote.discountCents, quote.currency)}</dd></div>
-            {quote.promotion?.key === "first-order-20-v1" ? <div><dt>First-order discount (20%)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.discountCents, quote.currency)}</dd></div> : null}
+            {quote.promotion?.key === "first-order-20-v1" ? <div><dt>Promotion discount (20%)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.discountCents, quote.currency)}</dd></div> : null}
             {quote.promotion?.key === "returning-customer-36-v1" ? <>
               <div><dt>Returning customer discount (20%)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.promotion.baseDiscountCents, quote.currency)}</dd></div>
               <div><dt>Extra discount (20% after base discount)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.promotion.extraDiscountCents, quote.currency)}</dd></div>

@@ -65,13 +65,13 @@ export function HomepagePromotion({ market = "NZ" }: Readonly<{ market?: Market 
         </button>
         <h2 id="homepage-promotion-title" className={styles.srOnly}>Limited-time offer: save 36% in total</h2>
         <p id="homepage-promotion-description" className={styles.srOnly}>
-          Sign up and sign in for 20% off your first order, automatically applied in your cart. No code needed. Returning customers: send your previous order number to our team
+          Get 20% off every order during this promotion, automatically applied in your cart. No code or sign-in needed for the base discount. Returning customers: send your previous order number to our team
           to claim an extra 20% off the discounted price. For example, $100 becomes $80, then $64.
           Limited time only. Offer ends when this banner is removed.
         </p>
         <header className={styles.firstOrderNotice}>
-          <p className={styles.firstOrderHeading}>FIRST ORDER: 20% OFF <strong className={styles.noCodeBadge}>NO CODE NEEDED</strong></p>
-          <p>Sign up and sign in. Your 20% discount is automatically applied in your cart.</p>
+          <p className={styles.firstOrderHeading}>EVERY ORDER: 20% OFF <strong className={styles.noCodeBadge}>NO CODE NEEDED</strong></p>
+          <p>Your 20% discount is automatically applied in your cart on every order during the promotion.</p>
         </header>
         <div className={styles.artwork}>
           <picture>
@@ -85,7 +85,7 @@ export function HomepagePromotion({ market = "NZ" }: Readonly<{ market?: Market 
           </div>
         </div>
         <footer className={styles.footer}>
-          <p>Returning customers: message our team with your previous order number to claim your account-bound voucher.</p>
+          <p>Returning customers: message our team with your previous order number to claim your account-bound voucher. Sign in and reuse it for an extra 20% off on every order during the promotion (36% total).</p>
         </footer>
       </section>
     </div>,

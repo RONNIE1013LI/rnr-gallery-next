@@ -175,7 +175,7 @@ describe("CheckoutOrderSummary", () => {
 it("shows original products, the first-order discount, unchanged shipping and the actual total", () => {
   const cart: RepricedCheckoutCart = { version:1, market:"NZ",currency:"NZD",taxJurisdiction:"NZ_GST",taxRateBasisPoints:1500,priceBookRevision:0,orderDate:"2026-11-02",items:[],subtotalExGstCents:6957,gstCents:1043,totalInclGstCents:8000,discountCents:2000,designSurchargeCents:0,itemCount:1,cartDigest:"a".repeat(64),promotion:{key:"first-order-20-v1",percentage:20} };
   render(<CheckoutOrderSummary cart={cart} shipping={{method:"post",serviceCode:"test",serviceName:"Delivery",amountExGstCents:1740,gstCents:260,amountInclGstCents:2000,currency:"NZD",provenance:"internal-fixed",isTest:false}} />);
-  expect(screen.getByText("First-order offer (20% off)").parentElement).toHaveTextContent("−NZ$20.00");
+  expect(screen.getByText("Promotion discount (20%)").parentElement).toHaveTextContent("−NZ$20.00");
   expect(screen.getByText("Products incl GST").parentElement).toHaveTextContent("NZ$100.00");
   expect(screen.getByText("Shipping incl GST").parentElement).toHaveTextContent("NZ$20.00");
   expect(screen.getByText("Total incl GST").parentElement).toHaveTextContent("NZ$100.00");

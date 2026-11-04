@@ -7,7 +7,7 @@ type Database = ReturnType<typeof getDatabase>;
 type OfferDatabase = Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 export class FirstOrderOfferConflictError extends Error {
-  constructor(message = "Your offer is reserved for an existing order. Resume that order from your account or contact our team before placing another order.") {
+  constructor(message = "This promotional price could not be confirmed. Refresh checkout and review your total.") {
     super(message);
     this.name = "FirstOrderOfferConflictError";
   }
@@ -20,44 +20,27 @@ async function accountEmail(database: OfferDatabase, customerId: string) {
   return result.rows[0]?.email ?? null;
 }
 
-async function hasHistory(database: OfferDatabase, customerId: string, email: string, mode: "any" | "reserved" | "returning" = "any") {
-  const result = await database.execute(sql`
-    select id from orders
-    where (customer_id = ${customerId} or lower(customer_email) = ${email})
-      ${mode === "reserved" ? sql`and pricing_snapshot->'promotion'->>'key' in ('first-order-20-v1', 'returning-customer-36-v1')
-        and payment_status not in ('paid', 'refunded')` : mode === "returning" ? sql`and pricing_snapshot->'promotion'->>'key' = 'returning-customer-36-v1'` : sql``}
-    limit 1
-  `);
-  return result.rows.length > 0;
+// Legacy function/storage names remain compatible with already-created checkout snapshots.
+// During the campaign the base 20% offer is available on every order, including guests.
+export async function isFirstOrderOfferEligible(database: OfferDatabase, _customerId: string | null): Promise<boolean> {
+  return isThankYouOfferEnabled(database);
 }
 
-export async function isFirstOrderOfferEligible(database: OfferDatabase, customerId: string | null): Promise<boolean> {
-  if (!customerId || !await isThankYouOfferEnabled(database)) return false;
-  const email = await accountEmail(database, customerId);
-  return email !== null && !await hasHistory(database, customerId, email);
-}
-
-// Call inside the same transaction as order insertion. Failed/cancelled orders
-// retain their reservation because an earlier external payment can still settle.
-export async function assertFirstOrderOfferAvailable(transaction: OfferDatabase, customerId: string, claimingOffer: boolean, claimingReturningOffer = false): Promise<void> {
-  await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`first-order-customer:${customerId}`}, 0))`);
-  if ((claimingOffer || claimingReturningOffer) && !await isThankYouOfferEnabled(transaction)) {
+// Recheck the campaign inside the order transaction, including guest orders.
+// Existing order retries return before this check and retain their stored amounts.
+export async function assertFirstOrderOfferAvailable(transaction: OfferDatabase, customerId: string | null, claimingOffer: boolean, claimingReturningOffer = false): Promise<void> {
+  if (!claimingOffer && !claimingReturningOffer) return;
+  if (!await isThankYouOfferEnabled(transaction)) {
     throw new FirstOrderOfferConflictError("This promotion has ended. Refresh your checkout to see current pricing.");
   }
-  const email = await accountEmail(transaction, customerId);
-  if (!email) throw new FirstOrderOfferConflictError();
-  await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`first-order-offer:${email}`}, 0))`);
-  if (claimingReturningOffer && await hasHistory(transaction, customerId, email, "returning")) {
-    throw new FirstOrderOfferConflictError("This returning-customer voucher has already been reserved or used. Resume your existing order or contact our team.");
-  }
-  if (await hasHistory(transaction, customerId, email, claimingOffer ? "any" : "reserved")) {
-    throw new FirstOrderOfferConflictError();
+  if (claimingReturningOffer && (!customerId || !await accountEmail(transaction, customerId))) {
+    throw new FirstOrderOfferConflictError("Sign in to the account linked to your returning-customer voucher.");
   }
 }
 
 
 export class InvalidReturningVoucherError extends Error {
-  constructor(message = "This voucher is invalid for your account or has already been reserved or used.") {
+  constructor(message = "This voucher is invalid for your account or the promotion is unavailable.") {
     super(message);
     this.name = "InvalidReturningVoucherError";
   }
@@ -66,8 +49,7 @@ export class InvalidReturningVoucherError extends Error {
 export async function isReturningOfferEligible(database: OfferDatabase, customerId: string | null): Promise<boolean> {
   if (!customerId || !await isThankYouOfferEnabled(database)) return false;
   const email = await accountEmail(database, customerId);
-  return email !== null && !await hasHistory(database, customerId, email, "returning")
-    && !await hasHistory(database, customerId, email, "reserved");
+  return email !== null;
 }
 
 export async function resolveCustomerOffer(database: OfferDatabase, customerId: string | null, voucherCode: unknown, secret: string) {

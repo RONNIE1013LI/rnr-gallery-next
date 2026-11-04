@@ -322,7 +322,10 @@ export function BannerBundleConfigurator({
         scopeKey={`${product.key}:${selectedDesign?.id ?? "none"}`}
       />
       <div className={styles.priceAtStart} aria-label="Current price">
-        <strong>{formatMarketMoney(quote.totalInclGstCents, currency)}{taxSuffix}</strong>
+        <div className={styles.configuratorHeroPrices}>
+          {firstOrderQuote ? <strong className={styles.configuratorOfferPrice}>20% OFF · now {formatMarketMoney(firstOrderQuote.totalInclGstCents, currency)}{taxSuffix}</strong> : null}
+          <strong className={firstOrderQuote ? styles.configuratorOriginalPrice : undefined}>{formatMarketMoney(quote.totalInclGstCents, currency)}{taxSuffix}</strong>
+        </div>
         <p>Selected options included. Delivery is calculated at checkout.</p>
         <p>Order and pay → Receive your design proof → Approve before printing.</p>
         <Link href="/contact">Need help choosing? Send your photos, occasion and required date.</Link>

@@ -63,12 +63,12 @@ export function CheckoutOrderSummary({ cart, shipping }: {
         {cart.promotion?.key === "returning-customer-36-v1" ? <>
           <div><dt>Thank-you offer (20% off)</dt><dd>−{formatMarketMoney(cart.promotion.baseDiscountCents, currency)}</dd></div>
           <div><dt>Returning customer extra 20% off</dt><dd>−{formatMarketMoney(cart.promotion.extraDiscountCents, currency)}</dd></div>
-        </> : cart.discountCents > 0 ? <div><dt>{cart.promotion?.key === "first-order-20-v1" ? "First-order offer (20% off)" : "Discount"}</dt><dd>−{formatMarketMoney(cart.discountCents, currency)}</dd></div> : null}
+        </> : cart.discountCents > 0 ? <div><dt>{cart.promotion?.key === "first-order-20-v1" ? "Promotion discount (20%)" : "Discount"}</dt><dd>−{formatMarketMoney(cart.discountCents, currency)}</dd></div> : null}
         <div><dt>{hasTax ? "Shipping incl GST" : "Shipping"}</dt><dd>{formatMarketMoney(shippingTotal, currency)}</dd></div>
         {hasTax ? <div><dt>{`Includes ${taxName}`}</dt><dd>{formatMarketMoney(cart.gstCents + shippingGst, currency)}</dd></div> : null}
         <div className={styles.priceTotal}><dt>{hasTax ? "Total incl GST" : "Total"}</dt><dd>{formatMarketMoney(cart.totalInclGstCents + shippingTotal, currency)}</dd></div>
       </dl>
-      {cart.promotion ? <p className={styles.checkoutProvenance}>{cart.promotion.key === "first-order-20-v1" ? "First-order offer applied." : "Returning-customer voucher applied."} Shipping and urgent service are not discounted.</p> : null}
+      {cart.promotion ? <p className={styles.checkoutProvenance}>{cart.promotion.key === "first-order-20-v1" ? "Promotion discount applied." : "Returning-customer voucher applied."} Shipping and urgent service are not discounted.</p> : null}
       {shipping ? <p className={styles.checkoutProvenance}>{shippingDisclosure(shipping)}</p> : null}
     </>
   );

@@ -46,8 +46,8 @@ export function ReturningCustomerVoucher({ customerKey, savedOrder }: Readonly<{
 
   return <section className={styles.panel} data-voucher-controls onKeyDown={savedOrder ? (event) => { if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault(); } : undefined}>
     <h2>Returning customer voucher</h2>
-    <p>Manually verify this customer’s previous order, including online and offline orders. This voucher is bound to this registered account and can be redeemed once per account during the thank-you offer.</p>
-    <p>20% off plus an extra 20% off the reduced merchandise and customisation price (36% total). Shipping and urgent fees are excluded. Generating again returns the same code; it does not reset redemption.</p>
+    <p>Manually verify this customer’s previous order, including online and offline orders. This voucher is bound to this registered account and can be reused for every order during the thank-you offer.</p>
+    <p>20% off plus an extra 20% off the reduced merchandise and customisation price (36% total). Shipping and urgent fees are excluded. Generating again returns the same reusable code.</p>
     {savedOrder ? <div className={styles.formGrid}>{controls}</div> : <form className={styles.formGrid} onSubmit={(event) => { event.preventDefault(); void generate(); }}>{controls}</form>}
     {code ? <div className={styles.formGrid}><label className={styles.fullField}>Voucher code<input readOnly value={code} onFocus={(event) => event.target.select()} /></label><button type="button" onClick={copy}>{copied ? "Copied" : "Copy voucher"}</button><p className={styles.mutedText}>No customer message has been sent.</p></div> : null}
     {error ? <p role="alert" className={styles.formFeedback}>{error}</p> : null}

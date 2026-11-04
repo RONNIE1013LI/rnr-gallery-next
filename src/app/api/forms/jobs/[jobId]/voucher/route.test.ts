@@ -73,14 +73,14 @@ describe("saved Forms order voucher", () => {
     expect(deps.accountForEmail).not.toHaveBeenCalled();
     expect(deps.issue).not.toHaveBeenCalled();
   });
-  it("explains missing accounts and used offers without issuing", async () => {
+  it("explains missing accounts and unavailable promotions without issuing", async () => {
     const { deps, route } = setup();
     deps.accountForEmail.mockResolvedValue(null);
     expect(await (await route.GET(new Request(origin), context)).json()).toMatchObject({ canIssue: false, customerKey: null, message: expect.stringContaining("register") });
     expect((await route.POST(request(), context)).status).toBe(422);
     deps.accountForEmail.mockResolvedValue("customer-1");
     deps.canIssue.mockResolvedValue(false);
-    expect(await (await route.GET(new Request(origin), context)).json()).toMatchObject({ canIssue: false, message: expect.stringContaining("reserved") });
+    expect(await (await route.GET(new Request(origin), context)).json()).toMatchObject({ canIssue: false, message: expect.stringContaining("promotion is unavailable") });
     expect(deps.issue).not.toHaveBeenCalled();
   });
   it("rejects untrusted, invalid, stale and mismatched requests before issuing", async () => {
