@@ -42,12 +42,12 @@ describe("Admin operational visual system", () => {
     expect(cssRule(css, ".formSubmitBar button")).toContain("background: var(--admin-accent);");
   });
 
-  it("uses a two-column mobile summary and full-width action layout", () => {
+  it("uses a two-column mobile summary and content-sized filter actions", () => {
     const contract = css.slice(css.indexOf("/* Unified backend responsive contract */"));
     expect(cssRule(contract, ".metricGrid")).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
     expect(cssRule(contract, ".pageHeader")).toContain("flex-direction: column;");
     expect(cssRule(contract, ".filterPanel")).toContain("grid-template-columns: 1fr;");
-    expect(cssRule(contract, ".filterActions > *")).toContain("min-height: 44px;");
+    expect(cssRule(contract, ".filterActions > *")).toContain("flex: 0 1 auto;");
   });
 
   it("uses complete semantic borders instead of decorative side tabs", () => {

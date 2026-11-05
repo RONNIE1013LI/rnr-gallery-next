@@ -6,6 +6,8 @@
   --admin-ink: #1f2b24;
   --admin-accent: #345c45;
   --admin-response: #f8f8f4;
+  --admin-button-height: 30px;
+  --admin-button-padding: 4px 10px;
   min-height: 100vh;
   color: var(--admin-ink);
   background: var(--admin-canvas);
@@ -2666,6 +2668,7 @@
 
 .filterActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: end;
   gap: 8px;
 }
@@ -5390,7 +5393,6 @@ button.paymentProofPreviewMedia {
     gap: 12px;
   }
 
-  .pageHeader > .primaryAdminButton,
   .pageHeader > .headerActions {
     width: 100%;
   }
@@ -5416,8 +5418,7 @@ button.paymentProofPreviewMedia {
   }
 
   .filterActions > * {
-    min-height: 44px;
-    flex: 1 1 0;
+    flex: 0 1 auto;
   }
 }
 
@@ -5849,7 +5850,8 @@ button.paymentProofPreviewMedia {
   }
 
   .formSubmitBar button {
-    width: 100%;
+    width: fit-content;
+    max-width: 100%;
   }
 
   .manualEntryCreateForm .formSubmitBar {
@@ -6067,4 +6069,69 @@ button.paymentProofPreviewMedia {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
+}
+
+/* Ordinary Admin actions share the compact Menu pill. Navigation rows, image
+   controls and rich-text tools retain their dedicated interaction sizes. */
+.shell .role,
+.shell :is(
+  .mobileMenuHeader button,
+  .primaryAdminButton,
+  .secondaryAdminButton,
+  .removeItemButton,
+  .dangerButton,
+  a.recordCount,
+  .copyButton,
+  .notificationAddForm > button,
+  .notificationRecipientActions button,
+  .contentActions button,
+  .registryFormActions button,
+  .invoiceWorkspaceHeader button,
+  .invoiceWorkspaceDownload,
+  .invoiceWorkspaceViewSwitch button,
+  .invoiceActions > button,
+  .savedViews a,
+  .savedViews form button,
+  .filterActions button,
+  .filterActions a,
+  .compactForm button:not(.paymentProofPreviewMedia, .paymentProofDeleteButton, .paymentProofLightboxClose, .paymentProofLightboxNav),
+  .roleEditor button,
+  .permissionGroupActions button,
+  .oneTimeLink button,
+  .actionStack > button,
+  .paymentLedgerForm button,
+  .paymentLedgerList button,
+  .reversalForm button,
+  .notificationStatus button,
+  .formUtilityBar button,
+  .formUtilityBar a,
+  .formSubmitBar button,
+  .reviewListActions button,
+  .reviewListActions a,
+  .reviewFormActions button
+),
+.shell input[type="file"]::file-selector-button,
+.errorState :is(button, a) {
+  box-sizing: border-box;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: var(--admin-button-height, 30px);
+  align-items: center;
+  justify-content: center;
+  padding: var(--admin-button-padding, 4px 10px);
+  border-radius: var(--radius-button);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 20px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.shell .mobileMenuHeader button {
+  color: var(--admin-ink);
+}
+
+.shell .formUtilityBar :is(button, a) {
+  text-transform: none;
 }

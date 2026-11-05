@@ -583,7 +583,7 @@
   }
 
   .applyFilters button {
-    width: 100%;
+    width: auto;
   }
 
   .currencyGrid,
@@ -938,4 +938,19 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
   }
+}
+
+/* Match ordinary Admin actions without resizing explorer fields or chart tools. */
+.pagination button,
+.explorerControls button,
+.detailClose,
+.filterChips > button:not(.textButton) {
+  width: fit-content;
+  max-width: 100%;
+  min-height: var(--admin-button-height, 30px);
+  padding: var(--admin-button-padding, 4px 10px);
+  border-radius: var(--radius-button);
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 20px;
 }
