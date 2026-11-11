@@ -60,6 +60,57 @@ const aiHumanReviewEventWithPrivateContext = Object.freeze({
 });
 
 describe("internal notification email", () => {
+  it.each(["NZD", "AUD"] as const)("renders a complete paid website order in the manual-order layout (%s)", (currency) => {
+    const event = {
+      topic: "web_order_paid" as const,
+      resourceReference: "08105",
+      recipientEmail: "ops@example.test",
+      eventKey: "web_order_paid:order:recipient",
+      payload: {
+        version: 1 as const,
+        adminPath: "/admin/orders/test-order",
+        websiteOrder: {
+          customerName: "Example <Customer>",
+          customerEmail: "customer@example.test",
+          customerPhone: "+64 21 555 0101",
+          createdAt: "2026-11-11T19:00:00.000Z",
+          status: "new",
+          paymentStatus: "paid",
+          deliveryMethod: "post",
+          shippingServiceName: "Standard Shipping",
+          deliveryAddress: "Gift <Recipient>, 1 Test Street, Auckland, 1010, NZ",
+          currency,
+          amountPayableCents: 27500,
+          amountPaidCents: 27500,
+          productTotalInclGstCents: 23000,
+          shippingTotalInclGstCents: 4500,
+          totalGstCents: currency === "NZD" ? 3587 : 0,
+          discountCents: 1000,
+          items: [{
+            productTitle: "Canvas <Portrait>", sizeLabel: "60 × 90 cm", quantity: 2,
+            neededDate: "2026-11-20", urgent: true,
+            unitTotalInclGstCents: 12000, lineTotalInclGstCents: 24000,
+          }],
+        },
+      },
+    };
+    const message = renderInternalNotificationEmail(event, "https://rrgallery.co.nz");
+    const document = new DOMParser().parseFromString(message.html, "text/html");
+    expect(document.querySelector("h1")?.textContent).toBe("Website order paid");
+    expect(document.querySelector("td[data-balance]")?.textContent).toBe(`${currency} 0.00`);
+    for (const value of ["08105", "customer@example.test", "+64 21 555 0101", "60 × 90 cm", "Quantity: 2", "2026-11-20", "Urgent: Yes", "Standard Shipping", `${currency} 120.00`, `${currency} 240.00`, `${currency} 230.00`, `${currency} 45.00`, `${currency} 10.00`, `${currency} 275.00`, `${currency} ${currency === "NZD" ? "35.87" : "0.00"}`]) {
+      expect(message.text).toContain(value);
+      expect(document.body.textContent).toContain(value);
+    }
+    expect(message.text).toContain("12 Nov 2026");
+    expect(message.text).toContain("Gift <Recipient>, 1 Test Street");
+    expect(message.html).toContain("Gift &lt;Recipient&gt;");
+    expect(message.html).toContain("Canvas &lt;Portrait&gt;");
+    expect(message.html).not.toContain("<Customer>");
+    expect(message.html).toContain("https://rrgallery.co.nz/admin/orders/test-order");
+    expect(message.idempotencyKey).toBe(event.eventKey);
+  });
+
   it("includes manual order items, invoice prices and the payment balance in both formats", () => {
     const event = {
       topic: "manual_order_created" as const,

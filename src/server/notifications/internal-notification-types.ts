@@ -66,4 +66,33 @@ export type InternalNotificationPayload = Readonly<{
   version: 1;
   adminPath: string;
   manualOrder?: ManualOrderNotificationDetails;
+  websiteOrder?: WebsiteOrderNotificationDetails;
+}>;
+
+export type WebsiteOrderNotificationDetails = Readonly<{
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  createdAt: string;
+  status: string;
+  paymentStatus: string;
+  deliveryMethod: string;
+  shippingServiceName: string;
+  deliveryAddress?: string;
+  currency: "NZD" | "AUD";
+  amountPayableCents: number;
+  amountPaidCents: number;
+  productTotalInclGstCents: number;
+  shippingTotalInclGstCents: number;
+  totalGstCents: number;
+  discountCents: number;
+  items: readonly Readonly<{
+    productTitle: string;
+    sizeLabel: string;
+    quantity: number;
+    neededDate: string;
+    urgent: boolean;
+    unitTotalInclGstCents: number;
+    lineTotalInclGstCents: number;
+  }>[];
 }>;

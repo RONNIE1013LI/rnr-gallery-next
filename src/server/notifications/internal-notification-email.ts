@@ -75,33 +75,52 @@ export function renderInternalNotificationEmail(
   }
   const subject = subjects[event.topic];
   const adminUrl = new URL(event.payload.adminPath, siteUrl).toString();
-  const order = event.topic === "manual_order_created" ? event.payload.manualOrder : undefined;
+  const manualOrder = event.topic === "manual_order_created" ? event.payload.manualOrder : undefined;
+  const websiteOrder = event.topic === "web_order_paid" ? event.payload.websiteOrder : undefined;
+  const order = manualOrder ?? websiteOrder;
+  const invoiceDetails = manualOrder?.invoice;
+  const orderFields: [string, string][] = order ? [
+    ["Customer", order.customerName],
+    ...(websiteOrder ? [["Email", websiteOrder.customerEmail], ["Phone", websiteOrder.customerPhone]] as [string, string][] : []),
+    ["Created", `${new Intl.DateTimeFormat("en-NZ", { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }).format(new Date(order.createdAt))} (Pacific/Auckland)`],
+    ["Order status", order.status],
+    ["Payment status", order.paymentStatus],
+    ...(manualOrder ? [["Needed by", manualOrder.neededDate]] as [string, string][] : []),
+    ["Delivery method", order.deliveryMethod],
+    ...(websiteOrder ? [["Shipping service", websiteOrder.shippingServiceName]] as [string, string][] : []),
+    ...(websiteOrder?.deliveryAddress ? [["Delivery address", websiteOrder.deliveryAddress]] as [string, string][] : []),
+    ...(manualOrder ? [["Urgent", manualOrder.urgent ? "Yes" : "No"]] as [string, string][] : []),
+  ] : [];
   const details: string[] = [];
   if (order) {
     const money = (cents: number) => `${order.currency} ${(cents / 100).toFixed(2)}`;
     details.push(
-      `Customer: ${order.customerName}`,
-      `Created: ${new Intl.DateTimeFormat("en-NZ", {
-        dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland",
-      }).format(new Date(order.createdAt))} (Pacific/Auckland)`,
-      `Order status: ${order.status}`,
-      `Payment status: ${order.paymentStatus}`,
-      `Needed by: ${order.neededDate}`,
-      `Delivery method: ${order.deliveryMethod}`,
-      `Urgent: ${order.urgent ? "Yes" : "No"}`,
+      ...orderFields.map(([label, value]) => `${label}: ${value}`),
       "",
       "Items",
-      ...order.items.map((item) => `${item.productTitle} | ${item.sizeLabel} | Quantity: ${item.quantity}`),
+      ...order.items.map((item, index) => {
+        const webItem = websiteOrder?.items[index];
+        return `${item.productTitle} | ${item.sizeLabel} | Quantity: ${item.quantity}${webItem ? ` | Needed by: ${webItem.neededDate} | Urgent: ${webItem.urgent ? "Yes" : "No"} | Unit price (including GST): ${money(webItem.unitTotalInclGstCents)} | Line total (including GST): ${money(webItem.lineTotalInclGstCents)}` : ""}`;
+      }),
       "",
     );
-    if (order.invoice) {
+    if (invoiceDetails) {
       details.push(
         "Invoice prices (including GST)",
-        ...order.invoice.items.map((item) => `${item.description} | Quantity: ${item.quantityMilli / 1000} | Unit price: ${money(item.rateInclGstCents)} | Line total: ${money(Math.round(item.quantityMilli * item.rateInclGstCents / 1000))}`),
-        `Before discount: ${money(order.invoice.grossCents)}`,
-        `Discount: ${money(order.invoice.discountCents)}`,
-        `GST included: ${money(order.invoice.gstCents)}`,
-        `Invoice total: ${money(order.invoice.totalInclGstCents)}`,
+        ...invoiceDetails.items.map((item) => `${item.description} | Quantity: ${item.quantityMilli / 1000} | Unit price: ${money(item.rateInclGstCents)} | Line total: ${money(Math.round(item.quantityMilli * item.rateInclGstCents / 1000))}`),
+        `Before discount: ${money(invoiceDetails.grossCents)}`,
+        `Discount: ${money(invoiceDetails.discountCents)}`,
+        `GST included: ${money(invoiceDetails.gstCents)}`,
+        `Invoice total: ${money(invoiceDetails.totalInclGstCents)}`,
+        "",
+      );
+    }
+    if (websiteOrder) {
+      details.push(
+        `Products (including GST): ${money(websiteOrder.productTotalInclGstCents)}`,
+        `Discount included: ${money(websiteOrder.discountCents)}`,
+        `Shipping (including GST): ${money(websiteOrder.shippingTotalInclGstCents)}`,
+        `GST included: ${money(websiteOrder.totalGstCents)}`,
         "",
       );
     }
@@ -128,10 +147,19 @@ export function renderInternalNotificationEmail(
     const row = (label: string, value: string, balance = false) => `<tr><th scope="row" style="padding:10px 12px;text-align:left;vertical-align:top;width:38%;font-size:13px;font-weight:600;color:#58655e;border-bottom:1px solid #e4e9e5">${escapeHtml(label)}</th><td${balance ? ' data-balance="true"' : ""} style="padding:10px 12px;vertical-align:top;font-size:${balance ? "20" : "15"}px;font-weight:${balance ? "700" : "400"};color:#203c2b;border-bottom:1px solid #e4e9e5;overflow-wrap:anywhere">${escapeHtml(value)}</td></tr>`;
     const table = (rows: string) => `<table width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed">${rows}</table>`;
     const heading = (label: string) => `<h2 style="margin:28px 0 10px;font-size:17px;line-height:1.4;color:#263e2f">${label}</h2>`;
-    const created = new Intl.DateTimeFormat("en-NZ", { dateStyle: "medium", timeStyle: "short", timeZone: "Pacific/Auckland" }).format(new Date(order.createdAt));
-    const items = order.items.map((item) => `<tr><td style="padding:14px 12px;border-bottom:1px solid #e4e9e5"><strong style="font-size:16px;color:#203c2b">${escapeHtml(item.productTitle)}</strong><br><span style="font-size:14px;color:#58655e">${escapeHtml(item.sizeLabel)} · Quantity: ${item.quantity}</span></td></tr>`).join("");
-    const invoice = order.invoice ? heading("Invoice prices (including GST)") + table(order.invoice.items.map((item) => row(item.description, `Quantity: ${item.quantityMilli / 1000} | Unit price: ${money(item.rateInclGstCents)} | Line total: ${money(Math.round(item.quantityMilli * item.rateInclGstCents / 1000))}`)).join("") + row("Before discount", money(order.invoice.grossCents)) + row("Discount", money(order.invoice.discountCents)) + row("GST included", money(order.invoice.gstCents)) + row("Invoice total", money(order.invoice.totalInclGstCents))) : "";
-    html = `<!doctype html><html><body style="margin:0;padding:16px 8px;background:#f3f5f2;font-family:Arial,Helvetica,sans-serif;line-height:1.5"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#fff;border:1px solid #dce3dc;border-radius:12px"><tr><td style="padding:24px 20px"><p style="margin:0 0 8px;font-size:12px;letter-spacing:1px;font-weight:700;color:#526e5a">R&amp;R GALLERY · ORDER NOTIFICATION</p><h1 style="margin:0 0 8px;font-size:26px;line-height:1.25;color:#203c2b">${escapeHtml(subject)}</h1><p style="margin:0 0 20px;font-size:15px;color:#58655e">Reference: <strong style="color:#203c2b">${escapeHtml(event.resourceReference)}</strong></p>${table(row("Customer", order.customerName) + row("Created", `${created} (Pacific/Auckland)`) + row("Order status", order.status) + row("Payment status", order.paymentStatus) + row("Needed by", order.neededDate) + row("Delivery method", order.deliveryMethod) + row("Urgent", order.urgent ? "Yes" : "No"))}${heading("Items")}${table(items)}${invoice}${heading("Payment summary")}${table(row("Order total", money(order.amountPayableCents)) + row("Amount paid", money(order.amountPaidCents)) + row("Balance owing", money(order.amountPayableCents - order.amountPaidCents), true))}<p style="margin:28px 0 4px"><a href="${escapeHtml(adminUrl)}" style="display:inline-block;padding:12px 20px;background:#365e49;color:#fff;border-radius:6px;font-size:15px;font-weight:700;text-decoration:none">View in Admin</a></p></td></tr></table></td></tr></table></body></html>`;
+    const items = order.items.map((item, index) => {
+      const webItem = websiteOrder?.items[index];
+      const extra = webItem ? `<br><span style="font-size:14px;color:#58655e">Needed by: ${escapeHtml(webItem.neededDate)} · Urgent: ${webItem.urgent ? "Yes" : "No"}<br>Unit price (including GST): ${money(webItem.unitTotalInclGstCents)} · Line total (including GST): ${money(webItem.lineTotalInclGstCents)}</span>` : "";
+      return `<tr><td style="padding:14px 12px;border-bottom:1px solid #e4e9e5"><strong style="font-size:16px;color:#203c2b">${escapeHtml(item.productTitle)}</strong><br><span style="font-size:14px;color:#58655e">${escapeHtml(item.sizeLabel)} · Quantity: ${item.quantity}</span>${extra}</td></tr>`;
+    }).join("");
+    const invoice = invoiceDetails ? heading("Invoice prices (including GST)") + table(invoiceDetails.items.map((item) => row(item.description, `Quantity: ${item.quantityMilli / 1000} | Unit price: ${money(item.rateInclGstCents)} | Line total: ${money(Math.round(item.quantityMilli * item.rateInclGstCents / 1000))}`)).join("") + row("Before discount", money(invoiceDetails.grossCents)) + row("Discount", money(invoiceDetails.discountCents)) + row("GST included", money(invoiceDetails.gstCents)) + row("Invoice total", money(invoiceDetails.totalInclGstCents))) : "";
+    const websitePrices = websiteOrder ? heading("Order prices (including GST)") + table(
+      row("Products", money(websiteOrder.productTotalInclGstCents)) +
+      row("Discount included", money(websiteOrder.discountCents)) +
+      row("Shipping", money(websiteOrder.shippingTotalInclGstCents)) +
+      row("GST included", money(websiteOrder.totalGstCents))
+    ) : "";
+    html = `<!doctype html><html><body style="margin:0;padding:16px 8px;background:#f3f5f2;font-family:Arial,Helvetica,sans-serif;line-height:1.5"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center"><table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#fff;border:1px solid #dce3dc;border-radius:12px"><tr><td style="padding:24px 20px"><p style="margin:0 0 8px;font-size:12px;letter-spacing:1px;font-weight:700;color:#526e5a">R&amp;R GALLERY · ORDER NOTIFICATION</p><h1 style="margin:0 0 8px;font-size:26px;line-height:1.25;color:#203c2b">${escapeHtml(subject)}</h1><p style="margin:0 0 20px;font-size:15px;color:#58655e">Reference: <strong style="color:#203c2b">${escapeHtml(event.resourceReference)}</strong></p>${table(orderFields.map(([label, value]) => row(label, value)).join(""))}${heading("Items")}${table(items)}${invoice}${websitePrices}${heading("Payment summary")}${table(row("Order total", money(order.amountPayableCents)) + row("Amount paid", money(order.amountPaidCents)) + row("Balance owing", money(order.amountPayableCents - order.amountPaidCents), true))}<p style="margin:28px 0 4px"><a href="${escapeHtml(adminUrl)}" style="display:inline-block;padding:12px 20px;background:#365e49;color:#fff;border-radius:6px;font-size:15px;font-weight:700;text-decoration:none">View in Admin</a></p></td></tr></table></td></tr></table></body></html>`;
   }
 
   return Object.freeze({

@@ -45,6 +45,7 @@ import {
   webhookEvents,
 } from "@/server/db/schema";
 import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
+import type { WebsiteOrderNotificationDetails } from "@/server/notifications/internal-notification-types";
 import { buildWebProductionJobSnapshot } from "@/server/orders/drizzle-order-repository";
 import type {
   OrderPaymentStatus,
@@ -345,6 +346,36 @@ export async function ensurePaidWebOrderProductionJob(
   newInvoiceJobs.push(job.id);
 }
 
+export function buildPaidWebOrderNotificationDetails(input: Readonly<{
+  order: Pick<OrderRow, "customerEmail" | "createdAt" | "fulfilmentStatus" | "paymentStatus" | "deliveryMethod" | "shippingServiceName" | "currency" | "totalInclGstCents" | "productTotalInclGstCents" | "shippingTotalInclGstCents" | "totalGstCents" | "discountCents">;
+  items: readonly Pick<typeof orderItems.$inferSelect, "productTitle" | "sizeLabel" | "quantity" | "neededDate" | "urgentServiceConfirmed" | "unitTotalInclGstCents" | "lineTotalInclGstCents">[];
+  billingAddress: ReturnType<typeof addressFor>;
+  deliveryAddress: ReturnType<typeof addressFor>;
+}>): WebsiteOrderNotificationDetails {
+  const { order, items, billingAddress, deliveryAddress } = input;
+  return {
+    customerName: billingAddress.fullName,
+    customerEmail: order.customerEmail,
+    customerPhone: billingAddress.phone,
+    createdAt: order.createdAt.toISOString(),
+    status: order.fulfilmentStatus,
+    paymentStatus: order.paymentStatus,
+    deliveryMethod: order.deliveryMethod,
+    shippingServiceName: order.shippingServiceName,
+    ...(order.deliveryMethod === "post" ? {
+      deliveryAddress: [deliveryAddress.fullName, deliveryAddress.building, deliveryAddress.street, deliveryAddress.suburb, deliveryAddress.region, deliveryAddress.postcode, deliveryAddress.country].filter(Boolean).join(", "),
+    } : {}),
+    currency: order.currency,
+    amountPayableCents: order.totalInclGstCents,
+    amountPaidCents: order.totalInclGstCents,
+    productTotalInclGstCents: order.productTotalInclGstCents,
+    shippingTotalInclGstCents: order.shippingTotalInclGstCents,
+    totalGstCents: order.totalGstCents,
+    discountCents: order.discountCents,
+    items: items.map(({ urgentServiceConfirmed, ...item }) => ({ ...item, urgent: urgentServiceConfirmed })),
+  };
+}
+
 export async function enqueuePaidWebOrderNotifications(
   transaction: Transaction,
   order: OrderRow,
@@ -364,13 +395,33 @@ export async function enqueuePaidWebOrderNotifications(
     createdAt: now,
     updatedAt: now,
   }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
+  const [addresses, items] = await Promise.all([
+    loadAddresses(transaction, order.id),
+    transaction.select({
+      productTitle: orderItems.productTitle,
+      sizeLabel: orderItems.sizeLabel,
+      quantity: orderItems.quantity,
+      neededDate: orderItems.neededDate,
+      urgentServiceConfirmed: orderItems.urgentServiceConfirmed,
+      unitTotalInclGstCents: orderItems.unitTotalInclGstCents,
+      lineTotalInclGstCents: orderItems.lineTotalInclGstCents,
+    }).from(orderItems).where(eq(orderItems.orderId, order.id)).orderBy(asc(orderItems.position)),
+  ]);
   await enqueueInternalNotifications(transaction, {
     topic: "web_order_paid",
     sourceEventId: order.id,
     resourceType: "order",
     resourceId: order.id,
     resourceReference: order.orderNumber,
-    payload: { version: 1, adminPath: `/admin/orders/${order.id}` },
+    payload: {
+      version: 1,
+      adminPath: `/admin/orders/${order.id}`,
+      websiteOrder: buildPaidWebOrderNotificationDetails({
+        order, items,
+        billingAddress: addressFor(addresses, "billing"),
+        deliveryAddress: addressFor(addresses, "delivery"),
+      }),
+    },
     createdAt: now,
   });
 }
@@ -809,7 +860,7 @@ async function applyLockedVerifiedResult(
     await ensurePaidWebOrderProductionJob(transaction, updatedOrder, now, newInvoiceJobs);
   }
   if (orderStatus === "paid") {
-    await enqueuePaidWebOrderNotifications(transaction, order, now);
+    await enqueuePaidWebOrderNotifications(transaction, updatedOrder, now);
   } else if (orderStatus === "failed") {
     await transaction.insert(orderNotificationOutbox).values({
       eventKey: `payment-failed:${attempt.id}`,

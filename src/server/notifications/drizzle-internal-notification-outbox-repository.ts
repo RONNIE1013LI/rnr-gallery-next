@@ -54,6 +54,33 @@ const payloadSchema = z.object({
       totalInclGstCents: z.number().int().nonnegative(),
     }).strict().optional(),
   }).strict().refine((order) => order.amountPaidCents <= order.amountPayableCents).optional(),
+  websiteOrder: z.object({
+    customerName: z.string().max(190),
+    customerEmail: z.string().max(320),
+    customerPhone: z.string().max(80),
+    createdAt: z.string().datetime(),
+    status: z.string().max(80),
+    paymentStatus: z.string().max(80),
+    deliveryMethod: z.string().max(80),
+    shippingServiceName: z.string().max(190),
+    deliveryAddress: z.string().max(2000).optional(),
+    currency: z.enum(["NZD", "AUD"]),
+    amountPayableCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    amountPaidCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    productTotalInclGstCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    shippingTotalInclGstCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    totalGstCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    discountCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    items: z.array(z.object({
+      productTitle: z.string().max(190),
+      sizeLabel: z.string().max(190),
+      quantity: z.number().int().min(1).max(5),
+      neededDate: z.string().max(10),
+      urgent: z.boolean(),
+      unitTotalInclGstCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+      lineTotalInclGstCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    }).strict()).min(1).max(20),
+  }).strict().refine((order) => order.amountPaidCents <= order.amountPayableCents).optional(),
 }).strict();
 
 const eventSchema = z.object({
@@ -64,7 +91,8 @@ const eventSchema = z.object({
   resourceReference: z.string().trim().min(1).max(255),
   payload: payloadSchema,
   createdAt: z.date(),
-}).strict().refine((event) => !event.payload.manualOrder || event.topic === "manual_order_created");
+}).strict().refine((event) => (!event.payload.manualOrder || event.topic === "manual_order_created")
+  && (!event.payload.websiteOrder || event.topic === "web_order_paid"));
 
 export type InternalNotificationEvent = Readonly<{
   topic: InternalNotificationTopic;
