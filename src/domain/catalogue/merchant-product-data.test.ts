@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultProductRegistry } from "./product-registry";
-import {
-  buildMerchantProductData,
-  MERCHANT_ADVERTISING_SAFE_IMAGE_BY_PRODUCT_KEY,
-} from "./merchant-product-data";
+import { buildMerchantProductData } from "./merchant-product-data";
 
 function readyAustralianRegistry() {
   const registry = structuredClone(defaultProductRegistry);
@@ -89,10 +86,13 @@ describe("merchant product data", () => {
     expect(items.some((entry) => entry.productKey === "roll-up-banner")).toBe(true);
   });
 
-  it("emits only advertising-safe product families with their approved neutral image", () => {
+  it.each([
+    ["NZ", defaultProductRegistry],
+    ["AU", readyAustralianRegistry()],
+  ] as const)("uses each included product's current catalogue image in the %s feed", (market, registry) => {
     const items = buildMerchantProductData(
-      defaultProductRegistry,
-      "NZ",
+      registry,
+      market,
       new URL("https://rnrgallery.com"),
     );
     const approvedProductKeys = [
@@ -103,22 +103,30 @@ describe("merchant product data", () => {
       "custom-themed-wall-banner",
       "digital-oil-painting-banner",
     ];
-    const approvedImage = "https://rnrgallery.com/media/home/homepage-begin-product-formats-v2.webp";
-
-    expect(Object.keys(MERCHANT_ADVERTISING_SAFE_IMAGE_BY_PRODUCT_KEY)).toEqual(approvedProductKeys);
     expect(new Set(items.map((item) => item.productKey))).toEqual(new Set(approvedProductKeys));
-    expect(items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ imageLink: approvedImage }),
-    ]));
-    expect(items.every((item) => item.imageLink === approvedImage)).toBe(true);
+    expect(new Set(items.map((item) => item.imageLink)).size).toBe(approvedProductKeys.length);
     expect(items.some((item) => item.productKey === "grave-cover")).toBe(false);
     expect(items.some((item) => item.productKey === "banner-bundle")).toBe(false);
     for (const productKey of approvedProductKeys) {
       const variants = items.filter((item) => item.productKey === productKey);
+      const product = registry.products.find((entry) => entry.key === productKey)!;
+      expect(variants.every((item) => item.imageLink === new URL(product.image.src, "https://rnrgallery.com").toString())).toBe(true);
       expect(new Set(variants.map((item) => item.itemGroupId))).toEqual(
-        new Set([`nz:${productKey}`]),
+        new Set([`${market.toLowerCase()}:${productKey}`]),
       );
     }
+  });
+
+  it("follows catalogue image updates instead of retaining an old feed image", () => {
+    const registry = structuredClone(defaultProductRegistry);
+    const product = registry.products.find((entry) => entry.key === "roll-up-banner")!;
+    product.image.src = "/media/products/roll-up-banner-updated.webp";
+
+    const items = buildMerchantProductData(registry, "NZ", new URL("https://rnrgallery.com"));
+
+    expect(items.find((item) => item.productKey === product.key)?.imageLink).toBe(
+      "https://rnrgallery.com/media/products/roll-up-banner-updated.webp",
+    );
   });
 
   it("does not generate Australian feed data while the market is closed", () => {
