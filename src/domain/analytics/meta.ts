@@ -49,8 +49,19 @@ function isPublicMetaReady() {
     ) === "public";
 }
 
-function sendServerCopy(event: MetaBrowserEvent) {
+function sendServerCopy(event: MetaBrowserEvent, cookieChecksRemaining = 60) {
   try {
+    if (!isPublicMetaReady()) return;
+    const hasMatchingCookie = document.cookie.split(";").some((part) =>
+      /^_fb[pc]=fb\.1\.\d{10,13}\.[A-Za-z0-9._-]{1,200}$/.test(part.trim()));
+    if (!hasMatchingCookie) {
+      // A new visitor's Pixel creates its cookies after the deferred script loads.
+      // Preserve the paired event ID, but stop waiting after 30s or if consent is withdrawn.
+      if (cookieChecksRemaining > 0) {
+        window.setTimeout(() => sendServerCopy(event, cookieChecksRemaining - 1), 500);
+      }
+      return;
+    }
     void fetch("/api/analytics/meta", {
       method: "POST",
       credentials: "same-origin",

@@ -54,6 +54,7 @@ describe("MetaPixelController", () => {
     document.documentElement.removeAttribute("data-meta-loaded");
     delete (window as Window & { fbq?: unknown }).fbq;
     window.history.replaceState({}, "", "/");
+    document.cookie = "_fbp=fb.1.1787900000000.123456789; Path=/";
     vi.stubGlobal("fetch", fetchMock);
     consentState.value = {
       version: 1,
@@ -63,7 +64,10 @@ describe("MetaPixelController", () => {
     };
   });
 
-  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  afterEach(() => {
+    document.cookie = "_fbp=; Max-Age=0; Path=/";
+    vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals();
+  });
 
   it("defers the external transport while queueing Meta and CAPI immediately", async () => {
     vi.spyOn(document, "readyState", "get").mockReturnValue("loading");

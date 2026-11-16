@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PurchaseEvent } from "./events";
-import { emitMetaAnalyticsEvent, resetMetaPixelForTests } from "./meta";
+import { emitMetaAnalyticsEvent, emitMetaPageView, resetMetaPixelForTests } from "./meta";
 import { META_PIXEL_ID } from "./runtime";
 
 const cartEvent = {
@@ -47,8 +47,83 @@ describe("Meta commerce transport", () => {
     document.documentElement.removeAttribute("data-meta-private-purchase");
     Object.assign(window, { fbq });
     window.history.replaceState({}, "", "/");
+    document.cookie = "_fbp=fb.1.1787900000000.123456789; Path=/";
     vi.stubGlobal("fetch", fetchMock);
     resetMetaPixelForTests();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    document.cookie = "_fbp=; Max-Age=0; Path=/";
+    document.cookie = "_fbc=; Max-Age=0; Path=/";
+  });
+
+  it("waits for the first Pixel cookie before sending the initial PageView server copy", async () => {
+    vi.useFakeTimers();
+    document.cookie = "_fbp=; Max-Age=0; Path=/";
+    document.cookie = "_fbc=; Max-Age=0; Path=/";
+    document.documentElement.dataset.metaEnabled = "true";
+
+    expect(emitMetaPageView("/")).toBe(true);
+    const pixelEventId = fbq.mock.calls[0][4].eventID;
+    expect(fetchMock).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
+    document.cookie = "_fbp=fb.1.1787900000000.123456789; Path=/";
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toEqual({
+      version: 1, eventId: pixelEventId, name: "PageView", sourcePath: "/",
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fbq).toHaveBeenCalledOnce();
+  });
+
+  it("also preserves a commerce event collected before Pixel cookies exist", async () => {
+    vi.useFakeTimers();
+    document.cookie = "_fbp=; Max-Age=0; Path=/";
+    document.documentElement.dataset.metaEnabled = "true";
+    expect(emitMetaAnalyticsEvent(cartEvent)).toBe(true);
+    const pixelEventId = fbq.mock.calls[0][4].eventID;
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    document.cookie = "_fbc=fb.1.1787900000000.click_ABC-123; Path=/";
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1].body))).toMatchObject({
+      eventId: pixelEventId, name: "AddToCart", commerce: { value: 65 },
+    });
+  });
+
+  it.each(["withdrawn consent", "private navigation"])(
+    "drops the pending server copy after %s", async (reason) => {
+      vi.useFakeTimers();
+      document.cookie = "_fbp=; Max-Age=0; Path=/";
+      document.documentElement.dataset.metaEnabled = "true";
+      emitMetaPageView("/");
+      if (reason === "withdrawn consent") {
+        document.documentElement.removeAttribute("data-meta-enabled");
+      } else {
+        window.history.replaceState({}, "", "/orders/RNR-PRIVATE?access=private-token");
+      }
+      document.cookie = "_fbp=fb.1.1787900000000.123456789; Path=/";
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("stops waiting when matching cookies stay unavailable or malformed", async () => {
+    vi.useFakeTimers();
+    document.cookie = "_fbp=invalid; Path=/";
+    document.documentElement.dataset.metaEnabled = "true";
+    emitMetaPageView("/");
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    document.cookie = "_fbp=fb.1.1787900000000.123456789; Path=/";
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("pairs Pixel and CAPI AddToCart with one shared event ID and no private fields", async () => {

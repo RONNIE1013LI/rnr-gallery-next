@@ -124,6 +124,7 @@ describe("emitAnalyticsEvent", () => {
   });
 
   it("keeps Meta commerce independent when analytics transport is unavailable", () => {
+    document.cookie = "_fbp=fb.1.1787900000000.123456789; Path=/";
     const fbq = vi.fn();
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
     Object.assign(window, { fbq });
@@ -141,6 +142,7 @@ describe("emitAnalyticsEvent", () => {
       { eventID: expect.any(String) },
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    document.cookie = "_fbp=; Max-Age=0; Path=/";
     expect(sendGAEvent).not.toHaveBeenCalled();
   });
 
