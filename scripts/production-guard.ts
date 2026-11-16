@@ -124,6 +124,7 @@ export type ProductionGuardSnapshot = {
     branch: string | undefined;
     sha: string | undefined;
     createdAt: string;
+    state?: string;
   }>;
   domains: Array<{
     name: string;
@@ -455,6 +456,14 @@ export function evaluateProductionGuard(
     }
   }
   for (const deployment of snapshot.recentProductionDeployments) {
+    // Owner reviewed on 2026-11-16: this bootstrap CLI attempt was blocked,
+    // has no active aliases, and never became the current Production deployment.
+    const reviewedBootstrap = deployment.id === "dpl_5rKQxEB7q44HgdRJQTUe4CG7hPfF"
+      && deployment.createdAt === "2026-08-17T01:09:51.252Z"
+      && deployment.state === "BLOCKED"
+      && deployment.branch === undefined && deployment.sha === undefined
+      && deployment.id !== snapshot.productionDeployment.id;
+    if (reviewedBootstrap) continue;
     if (deployment.branch !== "main") {
       add(
         "NON_MAIN_PRODUCTION_DEPLOYMENT",
@@ -775,6 +784,7 @@ function deploymentRecord(value: unknown) {
     sha: stringValue(meta.githubCommitSha),
     createdAt: created,
     aliases: stringArray(deployment.alias),
+    state: stringValue(deployment.readyState) ?? stringValue(deployment.state),
     ready: deployment.readyState === "READY" || deployment.state === "READY",
   };
 }
@@ -1038,11 +1048,12 @@ export async function collectProductionGuardSnapshot(input: Readonly<{
       productionBranch: stringValue(projectLink.productionBranch),
     },
     productionDeployment: currentDeployment,
-    recentProductionDeployments: deployments.map(({ id, branch, sha, createdAt }) => ({
+    recentProductionDeployments: deployments.map(({ id, branch, sha, createdAt, state }) => ({
       id,
       branch,
       sha,
       createdAt,
+      state,
     })),
     domains,
     environmentVariables,

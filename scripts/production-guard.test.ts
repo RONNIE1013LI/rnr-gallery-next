@@ -256,6 +256,42 @@ describe("Production guard invariants", () => {
     }));
   });
 
+  it("accepts the owner-reviewed blocked bootstrap deployment", () => {
+    const snapshot = validSnapshot();
+    const bootstrap = {
+      id: "dpl_5rKQxEB7q44HgdRJQTUe4CG7hPfF",
+      branch: undefined,
+      sha: undefined,
+      createdAt: "2026-08-17T01:09:51.252Z",
+      state: "BLOCKED",
+    };
+    snapshot.recentProductionDeployments.push(bootstrap);
+    expect(evaluateProductionGuard(snapshot).passed).toBe(true);
+  });
+
+  it.each([
+    { id: "dpl_other" },
+    { createdAt: "2026-08-18T01:09:51.252Z" },
+    { state: "READY" },
+    { state: undefined },
+    { branch: "codex/other" },
+    { sha: "b".repeat(40) },
+  ])("keeps rejecting unreviewed deployment metadata %j", (change) => {
+    const snapshot = validSnapshot();
+    const deployment = {
+      id: "dpl_5rKQxEB7q44HgdRJQTUe4CG7hPfF",
+      branch: undefined,
+      sha: undefined,
+      createdAt: "2026-08-17T01:09:51.252Z",
+      state: "BLOCKED",
+      ...change,
+    };
+    snapshot.recentProductionDeployments.push(deployment);
+    expect(evaluateProductionGuard(snapshot).findings).toContainEqual(expect.objectContaining({
+      code: "NON_MAIN_PRODUCTION_DEPLOYMENT", subject: deployment.id,
+    }));
+  });
+
   it("detects unverified, misconfigured, or invalid-SSL domains", () => {
     const snapshot = validSnapshot();
     snapshot.domains[0].verified = false;
