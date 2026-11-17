@@ -25,3 +25,25 @@ it("preserves separate styles for selected text while keeping the words unchange
   expect(decodeReviewTextStyle(JSON.stringify(style))).toEqual(style);
   expect(reviewTextStyleSchema.safeParse({ ...style, ranges: [{ ...style.ranges[0], from: 9, to: 2 }] }).success).toBe(false);
 });
+
+it.each([[0, 2], [2, 4]])("ignores a format range cutting an emoji at %i..%i", async (from, to) => {
+  const { reviewTextSegments } = await import("./text-style");
+  const base = { font: "default" as const, size: 16, bold: false, italic: false };
+  expect(reviewTextSegments("A😊B", { ...base, ranges: [{ ...base, from, to, bold: true }] }))
+    .toEqual([{ text: "A😊B", style: base }]);
+});
+
+it("keeps whole emoji and valid neighboring formatting unchanged", async () => {
+  const { reviewTextSegments } = await import("./text-style");
+  const base = { font: "default" as const, size: 16, bold: false, italic: false };
+  const whole = reviewTextSegments("A😊B", { ...base, ranges: [{ ...base, from: 1, to: 3, bold: true }] });
+  expect(whole[1]).toMatchObject({ text: "😊", style: { bold: true } });
+  const adjacent = reviewTextSegments("A😊B", { ...base, ranges: [
+    { ...base, from: 0, to: 2, italic: true },
+    { ...base, from: 3, to: 4, bold: true },
+  ] });
+  expect(adjacent).toEqual([
+    { text: "A😊", style: base },
+    { text: "B", style: { ...base, bold: true } },
+  ]);
+});

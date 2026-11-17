@@ -39,3 +39,25 @@ it.each(["clock", "formatter"])("keeps the server-rendered review dates when the
     container.remove();
   }
 });
+
+it("hydrates formatted emoji after the server HTML is encoded as UTF-8", async () => {
+  const { ReviewText } = await import("./review-text");
+  const text = "A😊B";
+  const base = { font: "default" as const, size: 16, bold: false, italic: false };
+  const ui = <p><ReviewText text={text} style={{ ...base, ranges: [{ ...base, from: 0, to: 2, bold: true }] }} /></p>;
+  const container = document.createElement("div");
+  document.body.append(container);
+  container.innerHTML = Buffer.from(renderToString(ui), "utf8").toString("utf8");
+  const errors: unknown[] = [];
+  let root: ReturnType<typeof hydrateRoot> | undefined;
+  try {
+    await act(async () => {
+      root = hydrateRoot(container, ui, { onRecoverableError: error => errors.push(error) });
+    });
+    expect(errors).toEqual([]);
+    expect(container.textContent).toBe(text);
+  } finally {
+    await act(async () => root?.unmount());
+    container.remove();
+  }
+});

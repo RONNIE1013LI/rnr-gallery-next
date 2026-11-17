@@ -30,10 +30,7 @@ function savedResponse(analytics: boolean, advertising: boolean) {
 }
 
 describe("ConsentPreferences", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
-  });
+  afterEach(() => vi.unstubAllGlobals());
 
   it("temporarily defaults new visitors to Accept all without showing the prompt", async () => {
     const fetch = vi.fn().mockResolvedValue(savedResponse(true, true));
@@ -55,20 +52,6 @@ describe("ConsentPreferences", () => {
     }));
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Cookie preferences" })).toBeInTheDocument();
-  });
-
-  it.each([
-    "Mozilla/5.0 (Macintosh) Chrome/136.0 Safari/537.36 Chrome-Lighthouse",
-    "Mozilla/5.0 (Linux; Android 11) Chrome/136.0 Mobile Safari/537.36 Chrome-Lighthouse",
-  ])("does not automatically enable optional tracking for a Lighthouse audit: %s", (userAgent) => {
-    vi.spyOn(navigator, "userAgent", "get").mockReturnValue(userAgent);
-    const fetch = vi.fn().mockResolvedValue(savedResponse(true, true));
-    vi.stubGlobal("fetch", fetch);
-    render(<ConsentPreferences initialConsent={null}><StateWithTrigger /></ConsentPreferences>);
-
-    expect(fetch).not.toHaveBeenCalled();
-    expect(screen.getByText("none")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Cookie preferences" })).not.toBeInTheDocument();
   });
 
   it("preserves an existing consent choice without replacing it", () => {

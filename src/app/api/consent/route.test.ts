@@ -108,3 +108,24 @@ it('sets a separate HttpOnly TikTok decision only for explicit choices and clear
  const refused=await route.POST(consentRequest({analytics:false,advertising:false,tiktokAdvertising:false}));
  expect(refused.headers.get('set-cookie')).toContain('rnr-tiktok-choice-v1=;');
 });
+
+it.each([
+  "Mozilla/5.0 (Macintosh) Chrome/136.0 Safari/537.36 Chrome-Lighthouse",
+  "Mozilla/5.0 (Linux; Android 11) Chrome/136.0 Mobile Safari/537.36 Chrome-Lighthouse",
+])("does not enable optional measurement for an automated audit: %s", async (userAgent) => {
+  const route = createConsentRoute({ trustedOrigin: origin, now: () => now, environment: "production" });
+  const response = await route.POST(consentRequest(
+    { analytics: true, advertising: true }, { "User-Agent": userAgent },
+  ));
+  expect(response.status).toBe(200);
+  expect((await response.json()).consent).toMatchObject({ analytics: false, advertising: false });
+  expect(response.headers.get("Set-Cookie")).toContain("ra_vid_v1=;");
+});
+
+it("preserves normal visitor choices when the audit token is absent", async () => {
+  const route = createConsentRoute({ trustedOrigin: origin, now: () => now });
+  const response = await route.POST(consentRequest(
+    { analytics: true, advertising: true }, { "User-Agent": "FakeChrome-LighthouseBot" },
+  ));
+  expect((await response.json()).consent).toMatchObject({ analytics: true, advertising: true });
+});

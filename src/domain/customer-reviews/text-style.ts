@@ -56,6 +56,12 @@ export function decodeReviewTextStyle(value: string | null | undefined): ReviewT
   }
 }
 
+function splitsSurrogatePair(text: string, boundary: number) {
+  const before = text.charCodeAt(boundary - 1);
+  const after = text.charCodeAt(boundary);
+  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+}
+
 export function reviewTextSegments(text: string, style?: ReviewTextStyle) {
   const base = reviewCharacterStyleSchema.parse(style ? {
     font: style.font, size: style.size, bold: style.bold, italic: style.italic,
@@ -64,7 +70,9 @@ export function reviewTextSegments(text: string, style?: ReviewTextStyle) {
   let offset = 0;
   const parsed = reviewTextStyleSchema.safeParse(style);
   for (const range of parsed.success ? parsed.data.ranges ?? [] : []) {
-    if (range.to > text.length) continue;
+    if (range.to > text.length
+      || splitsSurrogatePair(text, range.from)
+      || splitsSurrogatePair(text, range.to)) continue;
     if (range.from > offset) segments.push({ text: text.slice(offset, range.from), style: base });
     const { font, size, bold, italic } = range;
     segments.push({ text: text.slice(range.from, range.to), style: { font, size, bold, italic } });

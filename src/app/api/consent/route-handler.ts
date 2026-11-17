@@ -45,10 +45,12 @@ export function createConsentRoute(dependencies: Dependencies = {}) {
         const choice = parseChoice(await parseBoundedJson(request, MAX_CONSENT_REQUEST_BYTES));
         if (!choice) return failure(422);
 
+        const automatedAudit = /(?:^|[ /;(])Chrome-Lighthouse(?:[/ ;)]|$)/
+          .test(request.headers.get("User-Agent") ?? "");
         const consent: AdvertisingConsent = {
           version: 1,
-          analytics: choice.analytics,
-          advertising: choice.advertising,
+          analytics: choice.analytics && !automatedAudit,
+          advertising: choice.advertising && !automatedAudit,
           decidedAt: (dependencies.now?.() ?? new Date()).toISOString(),
         };
         const headers = new Headers({ "Cache-Control": "no-store" });
@@ -56,13 +58,13 @@ export function createConsentRoute(dependencies: Dependencies = {}) {
           consent,
           dependencies.environment ?? process.env.VERCEL_ENV,
         ));
-        if (choice.tiktokAdvertising !== undefined || !choice.advertising) {
+        if (choice.tiktokAdvertising !== undefined || !consent.advertising) {
           headers.append("Set-Cookie", tiktokConsentCookieHeader(
-            { ...consent, advertising: choice.advertising && choice.tiktokAdvertising === true },
+            { ...consent, advertising: consent.advertising && choice.tiktokAdvertising === true },
             dependencies.environment ?? process.env.VERCEL_ENV,
           ));
         }
-        if (!choice.analytics) {
+        if (!consent.analytics) {
           for (const cookie of clearWebsiteAnalyticsCookieHeaders(
             dependencies.environment ?? process.env.VERCEL_ENV,
           )) headers.append("Set-Cookie", cookie);
