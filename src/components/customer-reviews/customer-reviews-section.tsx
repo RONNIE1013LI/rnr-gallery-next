@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { FaStar } from "react-icons/fa";
 
+import { formatRelativeReviewDate } from "@/domain/customer-reviews/relative-date";
 import type { PublicCustomerReviewSection } from "@/domain/customer-reviews/types";
 import { CustomerReviewCard } from "./customer-review-card";
 import { CustomerReviewCarousel } from "./customer-review-carousel";
@@ -11,6 +12,10 @@ export function CustomerReviewsSection({ data, background = "ivory" }: Readonly<
   background?: "ivory" | "sand";
 }>) {
   const { featured, summary } = data;
+  const now = new Date();
+  const dates = Object.fromEntries([featured, ...data.reviews].map((review) => [
+    review.id, formatRelativeReviewDate(review.reviewDate, now),
+  ]));
   return <section
     className={`${styles.section} ${background === "sand" ? styles.sectionSand : ""}`}
     aria-label="Customer reviews"
@@ -30,9 +35,9 @@ export function CustomerReviewsSection({ data, background = "ivory" }: Readonly<
       </header>
       <div className={`${styles.featuredLayout} ${featured.featuredImage ? "" : styles.featuredWithoutImage}`}>
         {featured.featuredImage ? <div className={styles.featuredImage}><Image src={featured.featuredImage.url} alt={featured.productDisplayLabel ? `${featured.productDisplayLabel} shared with this customer recommendation` : "Customer image shared with this recommendation"} width={featured.featuredImage.width} height={featured.featuredImage.height} sizes="(max-width: 900px) calc(100vw - 48px), 42vw" unoptimized /></div> : null}
-        <CustomerReviewCard review={featured} featured />
+        <CustomerReviewCard review={featured} date={dates[featured.id]} featured />
       </div>
-      {data.reviews.length ? <CustomerReviewCarousel reviews={data.reviews} /> : null}
+      {data.reviews.length ? <CustomerReviewCarousel reviews={data.reviews} dates={dates} /> : null}
     </div>
   </section>;
 }

@@ -7,7 +7,7 @@ import { FcGoogle } from "react-icons/fc";
 
 import type { PublicCustomerReview } from "@/domain/customer-reviews/types";
 import { reviewTextCss } from "@/domain/customer-reviews/text-style";
-import { formatRelativeReviewDate } from "@/domain/customer-reviews/relative-date";
+import type { RelativeReviewDate } from "@/domain/customer-reviews/relative-date";
 import { useContainedDialog } from "@/components/forms/use-contained-dialog";
 import { ReviewText } from "./review-text";
 import styles from "./customer-reviews.module.css";
@@ -16,11 +16,11 @@ function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 }
 
-export function CustomerReviewCard({ review, featured = false }: Readonly<{
+export function CustomerReviewCard({ review, date, featured = false }: Readonly<{
   review: PublicCustomerReview;
+  date: RelativeReviewDate;
   featured?: boolean;
 }>) {
-  const date = formatRelativeReviewDate(review.reviewDate);
   const [overflows, setOverflows] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);

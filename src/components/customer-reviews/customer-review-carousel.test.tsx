@@ -1,8 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { formatRelativeReviewDate } from "@/domain/customer-reviews/relative-date";
 import { CustomerReviewCarousel } from "./customer-review-carousel";
 import { featuredReview, secondReview } from "./test-fixtures";
+
+const dates = Object.fromEntries([featuredReview, secondReview].map((review) => [
+  review.id, formatRelativeReviewDate(review.reviewDate),
+]));
 
 describe("CustomerReviewCarousel", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -10,7 +15,7 @@ describe("CustomerReviewCarousel", () => {
   it("supports buttons and Arrow keys without autoplay or cloned slides", () => {
     const scrollTo = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollTo", { configurable: true, value: scrollTo });
-    render(<CustomerReviewCarousel reviews={[featuredReview, secondReview]} />);
+    render(<CustomerReviewCarousel dates={dates} reviews={[featuredReview, secondReview]} />);
 
     const previous = screen.getByRole("button", { name: "Previous recommendations" });
     const next = screen.getByRole("button", { name: "Next recommendations" });
@@ -29,7 +34,7 @@ describe("CustomerReviewCarousel", () => {
   });
 
   it("keeps controls in sync after direct touch or trackpad scrolling", () => {
-    render(<CustomerReviewCarousel reviews={[featuredReview, secondReview]} />);
+    render(<CustomerReviewCarousel dates={dates} reviews={[featuredReview, secondReview]} />);
 
     const carousel = screen.getByRole("region", { name: "Customer recommendations" });
     const cards = screen.getAllByRole("article");
@@ -47,7 +52,7 @@ describe("CustomerReviewCarousel", () => {
   it("opens the full unchanged recommendation only when text overflows and restores focus", async () => {
     vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(200);
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(80);
-    render(<CustomerReviewCarousel reviews={[featuredReview]} />);
+    render(<CustomerReviewCarousel dates={dates} reviews={[featuredReview]} />);
 
     const trigger = await screen.findByRole("button", { name: "Read full recommendation from Aroha Te Rangi" });
     trigger.focus();

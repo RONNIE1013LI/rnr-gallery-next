@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
+import type { RelativeReviewDate } from "@/domain/customer-reviews/relative-date";
 import type { PublicCustomerReview } from "@/domain/customer-reviews/types";
 import { CustomerReviewCard } from "./customer-review-card";
 import styles from "./customer-reviews.module.css";
 
-export function CustomerReviewCarousel({ reviews }: Readonly<{
+export function CustomerReviewCarousel({ reviews, dates }: Readonly<{
   reviews: readonly PublicCustomerReview[];
+  dates: Readonly<Record<string, RelativeReviewDate>>;
 }>) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
@@ -58,7 +60,7 @@ export function CustomerReviewCarousel({ reviews }: Readonly<{
       <button type="button" aria-label="Next recommendations" disabled={index === reviews.length - 1} onClick={() => move(index + 1)}>→</button>
     </div>
     <div ref={containerRef} className={styles.carousel} role="region" aria-label="Customer recommendations" tabIndex={0} onKeyDown={keyDown} onScroll={syncIndex}>
-      {reviews.map((review) => <CustomerReviewCard key={review.id} review={review} />)}
+      {reviews.map((review) => <CustomerReviewCard key={review.id} review={review} date={dates[review.id]} />)}
     </div>
   </div>;
 }
