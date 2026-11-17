@@ -122,7 +122,9 @@ export function ConsentPreferences({
   }, []);
 
   useEffect(() => {
-    if (initialConsent || defaultSaved.current) return;
+    // An automated audit is not a visitor choosing optional measurement.
+    if (initialConsent || defaultSaved.current
+      || /(?:^|[ /;(])Chrome-Lighthouse(?:[/ ;)]|$)/.test(navigator.userAgent)) return;
     defaultSaved.current = true;
     void save({ analytics: true, advertising: true }, false);
   }, [initialConsent, save]);
