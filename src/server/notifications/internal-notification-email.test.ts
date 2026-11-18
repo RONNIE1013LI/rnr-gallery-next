@@ -309,3 +309,38 @@ describe("internal notification email", () => {
     );
   });
 });
+
+it("shows the full standalone payment description and verified payment details in both formats", () => {
+  const description = "A4 canvas: 2 people + GST\r\nA4 canvas: 3 people + GST\nTotal less 10% = $284.63 <approved>";
+  const email = renderInternalNotificationEmail({
+    topic: "payment_request_paid",
+    resourceReference: "PAY-2026-EXAMPLE",
+    recipientEmail: "ops@example.test",
+    eventKey: "payment_request_paid:example",
+    payload: {
+      version: 1,
+      adminPath: "/admin/payment-requests/example",
+      paymentRequest: {
+        description,
+        payerName: "Example Payer",
+        payerEmail: "payer@example.test",
+        payerPhone: null,
+        createdAt: "2026-11-17T23:00:00.000Z",
+        paidAt: "2026-11-18T00:00:00.000Z",
+        method: "afterpay",
+        currency: "NZD",
+        amountCents: 28_463,
+      },
+    },
+  }, "https://rnrgallery.com");
+  expect(email.text).toContain(description);
+  expect(email.text).toContain("Amount paid: NZD 284.63");
+  expect(email.text).not.toContain("Phone:");
+  expect(email.html).toContain("A4 canvas: 2 people + GST<br>A4 canvas: 3 people + GST<br>Total less 10% = $284.63 &lt;approved&gt;");
+  const doc = new DOMParser().parseFromString(email.html, "text/html");
+  expect(doc.querySelector("[data-balance]")?.textContent).toBe("NZD 284.63");
+  expect(doc.body.textContent).toContain("Afterpay");
+  expect(doc.body.textContent).toContain("Example Payer");
+  expect(doc.body.textContent).toContain("Paid at");
+  expect(doc.querySelector("a")?.href).toBe("https://rnrgallery.com/admin/payment-requests/example");
+});

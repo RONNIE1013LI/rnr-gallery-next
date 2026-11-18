@@ -62,11 +62,24 @@ export type ManualOrderNotificationDetails = Readonly<{
   }>;
 }>;
 
+export type PaymentRequestPaidNotificationDetails = Readonly<{
+  description: string;
+  payerName: string | null;
+  payerEmail: string | null;
+  payerPhone: string | null;
+  createdAt: string;
+  paidAt: string;
+  method: "card" | "afterpay" | "flik" | "payid";
+  currency: "NZD" | "AUD";
+  amountCents: number;
+}>;
+
 export type InternalNotificationPayload = Readonly<{
   version: 1;
   adminPath: string;
   manualOrder?: ManualOrderNotificationDetails;
   websiteOrder?: WebsiteOrderNotificationDetails;
+  paymentRequest?: PaymentRequestPaidNotificationDetails;
 }>;
 
 export type WebsiteOrderNotificationDetails = Readonly<{

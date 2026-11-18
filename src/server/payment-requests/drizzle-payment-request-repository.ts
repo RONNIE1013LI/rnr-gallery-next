@@ -401,6 +401,17 @@ async function applyRequestVerifiedResult(
         payload: {
           version: 1,
           adminPath: `/admin/payment-requests/${request.id}`,
+          paymentRequest: {
+            description: request.description,
+            payerName: attempt.payerSnapshot?.fullName.trim() || request.customerName?.trim() || null,
+            payerEmail,
+            payerPhone: attempt.payerSnapshot?.phone?.trim() || null,
+            createdAt: request.createdAt.toISOString(),
+            paidAt: (request.paidAt ?? now).toISOString(),
+            method: attempt.method,
+            currency: request.currency,
+            amountCents: request.amountCents,
+          },
         },
         createdAt: now,
       });

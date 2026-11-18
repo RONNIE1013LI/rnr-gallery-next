@@ -26,6 +26,17 @@ const INTERNAL_NOTIFICATION_RESOURCE_TYPES = Object.freeze([
 const payloadSchema = z.object({
   version: z.literal(1),
   adminPath: z.string().max(2048).refine(isCanonicalInternalNotificationAdminPath),
+  paymentRequest: z.object({
+    description: z.string(),
+    payerName: z.string().nullable(),
+    payerEmail: z.string().nullable(),
+    payerPhone: z.string().nullable(),
+    createdAt: z.string().datetime(),
+    paidAt: z.string().datetime(),
+    method: z.enum(["card", "afterpay", "flik", "payid"]),
+    currency: z.enum(["NZD", "AUD"]),
+    amountCents: z.number().int().positive(),
+  }).strict().optional(),
   manualOrder: z.object({
     customerName: z.string().max(190),
     createdAt: z.string().datetime(),
@@ -92,7 +103,8 @@ const eventSchema = z.object({
   payload: payloadSchema,
   createdAt: z.date(),
 }).strict().refine((event) => (!event.payload.manualOrder || event.topic === "manual_order_created")
-  && (!event.payload.websiteOrder || event.topic === "web_order_paid"));
+  && (!event.payload.websiteOrder || event.topic === "web_order_paid")
+  && (!event.payload.paymentRequest || (event.topic === "payment_request_paid" && event.resourceType === "payment_request")));
 
 export type InternalNotificationEvent = Readonly<{
   topic: InternalNotificationTopic;

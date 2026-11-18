@@ -772,7 +772,21 @@ describe("payment request balance transactions", () => {
         resourceId: request.id,
         resourceReference: request.requestNumber,
         recipientEmail: recipient.email,
-        payload: { version: 1, adminPath: `/admin/payment-requests/${request.id}` },
+        payload: {
+          version: 1,
+          adminPath: `/admin/payment-requests/${request.id}`,
+          paymentRequest: {
+            description: request.description,
+            payerName: "Payer",
+            payerEmail: "payer@example.test",
+            payerPhone: null,
+            createdAt: request.createdAt.toISOString(),
+            paidAt: ledger[0].receivedAt.toISOString(),
+            method: "card",
+            currency: "NZD",
+            amountCents: 20_000,
+          },
+        },
       }),
     ]);
     });
