@@ -69,7 +69,7 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
   const paid = request.status === "paid";
   const expired = !paid && request.status !== "pending";
   const amount = formatMarketMoney(request.amountCents, request.currency);
-  return <main id="main-content" className={styles.page}>
+  return <main id="main-content" className={paid ? `${styles.page} ${styles.completed}` : styles.page}>
     <section className={styles.card} aria-labelledby="payment-request-title">
       <p className={styles.eyebrow}>Secure payment</p>
       <header className={styles.header}>
