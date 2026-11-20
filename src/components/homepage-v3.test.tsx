@@ -54,7 +54,7 @@ describe("HomepageV3", () => {
     expect(screen.getByRole("link", { name: "Canvas details" })).toHaveAttribute("href", "/au/canvas#canvas-buying-guide");
     expect(screen.getByRole("link", { name: "Grave cover details" })).toHaveAttribute("href", "/au/products/grave-cover");
   });
-  it("uses the published recommendation count in the homepage trust highlight", () => {
+  it("shows both review sources without a count in the homepage trust highlight", () => {
     render(<HomepageV3 registry={defaultProductRegistry} reviewSection={{
       summary: {
         rating: 4.9,
@@ -67,8 +67,8 @@ describe("HomepageV3", () => {
       reviews: [secondReview],
     }} />);
 
-    expect(screen.getByRole("link", { name: "100% Recommended (315 Reviews)" })).toBeInTheDocument();
-    expect(screen.queryByText("100% Recommended (292 Reviews)")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "100% Recommended facebook & Google" })).toBeInTheDocument();
+    expect(screen.queryByText(/315 Reviews/)).not.toBeInTheDocument();
   });
 
   it("replaces the hard-coded story with the managed review section", () => {

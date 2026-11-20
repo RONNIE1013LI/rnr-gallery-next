@@ -81,13 +81,25 @@
   font-weight: 600;
 }
 
-.facebookWord {
-  color: var(--review-facebook);
-  font-size: 1.65rem;
-  font-weight: 800;
-  letter-spacing: -.035em;
-  line-height: 1;
+.reviewPlatformNames {
+  white-space: nowrap;
 }
+
+.facebookWord {
+  color: #1877f2;
+  font-weight: 800;
+}
+
+.googleWord {
+  font-weight: 700;
+}
+
+.googleWord span:nth-child(1),
+.googleWord span:nth-child(4) { color: #4285f4; }
+.googleWord span:nth-child(2),
+.googleWord span:nth-child(6) { color: #ea4335; }
+.googleWord span:nth-child(3) { color: #fbbc05; }
+.googleWord span:nth-child(5) { color: #34a853; }
 
 .facebookSummary a,
 .cardActions a,
@@ -390,7 +402,7 @@
   .section { padding: var(--v3-section-standard, 4rem) 0; }
   .shell { width: calc(100% - 2.5rem); }
   .facebookSummary { width: min(100%, 18rem); justify-self: center; }
-  .facebookSummaryCount { font-size: .75rem; white-space: nowrap; }
+  .facebookSummaryCount { font-size: .75rem; }
   .carousel { grid-auto-columns: 88%; }
   .featuredImage { height: clamp(13.75rem, 65vw, 17.5rem); }
   .featuredCard { padding: 1.5rem; }

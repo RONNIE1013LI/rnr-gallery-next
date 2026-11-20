@@ -31,7 +31,8 @@ describe("CustomerReviewsSection", () => {
     expect(decorativeStars).not.toHaveAttribute("aria-label");
     expect(decorativeStars?.querySelectorAll("svg")).toHaveLength(5);
     expect(screen.getByText("100% Recommended")).toBeInTheDocument();
-    expect(screen.getByText("facebook")).toBeInTheDocument();
+    expect(screen.getByText("100% Recommended").parentElement).toHaveTextContent("100% Recommended facebook & Google");
+    expect(screen.getByRole("img", { name: "Google" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("target", "_blank");
     expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("rel", "noopener noreferrer");
     expect(screen.getAllByText("Aroha Te Rangi")).toHaveLength(1);

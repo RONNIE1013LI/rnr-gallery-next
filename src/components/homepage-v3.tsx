@@ -19,7 +19,7 @@ import {
 import { ProofConversationScroller } from "./proof-conversation-scroller";
 import { HomepageFaq } from "./homepage-faq";
 import { HomepagePromotion } from "./homepage-promotion";
-import { CustomerReviewsSection } from "./customer-reviews/customer-reviews-section";
+import { CustomerReviewsSection, ReviewPlatformNames } from "./customer-reviews/customer-reviews-section";
 import { homepageV3ImageSlots, type HomepageV3ImageSlot } from "./homepage-v3-images";
 import styles from "./homepage-v3.module.css";
 import { SuppliesEntry } from "./supplies-storefront";
@@ -299,7 +299,7 @@ export function HomepageV3({
 
       {reviewSection?.summary && <div className={styles.reviewHighlight}>
         <a href={reviewSection.summary.reviewsPageUrl}>
-          100% Recommended ({reviewSection.summary.recommendationCount} Reviews)
+          100% Recommended{" "}<ReviewPlatformNames />
         </a>
         <span>See the customer stories and verified source below.</span>
       </div>}
