@@ -7,9 +7,9 @@ import { CustomerReviewCard } from "./customer-review-card";
 import { CustomerReviewCarousel } from "./customer-review-carousel";
 import styles from "./customer-reviews.module.css";
 
-export function ReviewPlatformNames({ capitalizeFacebook = false }: { capitalizeFacebook?: boolean } = {}) {
+export function ReviewPlatformNames() {
   return <span className={styles.reviewPlatformNames}>
-    <span className={styles.facebookWord}>{capitalizeFacebook ? "Facebook" : "facebook"}</span>{" & "}
+    <span className={styles.facebookWord}>Facebook</span>{" & "}
     <span className={styles.googleWord} role="img" aria-label="Google">
       <span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span>
     </span>
@@ -38,7 +38,7 @@ export function CustomerReviewsSection({ data, background = "ivory" }: Readonly<
             {Array.from({ length: 5 }, (_, index) => <FaStar key={index} aria-hidden="true" />)}
           </span>
           <p className={styles.facebookSummaryCount}>100% Recommended</p>
-          <ReviewPlatformNames capitalizeFacebook />
+          <ReviewPlatformNames />
           <a href={summary.reviewsPageUrl} target="_blank" rel="noopener noreferrer">View all on Facebook</a>
         </div> : null}
       </header>
