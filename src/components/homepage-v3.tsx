@@ -298,9 +298,9 @@ export function HomepageV3({
       </section>
 
       {reviewSection?.summary && <div className={styles.reviewHighlight}>
-        <a href={reviewSection.summary.reviewsPageUrl}>
+        <span className={styles.reviewHighlightTitle}>
           100% Recommended{" "}<ReviewPlatformNames />
-        </a>
+        </span>
         <span>See the customer stories and verified source below.</span>
       </div>}
       <section id="transformation" className={`${styles.transformationSection} ${styles.sectionDark}`}>

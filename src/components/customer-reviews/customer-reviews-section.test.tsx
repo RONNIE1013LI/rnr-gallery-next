@@ -34,8 +34,7 @@ describe("CustomerReviewsSection", () => {
     expect(recommendation).toHaveClass(styles.facebookSummaryCount);
     expect(recommendation.nextElementSibling).toHaveTextContent("Facebook & Google");
     expect(screen.getByRole("img", { name: "Google" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("target", "_blank");
-    expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.queryByText("View all on Facebook")).not.toBeInTheDocument();
     expect(screen.getAllByText("Aroha Te Rangi")).toHaveLength(1);
     expect(screen.getByText("Mereana K.")).toBeInTheDocument();
   });

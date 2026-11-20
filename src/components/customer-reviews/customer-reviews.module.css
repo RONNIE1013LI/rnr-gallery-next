@@ -48,6 +48,7 @@
 .facebookSummary {
   display: flex;
   min-width: 18rem;
+  min-height: 12rem;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -101,7 +102,6 @@
 .googleWord span:nth-child(3) { color: #fbbc05; }
 .googleWord span:nth-child(5) { color: #34a853; }
 
-.facebookSummary a,
 .cardActions a,
 .cardActions button,
 .reviewDialog a {
@@ -322,7 +322,6 @@
 }
 
 .carousel:focus-visible,
-.facebookSummary a:focus-visible,
 .carouselControls button:focus-visible,
 .cardActions :is(a, button):focus-visible,
 .reviewDialog :is(a, button):focus-visible {

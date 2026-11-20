@@ -67,7 +67,9 @@ describe("HomepageV3", () => {
       reviews: [secondReview],
     }} />);
 
-    expect(screen.getByRole("link", { name: "100% Recommended Facebook & Google" })).toBeInTheDocument();
+    expect(screen.getByText("See the customer stories and verified source below.").previousElementSibling)
+      .toHaveTextContent("100% Recommended Facebook & Google");
+    expect(screen.queryByRole("link", { name: "100% Recommended Facebook & Google" })).not.toBeInTheDocument();
     expect(screen.queryByText(/315 Reviews/)).not.toBeInTheDocument();
   });
 

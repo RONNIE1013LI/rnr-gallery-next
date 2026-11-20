@@ -693,10 +693,10 @@
   background:#f2eee4;
   display:grid;
   gap:.35rem}
-.reviewHighlight a {
+.reviewHighlightTitle {
   font-weight:600;
   color:#173f35}
-.reviewHighlight > span {
+.reviewHighlight > span:last-child {
   font-size:.8rem;
   color:#626d64}
 @media(max-width:760px) {

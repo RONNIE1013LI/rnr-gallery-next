@@ -39,7 +39,6 @@ export function CustomerReviewsSection({ data, background = "ivory" }: Readonly<
           </span>
           <p className={styles.facebookSummaryCount}>100% Recommended</p>
           <ReviewPlatformNames />
-          <a href={summary.reviewsPageUrl} target="_blank" rel="noopener noreferrer">View all on Facebook</a>
         </div> : null}
       </header>
       <div className={`${styles.featuredLayout} ${featured.featuredImage ? "" : styles.featuredWithoutImage}`}>
