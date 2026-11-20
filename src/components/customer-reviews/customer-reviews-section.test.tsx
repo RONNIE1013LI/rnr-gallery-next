@@ -30,7 +30,7 @@ describe("CustomerReviewsSection", () => {
     expect(decorativeStars).toHaveAttribute("aria-hidden", "true");
     expect(decorativeStars).not.toHaveAttribute("aria-label");
     expect(decorativeStars?.querySelectorAll("svg")).toHaveLength(5);
-    expect(screen.getByText("100% Recommended (288 Reviews)")).toBeInTheDocument();
+    expect(screen.getByText("100% Recommended")).toBeInTheDocument();
     expect(screen.getByText("facebook")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("target", "_blank");
     expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("rel", "noopener noreferrer");
@@ -55,7 +55,7 @@ describe("CustomerReviewsSection", () => {
     expect(container.querySelector("script")).toBeNull();
   });
 
-  it("uses the published recommendation count in the trust badge", () => {
+  it("omits the recommendation count from the trust badge", () => {
     render(<CustomerReviewsSection data={{
       ...section,
       summary: section.summary ? {
@@ -65,8 +65,8 @@ describe("CustomerReviewsSection", () => {
       } : null,
     }} />);
 
-    expect(screen.getByText("100% Recommended (315 Reviews)")).toBeInTheDocument();
-    expect(screen.queryByText("100% Recommended (288 Reviews)")).not.toBeInTheDocument();
+    expect(screen.getByText("100% Recommended")).toBeInTheDocument();
+    expect(screen.queryByText(/315 Reviews/)).not.toBeInTheDocument();
   });
 
   it("supports the shared Footer placement with the approved Soft Sand background", () => {

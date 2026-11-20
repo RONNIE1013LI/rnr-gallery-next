@@ -28,7 +28,7 @@ export function CustomerReviewsSection({ data, background = "ivory" }: Readonly<
           <span className={styles.facebookSummaryStars} aria-hidden="true">
             {Array.from({ length: 5 }, (_, index) => <FaStar key={index} aria-hidden="true" />)}
           </span>
-          <p className={styles.facebookSummaryCount}>100% Recommended ({summary.recommendationCount} Reviews)</p>
+          <p className={styles.facebookSummaryCount}>100% Recommended</p>
           <span className={styles.facebookWord}>facebook</span>
           <a href={summary.reviewsPageUrl} target="_blank" rel="noopener noreferrer">View all on Facebook</a>
         </div> : null}
