@@ -23,7 +23,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 3rem;
-  align-items: end;
+  align-items: center;
   margin-bottom: 2.75rem;
 }
 
@@ -54,13 +54,12 @@
 
 .facebookSummary {
   display: flex;
-  min-width: 18rem;
-  min-height: 12rem;
+  width: 14rem;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: .35rem;
-  padding: 1.5rem 2rem;
+  padding: 1rem 1.25rem;
   border: 1px solid rgb(24 119 242 / 14%);
   border-radius: 1.25rem;
   background: #fff;
@@ -395,7 +394,7 @@
 @media (max-width: 900px) {
   .shell { width: calc(100% - 3rem); }
   .sectionHeader { grid-template-columns: 1fr; gap: 1.5rem; }
-  .facebookSummary { width: min(100%, 18rem); min-width: 0; }
+  .facebookSummary { width: min(100%, 14rem); }
   .featuredLayout { grid-template-columns: 1fr; }
   .featuredImage {
     min-height: 0;
@@ -408,7 +407,7 @@
 @media (max-width: 600px) {
   .section { padding: var(--v3-section-standard, 4rem) 0; }
   .shell { width: calc(100% - 2.5rem); }
-  .facebookSummary { width: min(100%, 18rem); justify-self: center; }
+  .facebookSummary { justify-self: center; }
   .facebookSummaryCount { font-size: .75rem; }
   .carousel { grid-auto-columns: 88%; }
   .featuredImage { height: clamp(13.75rem, 65vw, 17.5rem); }

@@ -513,7 +513,7 @@
 .galleryLink { margin-top: 2.75rem; margin-left: 0; }
 
 .faqSection { padding: var(--v3-section-standard) 0; }
-.faqGrid { display: grid; grid-template-columns: 0.82fr 1.18fr; gap: 6.5rem; }
+.faqGrid { display: grid; grid-template-columns: 0.82fr 1.18fr; gap: 6.5rem; align-items: center; }
 .faqDescription { max-width: 29.375rem; color: var(--v3-muted); }
 .faqContact { max-width: 29.375rem; margin-top: clamp(3.5rem, 6vw, 6rem); display: flex; flex-direction: column; }
 .faqContact p { margin: 0 0 1.25rem; color: var(--v3-muted); font-size: 0.9375rem; line-height: 1.55; }
@@ -525,7 +525,7 @@
 .faqItem > button span:last-child { flex: 0 0 auto; color: var(--v3-forest); font-size: 1.5rem; font-weight: 400; }
 .faqItem > div p { margin: -0.25rem 0 1.75rem; padding-right: 3.375rem; color: var(--v3-muted); font-size: 0.875rem; }
 
-.finalCta { padding: var(--v3-section-compact) 0; }
+.finalCta { padding: var(--v3-section-compact) 0; background: var(--brand-green); }
 .finalCtaGrid { display: grid; grid-template-columns: 1fr auto; gap: 5rem; align-items: center; }
 .finalCta h2 { max-width: 52.5rem; color: white; }
 .finalCta p:not(.eyebrow) { color: #c9d7d1; }
