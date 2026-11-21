@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { assertFirstOrderOfferAvailable, isFirstOrderOfferEligible, isReturningOfferEligible, resolveCustomerOffer, InvalidReturningVoucherError } from "./first-order-offer";
+import { assertFirstOrderOfferAvailable, isFirstOrderOfferEligible, isReturningOfferEligible, isReturningVoucherUnused, resolveCustomerOffer, InvalidReturningVoucherError } from "./first-order-offer";
 import { createReturningCustomerVoucher } from "./returning-customer-voucher";
 
 function failingDatabase() {
@@ -34,25 +34,36 @@ describe("promotion state failures at checkout", () => {
   });
 });
 
-function enabledDatabase() {
+function offerDatabase(publishedValue = "enabled") {
   const execute = vi.fn().mockResolvedValue({ rows: [{ email: "returning@example.test" }] });
   const database = {
     execute,
-    select: vi.fn(() => ({ from: () => ({ where: () => ({ limit: vi.fn().mockResolvedValue([{ publishedValue: "enabled" }]) }) }) })),
+    select: vi.fn(() => ({ from: () => ({ where: () => ({ limit: vi.fn().mockResolvedValue([{ publishedValue }]) }) }) })),
   } as unknown as Parameters<typeof isFirstOrderOfferEligible>[0];
   return { database, execute };
 }
 
+it("allows pre-issuing an unused code without opening redemption on checkout", async () => {
+  const { database, execute } = offerDatabase("disabled");
+  execute.mockResolvedValueOnce({ rows: [{ email: "returning@example.test" }] }).mockResolvedValueOnce({ rows: [] });
+  expect(await isReturningVoucherUnused(database, "customer")).toBe(true);
+  expect(database.select).not.toHaveBeenCalled();
+
+  const secret = "test-only-voucher-secret-0123456789abcdef";
+  const code = createReturningCustomerVoucher("customer", secret);
+  await expect(resolveCustomerOffer(database, "customer", code, secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
+});
+
 describe("unlimited promotional orders", () => {
   it("gives the base offer to guests and repeat accounts without querying order history", async () => {
-    const { database, execute } = enabledDatabase();
+    const { database, execute } = offerDatabase();
     expect(await isFirstOrderOfferEligible(database, null)).toBe(true);
     expect(await isFirstOrderOfferEligible(database, "repeat-customer")).toBe(true);
     expect(await resolveCustomerOffer(database, null, undefined, "")).toEqual({ firstOrderDiscount: true, returningCustomerDiscount: false });
     expect(execute).not.toHaveBeenCalled();
   });
   it("allows an unused account voucher once and rejects reuse, another account and guests", async () => {
-    const { database, execute } = enabledDatabase(); const secret = "test-only-voucher-secret-0123456789abcdef";
+    const { database, execute } = offerDatabase(); const secret = "test-only-voucher-secret-0123456789abcdef";
     const code = createReturningCustomerVoucher("repeat-customer", secret);
     execute.mockReset().mockResolvedValue({ rows: [] });
     execute.mockResolvedValueOnce({ rows: [{ email: "returning@example.test" }] }).mockResolvedValueOnce({ rows: [] });

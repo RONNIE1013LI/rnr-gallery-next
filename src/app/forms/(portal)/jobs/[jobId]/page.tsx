@@ -1,4 +1,3 @@
-import { getPublicThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 import { hasAdminPermission } from "@/server/auth/admin-permissions";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -25,7 +24,7 @@ export default async function FormsJobDetailPage({ params }: Props) {
     ? access.formProfile.adminPermissions : [];
   const canGenerateVoucher = canViewContact &&
     hasAdminPermission(access.formRole, adminPermissions, "view_customers") &&
-    hasAdminPermission(access.formRole, adminPermissions, "manage_prices") && await getPublicThankYouOfferEnabled();
+    hasAdminPermission(access.formRole, adminPermissions, "manage_prices");
   const canViewAudit = hasFormPermission(access.formRole, access.formProfile, "view_audit");
   const canUpdate = hasFormPermission(access.formRole, access.formProfile, "update_jobs");
   const canManageFinance = hasFormPermission(access.formRole, access.formProfile, "update_finance");

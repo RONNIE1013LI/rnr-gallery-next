@@ -6,13 +6,12 @@ import { getAdminProductionRuntime } from "@/server/admin/admin-production-runti
 import type { AdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { HttpError } from "@/server/auth/require-session";
-import { isReturningOfferEligible } from "@/server/checkout/first-order-offer";
+import { isReturningVoucherUnused } from "@/server/checkout/first-order-offer";
 import { getDatabase } from "@/server/db/client";
 import { user } from "@/server/db/schema";
 import { requireFormPermission, type FormAccess } from "@/server/forms/require-forms";
 import type { FormPermission } from "@/server/forms/forms-permissions";
 import { assertTrustedMutationRequest, MutationRequestError, parseBoundedJson } from "@/server/http/mutation-request";
-import { isThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 
 type SavedJob = Readonly<{
   source: "manual" | "web";
@@ -30,7 +29,6 @@ type Dependencies = Readonly<{
   accountForEmail: (email: string) => Promise<string | null>;
   canIssue: (customerId: string) => Promise<boolean>;
   issue: ReturnType<typeof createAdminCustomerVoucherRoute>["POST"];
-  enabled: boolean | (() => Promise<boolean>);
   trustedOrigin?: string;
 }>;
 const noStore = { "Cache-Control": "no-store" };
@@ -39,7 +37,7 @@ const inputSchema = z.object({
   previousOrderNumber: z.string().max(100).regex(VOUCHER_ORDER_REFERENCE_PATTERN),
   verified: z.literal(true),
 }).strict();
-const unavailable = "The promotion is unavailable, or this account-bound voucher has already been reserved or used. Review the promotion setting and customer account.";
+const unavailable = "This account-bound voucher is unavailable or has already been reserved or used.";
 const registerFirst = "The customer must register an account using this saved email before a voucher can be generated.";
 
 function errorResponse(error: unknown) {
@@ -57,9 +55,8 @@ export function createFormsJobVoucherRoute(dependencies?: Dependencies) {
         .where(sql`lower(${user.email}) = ${email.trim().toLowerCase()}`).limit(2);
       return accounts.length === 1 ? accounts[0].id : null;
     },
-    canIssue: (customerId) => isReturningOfferEligible(getDatabase(), customerId),
-    issue: createAdminCustomerVoucherRoute().POST,
-    enabled: isThankYouOfferEnabled,
+    canIssue: (customerId) => isReturningVoucherUnused(getDatabase(), customerId),
+    issue: createAdminCustomerVoucherRoute(undefined, { fromSavedOrder: true }).POST,
   });
 
   async function savedContext(deps: Dependencies, context: Context) {
@@ -67,7 +64,6 @@ export function createFormsJobVoucherRoute(dependencies?: Dependencies) {
     await deps.requirePermission("view_customer_contact");
     await deps.requireAdminPermission("view_customers");
     await deps.requireAdminPermission("manage_prices");
-    if (!(typeof deps.enabled === "function" ? await deps.enabled() : deps.enabled)) throw new HttpError("The thank-you offer is currently unavailable.", 409);
     const { jobId } = await context.params;
     const detail = await deps.detail(jobId);
     if (!detail || (access.formProfile?.assignedOnly && detail.job.assignedUserId !== access.user.id)) {

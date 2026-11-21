@@ -5,7 +5,7 @@ import { writeAdminAudit, type AdminAuditInput } from "@/server/admin/audit-serv
 import type { AdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { HttpError } from "@/server/auth/require-session";
-import { isReturningOfferEligible } from "@/server/checkout/first-order-offer";
+import { isReturningOfferEligible, isReturningVoucherUnused } from "@/server/checkout/first-order-offer";
 import { createReturningCustomerVoucher } from "@/server/checkout/returning-customer-voucher";
 import { getDatabase } from "@/server/db/client";
 import { assertTrustedMutationRequest, MutationRequestError, parseBoundedJson } from "@/server/http/mutation-request";
@@ -23,12 +23,17 @@ type Dependencies = Readonly<{
 type Context = Readonly<{ params: Promise<{ customerKey: string }> }>;
 const noStore = { "Cache-Control": "no-store" };
 
-export function createAdminCustomerVoucherRoute(dependencies?: Dependencies) {
+export function createAdminCustomerVoucherRoute(
+  dependencies?: Dependencies,
+  { fromSavedOrder = false } = {},
+) {
   const defaults = (): Dependencies => ({
     requirePermission: requireAdminPermission,
     detail: (key) => getAdminCustomerRuntime().detail(key),
     audit: async (input) => writeAdminAudit(getDatabase(), input),
-    canIssue: (customerId) => isReturningOfferEligible(getDatabase(), customerId),
+    canIssue: (customerId) => fromSavedOrder
+      ? isReturningVoucherUnused(getDatabase(), customerId)
+      : isReturningOfferEligible(getDatabase(), customerId),
     secret: () => process.env.BETTER_AUTH_SECRET ?? "",
     enabled: isThankYouOfferEnabled,
   });
@@ -39,7 +44,7 @@ export function createAdminCustomerVoucherRoute(dependencies?: Dependencies) {
         const access = await deps.requirePermission("view_customers");
         await deps.requirePermission("manage_prices");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
-        if (!(typeof deps.enabled === "function" ? await deps.enabled() : deps.enabled)) throw new HttpError("The thank-you offer is currently unavailable.", 409);
+        if (!fromSavedOrder && !(typeof deps.enabled === "function" ? await deps.enabled() : deps.enabled)) throw new HttpError("The thank-you offer is currently unavailable.", 409);
         let body: unknown;
         try { body = await parseBoundedJson(request, 1024); }
         catch (error) {
@@ -54,7 +59,9 @@ export function createAdminCustomerVoucherRoute(dependencies?: Dependencies) {
         if (!detail) throw new HttpError("Customer not found.", 404);
         if (!detail.account) throw new HttpError("The customer must register an account before a voucher can be generated.", 422);
         if (!await deps.canIssue(detail.account.id)) {
-          throw new HttpError("The promotion is unavailable, or this account-bound voucher has already been reserved or used. Review the promotion setting and customer account.", 409);
+          throw new HttpError(fromSavedOrder
+            ? "This account-bound voucher is unavailable or has already been reserved or used."
+            : "The promotion is unavailable, or this account-bound voucher has already been reserved or used. Review the promotion setting and customer account.", 409);
         }
         const code = createReturningCustomerVoucher(detail.account.id, deps.secret());
         await deps.audit({

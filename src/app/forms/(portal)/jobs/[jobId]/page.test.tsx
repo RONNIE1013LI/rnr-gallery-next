@@ -138,13 +138,13 @@ describe("forms job detail page", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Web-RNR-2026-ABC123" })).toBeInTheDocument();
     expect(screen.getByText("Web-RNR-2026-ABC123", { selector: "nav span" })).toBeInTheDocument();
   });
-  it("hides voucher generation when the campaign is off even for Admin", async () => {
+  it("keeps voucher generation available to Admin when the campaign is off", async () => {
     offerState.enabled = false;
     try {
       requireFormsPage.mockResolvedValue({ user: { id: "admin-1" }, formRole: "admin", formProfile: null });
       detail.mockResolvedValue(privateDetail);
       render(await FormsJobDetailPage({ params }));
-      expect(screen.getByTestId("forms-job-detail")).toHaveAttribute("data-voucher", "false");
+      expect(screen.getByTestId("forms-job-detail")).toHaveAttribute("data-voucher", "true");
     } finally { offerState.enabled = true; }
   });
 

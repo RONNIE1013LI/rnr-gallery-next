@@ -138,13 +138,13 @@ describe("forms data list page", () => {
     expect(listFields).toHaveBeenCalledOnce();
     expect(listAssignees).toHaveBeenCalledOnce();
   });
-  it.each([true, false])("passes the campaign state %s to the voucher toolbar", async (enabled) => {
+  it.each([true, false])("keeps the voucher toolbar available when campaign state is %s", async (enabled) => {
     offerState.enabled = enabled;
     try {
       requireFormsPage.mockResolvedValue({ user: { id: "admin-1" }, formRole: "admin", formProfile: null });
       listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
       const page = await FormsDataListContent({ raw: {} });
-      expect(page.props.canGenerateVoucher).toBe(enabled);
+      expect(page.props.canGenerateVoucher).toBe(true);
     } finally { offerState.enabled = true; }
   });
 

@@ -26,8 +26,8 @@ function setup() {
     detail: vi.fn().mockResolvedValue({ job: { source: "manual", jobNumber: "08087", customerName: "Test customer", customerEmail: "customer@example.test", assignedUserId: null, updatedAt: new Date(version) } }),
     accountForEmail: vi.fn().mockResolvedValue("customer-1"),
     canIssue: vi.fn().mockResolvedValue(true),
-    issue: vi.fn(createAdminCustomerVoucherRoute(adminDeps).POST),
-    enabled: true, trustedOrigin: origin,
+    issue: vi.fn(createAdminCustomerVoucherRoute(adminDeps, { fromSavedOrder: true }).POST),
+    trustedOrigin: origin,
   };
   return { deps, adminDeps, route: createFormsJobVoucherRoute(deps) };
 }
@@ -73,14 +73,14 @@ describe("saved Forms order voucher", () => {
     expect(deps.accountForEmail).not.toHaveBeenCalled();
     expect(deps.issue).not.toHaveBeenCalled();
   });
-  it("explains missing accounts and unavailable promotions without issuing", async () => {
+  it("explains missing accounts and unavailable vouchers without issuing", async () => {
     const { deps, route } = setup();
     deps.accountForEmail.mockResolvedValue(null);
     expect(await (await route.GET(new Request(origin), context)).json()).toMatchObject({ canIssue: false, customerKey: null, message: expect.stringContaining("register") });
     expect((await route.POST(request(), context)).status).toBe(422);
     deps.accountForEmail.mockResolvedValue("customer-1");
     deps.canIssue.mockResolvedValue(false);
-    expect(await (await route.GET(new Request(origin), context)).json()).toMatchObject({ canIssue: false, message: expect.stringContaining("promotion is unavailable") });
+    expect(await (await route.GET(new Request(origin), context)).json()).toMatchObject({ canIssue: false, message: expect.stringContaining("reserved or used") });
     expect(deps.issue).not.toHaveBeenCalled();
   });
   it("rejects untrusted, invalid, stale and mismatched requests before issuing", async () => {
@@ -129,44 +129,24 @@ describe("saved Forms order voucher", () => {
     expect(response.status).toBe(500);
     expect(await response.text()).not.toContain("private failure");
   });
-  it("fails closed when the campaign is disabled or lookup fails", async () => {
+  it("fails closed when account lookup fails", async () => {
     const { deps } = setup();
-    expect((await createFormsJobVoucherRoute({ ...deps, enabled: false }).GET(new Request(origin), context)).status).toBe(409);
     deps.accountForEmail.mockRejectedValue(new Error("private lookup failure"));
     const response = await createFormsJobVoucherRoute(deps).GET(new Request(origin), context);
     expect(response.status).toBe(500);
     expect(await response.text()).not.toContain("private lookup failure");
     expect(deps.issue).not.toHaveBeenCalled();
   });
-  it("reads campaign state for each GET and POST without looking up jobs when disabled", async () => {
-    const { deps } = setup();
-    let available = true;
-    const enabled = vi.fn(async () => available);
-    const route = createFormsJobVoucherRoute({ ...deps, enabled });
-    expect((await route.GET(new Request(origin), context)).status).toBe(200);
-    available = false;
-    deps.detail.mockClear();
-    deps.accountForEmail.mockClear();
-    for (const response of [await route.GET(new Request(origin), context), await route.POST(request(), context)]) {
-      expect(response.status).toBe(409);
-      expect(await response.json()).not.toHaveProperty("code");
-    }
-    expect(deps.detail).not.toHaveBeenCalled();
-    expect(deps.accountForEmail).not.toHaveBeenCalled();
-    expect(deps.issue).not.toHaveBeenCalled();
-    available = true;
-    expect((await route.POST(request(), context)).status).toBe(200);
-    expect(enabled).toHaveBeenCalledTimes(4);
-  });
-  it("fails closed for campaign read errors on GET and POST", async () => {
-    const { deps } = setup();
-    const route = createFormsJobVoucherRoute({ ...deps, enabled: vi.fn().mockRejectedValue(new Error("private state failure")) });
-    for (const response of [await route.GET(new Request(origin), context), await route.POST(request(), context)]) {
-      expect(response.status).toBe(500);
-      expect(await response.text()).not.toContain("private state failure");
-    }
-    expect(deps.detail).not.toHaveBeenCalled();
-    expect(deps.accountForEmail).not.toHaveBeenCalled();
-    expect(deps.issue).not.toHaveBeenCalled();
+  it("loads and issues a voucher from a saved order even when the campaign is off", async () => {
+    const { deps, adminDeps } = setup();
+    const issue = createAdminCustomerVoucherRoute({ ...adminDeps, enabled: false }, { fromSavedOrder: true }).POST;
+    const route = createFormsJobVoucherRoute({ ...deps, issue });
+    const details = await route.GET(new Request(origin), context);
+    expect(details.status).toBe(200);
+    expect(await details.json()).toMatchObject({ canIssue: true, orderNumber: "08087" });
+    const response = await route.POST(request(), context);
+    expect(response.status).toBe(200);
+    expect(verifyReturningCustomerVoucher((await response.json()).code, "customer-1", secret)).toBe(true);
+    expect(adminDeps.audit).toHaveBeenCalledOnce();
   });
 });

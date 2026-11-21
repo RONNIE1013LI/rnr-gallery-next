@@ -69,10 +69,14 @@ export class InvalidReturningVoucherError extends Error {
   }
 }
 
-export async function isReturningOfferEligible(database: OfferDatabase, customerId: string | null): Promise<boolean> {
-  if (!customerId || !await isThankYouOfferEnabled(database)) return false;
+export async function isReturningVoucherUnused(database: OfferDatabase, customerId: string): Promise<boolean> {
   const email = await accountEmail(database, customerId);
   return email !== null && !await hasReturningVoucherOrder(database, customerId, email);
+}
+
+export async function isReturningOfferEligible(database: OfferDatabase, customerId: string | null): Promise<boolean> {
+  if (!customerId || !await isThankYouOfferEnabled(database)) return false;
+  return isReturningVoucherUnused(database, customerId);
 }
 
 export async function resolveCustomerOffer(database: OfferDatabase, customerId: string | null, voucherCode: unknown, secret: string) {
