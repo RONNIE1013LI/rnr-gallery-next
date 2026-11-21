@@ -149,22 +149,13 @@ describe("root layout metadata", () => {
     }
   });
 
-  it("keeps public product and design starting prices at the approved size without heavy type", () => {
-    const style = document.createElement("style");
-    style.textContent = cssFile("src/components/storefront.module.css");
-    const price = document.createElement("p");
-    price.className = "productDetailPrice";
-    document.head.append(style);
-    document.body.append(price);
-
-    try {
-      const computed = getComputedStyle(price);
-      expect(computed.fontSize).toBe("17.28px");
-      expect(computed.fontWeight).toBe("500");
-    } finally {
-      price.remove();
-      style.remove();
-    }
+  it("gives the amount in a starting price more emphasis than the two labels", () => {
+    const storefront = cssFile("src/components/storefront.module.css");
+    const amount = cssRule(storefront, ".productDetailPriceAmount {");
+    expect(amount).toContain("font-size: 1.375rem;");
+    expect(amount).toContain("font-weight: 600;");
+    expect(cssRule(storefront, ".productDetailPriceFrom {")).toContain("font-size: 0.875rem;");
+    expect(cssRule(storefront, ".productDetailPriceTax {")).toContain("font-size: 0.8125rem;");
   });
 
   it("preserves the approved morning mobile-menu trigger and close treatment", () => {

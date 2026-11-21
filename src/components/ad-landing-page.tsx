@@ -8,6 +8,7 @@ import { getSiteUrl } from "@/server/seo/site-url";
 import { PurchaseTrustStrip } from "./purchase-trust-strip";
 import { StructuredData } from "./structured-data";
 import { AnalyticsLink } from "./analytics-link";
+import { StartingPrice } from "./starting-price";
 import styles from "./storefront.module.css";
 
 export function AdLandingPage({ content, product, priceInclGstCents }: Readonly<{
@@ -45,7 +46,7 @@ export function AdLandingPage({ content, product, priceInclGstCents }: Readonly<
           <p className={styles.eyebrow}>{content.eyebrow}</p>
           <h1>{content.heading}</h1>
           <p className={styles.productDetailLead}>{content.description}</p>
-          <p className={styles.productDetailPrice}>From {formatNzd(priceInclGstCents)} incl GST</p>
+          <StartingPrice amount={formatNzd(priceInclGstCents)} includesGst />
           <PurchaseTrustStrip />
           <div className={styles.designDetailActions}>
             <Link className={styles.primaryButton} href={configureHref}>Start Customising</Link>

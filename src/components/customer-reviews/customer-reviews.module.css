@@ -30,19 +30,26 @@
 .eyebrow {
   margin: 0;
   color: var(--v3-gold, #76511d);
-  font-size: .75rem;
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
   font-weight: 800;
   letter-spacing: .16em;
 }
 
-.sectionHeader h2 {
+.section .sectionHeader h2 {
+  text-wrap: balance;
   margin: 1rem 0 .75rem;
+  font-size: var(--type-section);
+  line-height: var(--leading-section);
 }
 
 .sectionHeader > div:first-child > p:last-child {
+  text-wrap: pretty;
   max-width: 42rem;
   margin: 0;
   color: var(--v3-muted, #5c635f);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .facebookSummary {
@@ -246,7 +253,8 @@
 .reviewText,
 .dialogText {
   margin: 0;
-  line-height: 1.65;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
   white-space: pre-wrap;
 }
 

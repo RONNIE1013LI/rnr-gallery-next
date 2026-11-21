@@ -29,28 +29,33 @@
   font-weight: 600;
 }
 
+.page :is(h1, h2, h3) {
+  text-wrap: balance;
+}
+
 .page h1 {
   margin: 1.5625rem 0 1.5rem;
-  font-size: clamp(2.75rem, 3.5vw, 3.25rem);
-  line-height: 1.03;
+  font-size: var(--type-hero);
+  line-height: var(--leading-hero);
   letter-spacing: -0.045em;
 }
 
 .page h2 {
   margin: 1.375rem 0 1.5rem;
-  font-size: clamp(2.75rem, 3.5vw, 3.25rem);
-  line-height: 1.08;
+  font-size: var(--type-section);
+  line-height: var(--leading-section);
   letter-spacing: -0.04em;
 }
 
 .page h3 {
-  font-size: 1.75rem;
-  line-height: 1.15;
+  font-size: var(--type-card);
+  line-height: var(--leading-card);
   letter-spacing: -0.03em;
 }
 
-.page p {
-  line-height: 1.65;
+:where(.page) p {
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .shell {
@@ -65,8 +70,8 @@
 
 .eyebrow {
   color: var(--v3-gold);
-  font-size: 0.75rem;
-  line-height: 1.4;
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
   letter-spacing: 0.16em;
   font-weight: 800;
 }
@@ -76,21 +81,21 @@
 .lede {
   max-width: 35.625rem;
   color: var(--v3-muted);
-  font-size: 1.125rem;
-  line-height: 1.65;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .microcopy {
   margin-top: 2rem;
   color: var(--v3-muted);
-  font-size: 0.875rem;
-  line-height: 1.45;
+  font-size: var(--type-support);
+  line-height: var(--leading-support);
 }
 
 .sectionHeading > p:last-child {
   max-width: 45rem;
   color: var(--v3-muted);
-  font-size: 1.0625rem;
+  font-size: var(--type-body);
 }
 
 .sectionHeading h2,
@@ -426,7 +431,7 @@
 .productVertical { display: grid; grid-template-columns: 23.75rem minmax(0, 1fr); gap: 1.875rem; align-items: start; }
 .productVertical .productCopy { margin-top: 1.25rem; }
 .productGuidance { align-self: center; padding: 3.25rem; border: 1px solid var(--v3-line); background: rgb(255 255 255 / 40%); }
-.productGuidance h3 { margin-top: 1.125rem; font-size: 2.125rem; }
+.productGuidance h3 { margin-top: 1.125rem; }
 .productGuidance p:not(.eyebrow) { margin: 1.125rem 0 1.75rem; color: var(--v3-muted); }
 .compatAnchor { height: 0; display: block; scroll-margin-top: 6rem; }
 .viewAllProducts { width: max-content; margin-top: 3rem; }
@@ -441,7 +446,7 @@
   background: rgb(255 253 249 / 68%);
 }
 .discoverySupportItem { min-width: 0; }
-.discoverySupportItem h3 { margin-top: 0.875rem; font-size: 1.5rem; }
+.discoverySupportItem h3 { margin-top: 0.875rem; }
 .discoverySupportItem > p:not(.eyebrow) { min-height: 4.25rem; margin: 0.875rem 0 1.25rem; color: var(--v3-muted); font-size: 0.875rem; }
 .discoverySupportItem .textLink { border-color: rgb(18 55 47 / 30%); font-weight: 650; }
 
@@ -516,7 +521,7 @@
 .faqContactButton svg { flex: 0 0 auto; color: #0084ff; font-size: 1.125rem; }
 .faqItem { border-top: 1px solid var(--v3-line); }
 .faqItem:last-child { border-bottom: 1px solid var(--v3-line); }
-.faqItem > button { width: 100%; min-height: 4.75rem; padding: 1.5rem 0; display: flex; align-items: center; justify-content: space-between; gap: 1.25rem; border: 0; border-radius: 0; color: var(--v3-ink); background: transparent; font: inherit; font-size: 1.0625rem; font-weight: 650; text-align: left; cursor: pointer; }
+.faqItem > button { width: 100%; min-height: 4.75rem; padding: 1.5rem 0; display: flex; align-items: center; justify-content: space-between; gap: 1.25rem; border: 0; border-radius: 0; color: var(--v3-ink); background: transparent; font: inherit; font-size: var(--type-body); line-height: var(--leading-body); font-weight: 650; text-align: left; cursor: pointer; }
 .faqItem > button span:last-child { flex: 0 0 auto; color: var(--v3-forest); font-size: 1.5rem; font-weight: 400; }
 .faqItem > div p { margin: -0.25rem 0 1.75rem; padding-right: 3.375rem; color: var(--v3-muted); font-size: 0.875rem; }
 
@@ -574,13 +579,8 @@
   .heroCopy > h1 {
     max-width: 23.5rem;
     margin: clamp(0.875rem, 4.5vw, 1.25rem) 0 0;
-    font-size: clamp(2.25rem, 9vw, 2.5rem);
-    line-height: 1.02;
     letter-spacing: -0.035em;
   }
-  .page h2 { font-size: clamp(2.25rem, 9vw, 2.5rem); }
-  .page h3 { font-size: 1.5625rem; }
-  .eyebrow { font-size: 0.6875rem; }
   .hero { padding: clamp(2.25rem, 10vw, 2.75rem) 0; }
   .heroArt {
     width: 100vw;
@@ -588,7 +588,6 @@
     margin-inline: calc(50% - 50vw);
   }
   .heroImage { border-radius: 0; }
-  .lede { font-size: 1rem; }
   .heroActions { display: grid; gap: 0.875rem; }
   .heroActions .button { width: 100%; }
   .heroActions .textLink { width: max-content; }
@@ -648,7 +647,6 @@
   .galleryLeftColumn { grid-column: 1 / -1; }
   .galleryProductLabel { min-height: 1.5rem; padding: 0.3125rem 0.5625rem; top: 0.5rem; left: 0.5rem; font-size: 0.625rem; }
   .galleryLink { margin-top: 0.75rem; }
-  .faqItem > button { font-size: 1rem; }
   .finalCta { padding: var(--v3-section-compact) 0; }
   .finalCtaGrid { grid-template-columns: 1fr; gap: 2.75rem; }
   .finalActions { align-items: stretch; }
@@ -670,8 +668,6 @@
   .heroCopy > h1 {
     max-width: 20.5rem;
     margin-top: 0.75rem;
-    font-size: clamp(2.2rem, 10vw, 2.35rem);
-    line-height: 1.04;
     letter-spacing: -0.03em;
   }
 

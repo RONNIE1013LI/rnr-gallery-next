@@ -29,11 +29,20 @@
   --motion-standard: 180ms cubic-bezier(0.2, 0, 0, 1);
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif;
-  --type-hero: clamp(2.75rem, 4vw, 4.5rem);
-  --type-page: clamp(2rem, 3vw, 3rem);
-  --type-purchase: clamp(1.75rem, 2.2vw, 2.5rem);
-  --type-section: clamp(1.75rem, 2.2vw, 2.5rem);
-  --type-card: clamp(1.25rem, 1.5vw, 1.5rem);
+  --type-hero: 3rem;
+  --leading-hero: 3.375rem;
+  --type-page: 2.25rem;
+  --leading-page: 2.625rem;
+  --type-section: 1.75rem;
+  --leading-section: 2.125rem;
+  --type-card: 1.25rem;
+  --leading-card: 1.625rem;
+  --type-body: 1rem;
+  --leading-body: 1.5;
+  --type-support: 0.875rem;
+  --leading-support: 1.5;
+  --type-caption: 0.75rem;
+  --leading-caption: 1.333333;
   --content-width: 1440px;
   --page-gutter: clamp(1.25rem, 4vw, 4rem);
   --section-space: clamp(4.5rem, 8vw, 8.5rem);
@@ -41,6 +50,17 @@
   --layer-chat-launcher: 40;
   --layer-chat-panel: 50;
   --layer-consent: 60;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --type-hero: 2rem;
+    --leading-hero: 2.25rem;
+    --type-page: 2rem;
+    --leading-page: 2.25rem;
+    --type-section: 1.5rem;
+    --leading-section: 1.875rem;
+  }
 }
 
 * {
@@ -66,6 +86,10 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+.keep-phrase {
+  white-space: nowrap;
 }
 
 a {
@@ -813,7 +837,8 @@ a:active {
 .site-footer__tagline {
   max-width: 28rem;
   color: var(--text-on-dark-muted);
-  line-height: 1;
+  font-size: var(--type-support);
+  line-height: var(--leading-support);
 }
 
 .site-footer__email-mobile {

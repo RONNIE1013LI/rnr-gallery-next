@@ -4,7 +4,7 @@
   font-size: var(--type-section);
   font-weight: 650;
   letter-spacing: -0.035em;
-  line-height: 1;
+  line-height: var(--leading-section);
 }
 
 .page .actions {
@@ -27,18 +27,19 @@
   max-width: 48rem;
   margin: 1rem 0 2rem;
   color: var(--muted);
-  line-height: 1.6;
+  line-height: var(--leading-body);
 }
 
 .cardTitle {
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-size: var(--type-card);
+  line-height: var(--leading-card);
   font-weight: 500;
 }
 
 .paragraph {
   margin-top: 1rem;
-  line-height: 1.6;
+  line-height: var(--leading-body);
 }
 
 .model { position: relative; }
@@ -78,13 +79,13 @@
   font-size: var(--type-card);
   font-weight: 650;
   letter-spacing: -0.035em;
-  line-height: 1.1;
+  line-height: var(--leading-card);
 }
 
 .guidanceCards p {
   margin: 0;
   color: var(--muted);
-  line-height: 1.6;
+  line-height: var(--leading-body);
 }
 
 @media (max-width: 720px) {

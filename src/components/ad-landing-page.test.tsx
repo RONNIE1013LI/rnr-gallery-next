@@ -26,7 +26,7 @@ describe("AdLandingPage", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: content.heading })).toBeVisible();
     expect(screen.getByText(content.sizeSummary)).toBeVisible();
-    expect(screen.getByText(`From ${startingPrice} incl GST`)).toBeVisible();
+    expect(screen.getByText(startingPrice, { selector: "strong" }).closest("p")).toHaveTextContent(`From ${startingPrice} incl GST`);
     expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Start Customising" }))
       .toHaveLength(2);
@@ -92,10 +92,10 @@ describe("AdLandingPage", () => {
 
     const stylesheet = readFileSync("src/components/storefront.module.css", "utf8");
     expect(stylesheet).toMatch(
-      /\.adLandingCopy h1\s*\{[^}]*font-size:\s*var\(--type-page\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.045em[^}]*line-height:\s*1\.02/,
+      /\.adLandingCopy h1\s*\{[^}]*font-size:\s*var\(--type-page\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.045em[^}]*line-height:\s*var\(--leading-page\)/,
     );
     expect(stylesheet).toMatch(
-      /\.adLandingSection h2,[\s\S]*?\.adLandingFinalCta h2\s*\{[^}]*font-size:\s*var\(--type-section\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.035em[^}]*line-height:\s*1/,
+      /\.adLandingSection h2,[\s\S]*?\.adLandingFinalCta h2\s*\{[^}]*font-size:\s*var\(--type-section\)[^}]*font-weight:\s*650[^}]*letter-spacing:\s*-0\.035em[^}]*line-height:\s*var\(--leading-section\)/,
     );
     expect(stylesheet).toMatch(
       /\.adLandingHeroMedia\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3[^}]*min-height:\s*0/,

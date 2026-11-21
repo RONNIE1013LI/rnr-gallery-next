@@ -38,6 +38,7 @@ import {
   STANDARD_PRODUCTION_WORKING_DAYS,
   getUrgentService,
 } from "@/domain/scheduling/urgent-service";
+import { keepHeadingPhrasesTogether } from "./public-heading-text";
 import styles from "./storefront.module.css";
 import { useContainedDialog } from "./forms/use-contained-dialog";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
@@ -390,7 +391,7 @@ export function ProductConfigurator({
         </ProductPreview>
         <div className={styles.artworkPreviewCopy}>
           <p className={styles.eyebrow}>Example shown</p>
-          <h2>{product.title}</h2>
+          <h2>{keepHeadingPhrasesTogether(product.title)}</h2>
           <p>Preview your selection as you personalise your order.</p>
           <dl className={styles.previewDetails}>
             <div><dt>Format</dt><dd>{sizeLabel}</dd></div>

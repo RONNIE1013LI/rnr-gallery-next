@@ -209,7 +209,7 @@ describe("ProductPageContent", () => {
         availability: "https://schema.org/InStock",
       },
     });
-    expect(screen.getByText("From NZ$120.75 incl GST")).toBeVisible();
+    expect(screen.getByText("NZ$120.75", { selector: "strong" }).closest("p")).toHaveTextContent(`From NZ$120.75 incl GST`);
     expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
     expect(JSON.parse(breadcrumbs?.textContent ?? "{}")).toMatchObject({
       "@type": "BreadcrumbList",
@@ -237,7 +237,7 @@ describe("ProductPageContent", () => {
       />,
     );
 
-    expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
+    expect(screen.getByText("A$320.00 AUD", { selector: "strong" }).closest("p")).toHaveTextContent("From A$320.00 AUD");
     expect(screen.getByRole("link", { name: "Start Your Design" })).toHaveAttribute(
       "href",
       "/au/products/roll-up-banner/configure",
@@ -297,7 +297,7 @@ describe("ProductPageContent", () => {
       />,
     );
 
-    expect(screen.getByText("From A$109.99 AUD")).toBeVisible();
+    expect(screen.getByText("A$109.99 AUD", { selector: "strong" }).closest("p")).toHaveTextContent("From A$109.99 AUD");
     expect(screen.getByRole("link", { name: "Start Your Design" })).toHaveAttribute(
       "href",
       "/au/products/photo-print-canvas/configure?size=a2",

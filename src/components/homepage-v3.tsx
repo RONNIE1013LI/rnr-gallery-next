@@ -237,7 +237,7 @@ export function HomepageV3({
         <div className={`${styles.shell} ${styles.heroGrid}`}>
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>CUSTOM STORY &amp; ARTWORK STUDIO</p>
-            <h1>Custom Canvas &amp; Banners, made for your story.</h1>
+            <h1>Custom Canvas &amp; Banners, made for <span className="keep-phrase">your story.</span></h1>
             <div className={styles.heroActions}>
               <a className={styles.textLink} href="#transformation">
                 See Transformations <Arrow />
@@ -247,9 +247,7 @@ export function HomepageV3({
               </Link>
             </div>
             <p className={styles.microcopy}>
-              Custom design, proof before printing and delivery across{" "}
-              <br />
-              New Zealand and Australia.
+              Custom design, proof before printing and delivery across <span className="keep-phrase">New Zealand</span> and Australia.
             </p>
           </div>
 
@@ -308,7 +306,7 @@ export function HomepageV3({
           <p className={`${styles.eyebrow} ${styles.eyebrowLight} ${styles.transformationEyebrow}`}>SIGNATURE TRANSFORMATION</p>
           <div className={styles.transformationGrid}>
             <div className={styles.transformationIntro}>
-              <h2>Three photographs.<br />One family piece.</h2>
+              <h2>Three photographs. One <span className="keep-phrase">family piece.</span></h2>
               <p>See the starting photographs, the refinements completed by R&amp;R Gallery and the final printed result.</p>
               <div className={styles.rawPhotoCollage}>
                 {homepageV3ImageSlots.signatureOriginalPhotos.map((imageSlot, index) => (
@@ -391,19 +389,19 @@ export function HomepageV3({
             {hasActiveProduct("custom-themed-wall-banner") ? (
               <article className={styles.productFeature}>
                 <Artwork slot={homepageV3ImageSlots.wallBannerProductImage} tone="clay" ratio="five-four" people={4} className={styles.productMedia} productRatio="wall-banner-5-4" sizes="(max-width: 420px) calc(100vw - 2rem), (max-width: 760px) calc(100vw - 2.5rem), (max-width: 900px) calc(100vw - 3rem), (max-width: 1180px) calc(100vw - 4rem), (max-width: 1352px) calc((100vw - 8.875rem) / 2), 605px" />
-                <div className={styles.productCopy}><h3>Wall Banner</h3><p>A large horizontal format for birthdays, memorials, family events and cultural celebrations.</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("custom-themed-wall-banner")}>Shop Wall Banners <Arrow /></Link><Link className={styles.textLink} href={productHref("custom-themed-wall-banner")}>Wall banner details <Arrow /></Link></div></div>
+                <div className={styles.productCopy}><h3><span className="keep-phrase">Wall Banner</span></h3><p>A large horizontal format for birthdays, memorials, family events and cultural celebrations.</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("custom-themed-wall-banner")}>Shop Wall Banners <Arrow /></Link><Link className={styles.textLink} href={productHref("custom-themed-wall-banner")}>Wall banner details <Arrow /></Link></div></div>
               </article>
             ) : null}
             {hasActiveProduct("roll-up-banner") ? (
               <article className={styles.productVertical}>
                 <Artwork slot={homepageV3ImageSlots.rollupProductImage} tone="blue" ratio="four-five" people={2} className={styles.productMedia} productRatio="roll-up-4-5" sizes="(max-width: 412px) calc(100vw - 2rem), 380px" />
-                <div className={styles.productCopy}><h3>Roll-up Banner</h3><p>{ROLL_UP_BANNER_PACKAGE_SUMMARY}</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("roll-up-banner")}>Shop Roll-up Banners <Arrow /></Link><Link className={styles.textLink} href={productHref("roll-up-banner")}>Roll-up banner details <Arrow /></Link></div></div>
+                <div className={styles.productCopy}><h3><span className="keep-phrase">Roll-up Banner</span></h3><p>{ROLL_UP_BANNER_PACKAGE_SUMMARY}</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("roll-up-banner")}>Shop Roll-up Banners <Arrow /></Link><Link className={styles.textLink} href={productHref("roll-up-banner")}>Roll-up banner details <Arrow /></Link></div></div>
               </article>
             ) : null}
             {hasActiveProduct("grave-cover") ? (
               <article className={styles.productVertical}>
                 <Artwork slot={homepageV3ImageSlots.graveCoverProductImage} tone="olive" ratio="four-five" people={2} className={styles.productMedia} productRatio="grave-cover-4-5" sizes="(max-width: 412px) calc(100vw - 2rem), 380px" />
-                <div className={styles.productCopy}><h3>Grave Cover</h3><p>A personalised 100 × 200 cm memorial grave cover with reinforced eyelets.</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("grave-cover")}>Shop Grave Covers <Arrow /></Link><Link className={styles.textLink} href={productHref("grave-cover")}>Grave cover details <Arrow /></Link></div></div>
+                <div className={styles.productCopy}><h3><span className="keep-phrase">Grave Cover</span></h3><p>A personalised 100 × 200 cm memorial grave cover with reinforced eyelets.</p><div className={styles.productActions}><Link className={styles.textLink} href={configureHref("grave-cover")}>Shop Grave Covers <Arrow /></Link><Link className={styles.textLink} href={productHref("grave-cover")}>Grave cover details <Arrow /></Link></div></div>
               </article>
             ) : null}
           </div>
@@ -424,7 +422,7 @@ export function HomepageV3({
             </article>
             <article className={styles.discoverySupportItem}>
               <p className={styles.eyebrow}>DESIGN HELP</p>
-              <h3>Ask R&amp;R Gallery.</h3>
+              <h3>Ask <span className="keep-phrase">R&amp;R Gallery.</span></h3>
               <p>Send your photos or idea by Messenger and we&apos;ll explain a clear next step.</p>
               <a className={styles.textLink} href="https://m.me/RandRgallery" rel="noopener noreferrer">Get Design Help <Arrow /></a>
             </article>
@@ -436,7 +434,7 @@ export function HomepageV3({
         <div className={`${styles.shell} ${styles.peopleGrid}`}>
           <div className={styles.peopleCopy}>
             <p className={styles.eyebrow}>THE R&amp;R GALLERY DIFFERENCE</p>
-            <h2>Designer-led.<br />Approved by you.</h2>
+            <h2>Designer-led. Approved <span className="keep-phrase">by you.</span></h2>
             <p>Every artwork is reviewed and refined by our team before printing. You see the design proof and approve the version that moves into production.</p>
             <a className={`${styles.button} ${styles.buttonOutline}`} href="#faq">See How It Works</a>
           </div>
@@ -483,7 +481,7 @@ export function HomepageV3({
 
       <section id="final-cta" className={`${styles.finalCta} ${styles.sectionDark}`}>
         <div className={`${styles.shell} ${styles.finalCtaGrid}`}>
-          <div><p className={`${styles.eyebrow} ${styles.eyebrowLight}`}>A PLACE TO START</p><h2>You don&apos;t need perfect photos.<br />You just need a place to start.</h2><p>Upload what you have, tell us what the piece is for, and we&apos;ll guide you from there.</p></div>
+          <div><p className={`${styles.eyebrow} ${styles.eyebrowLight}`}>A PLACE TO START</p><h2>You don&apos;t need perfect photos. You just need a place <span className="keep-phrase">to start.</span></h2><p>Upload what you have, tell us what the piece is for, and we&apos;ll guide you from there.</p></div>
           <div className={styles.finalActions}><Link className={`${styles.button} ${styles.buttonLight}`} href={shopHref}>Choose Your Product</Link><a className={`${styles.textLink} ${styles.textLinkLight}`} href="#products">Get product guidance <Arrow /></a></div>
         </div>
       </section>

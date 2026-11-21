@@ -1,10 +1,38 @@
+:where(.galleryIntro,
+  .galleryUnavailable,
+  .pageIntro,
+  .productCard,
+  .productDetailSummary,
+  .productPurchaseDetails,
+  .designDetailCopy,
+  .configureIntro,
+  .configureRelatedHeader,
+  .artworkPreviewCopy,
+  .stepHeading,
+  .priceSummary,
+  .cartHeader,
+  .cartEmpty,
+  .cartItemDetails,
+  .cartTotals,
+  .checkoutEntryHeader,
+  .checkoutContinuation,
+  .checkoutGuestPanel,
+  .checkoutSummary,
+  .legalPage,
+  .authPage,
+  .adLandingCopy,
+  .sectionHeading) :is(h1, h2, h3),
+.checkoutForm legend {
+  text-wrap: balance;
+}
+
 /* Hallmark · component: ecommerce cart and checkout · genre: modern-minimal · theme: existing R&R Gallery system · states: default, hover, focus-visible, disabled, mobile · pre-emit critique: P5 H4 E5 S4 R5 V4 */
 .eyebrow {
   color: var(--aged-gold-text);
-  font-size: 0.8125rem;
+  font-size: var(--type-caption);
   font-weight: 750;
   letter-spacing: 0.17em;
-  line-height: 1.45;
+  line-height: var(--leading-caption);
   text-transform: uppercase;
 }
 
@@ -29,7 +57,7 @@
   font-size: var(--type-page);
   font-weight: 650;
   letter-spacing: -0.04em;
-  line-height: 1.08;
+  line-height: var(--leading-page);
 }
 
 .galleryIntro > p:last-child,
@@ -37,7 +65,9 @@
   max-width: 48rem;
   margin-top: 1.5rem;
   color: var(--muted);
-  font-size: clamp(1rem, 1.6vw, 1.18rem);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .galleryQuickFilters {
@@ -206,10 +236,12 @@
   padding: 1.1rem 1.15rem 1.25rem;
 }
 
-.galleryCardBody h2 {
+.galleryCardBody :is(h2, h3) {
   font-family: var(--font-body);
-  font-size: 1.35rem;
+  font-size: var(--type-card);
+  line-height: var(--leading-card);
   font-weight: 500;
+  text-wrap: balance;
 }
 
 .galleryCardBody p {
@@ -244,8 +276,10 @@
 
 .galleryEmpty h2 {
   font-family: var(--font-display);
-  font-size: clamp(2rem, 4vw, 3.5rem);
+  font-size: var(--type-section);
+  line-height: var(--leading-section);
   font-weight: 400;
+  text-wrap: balance;
 }
 
 .galleryEmpty p {
@@ -1057,12 +1091,13 @@
   font-family: var(--font-display);
   font-weight: 650;
   letter-spacing: -0.045em;
-  line-height: 1.02;
+  line-height: var(--leading-page);
 }
 
 .hero h1 {
   margin-top: 1.25rem;
   font-size: var(--type-hero);
+  line-height: var(--leading-hero);
 }
 
 .heroLead {
@@ -1180,6 +1215,7 @@
 .story h2 {
   margin-top: 1rem;
   font-size: var(--type-section);
+  line-height: var(--leading-section);
 }
 
 .storyLead {
@@ -1254,7 +1290,7 @@
   font-size: var(--type-section);
   font-weight: 650;
   letter-spacing: -0.035em;
-  line-height: 1;
+  line-height: var(--leading-section);
 }
 
 .facebookReviewsHeader a {
@@ -1410,7 +1446,7 @@
   font-size: var(--type-section);
   font-weight: 650;
   letter-spacing: -0.035em;
-  line-height: 1;
+  line-height: var(--leading-section);
 }
 
 .sectionHeading h2 {
@@ -1509,12 +1545,15 @@
   font-family: var(--font-display);
   font-size: var(--type-card);
   font-weight: 650;
-  line-height: 1.05;
+  line-height: var(--leading-card);
 }
 
 .productCard h2 + p {
   margin-top: 0.85rem;
   color: var(--muted);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .productCardFooter {
@@ -1610,6 +1649,7 @@
 
 .finalCta h2 {
   font-size: var(--type-section);
+  line-height: var(--leading-section);
 }
 
 .finalCta p {
@@ -1655,7 +1695,9 @@
   max-width: 50rem;
   margin-top: 1.5rem;
   color: var(--muted);
-  font-size: 1.05rem;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .productDetailInner {
@@ -1691,23 +1733,62 @@
 
 .productDetail h1 {
   margin-top: 0.8rem;
-  font-size: var(--type-purchase);
+  font-size: var(--type-page);
 }
 
 .productDetailLead {
   margin-top: 1.25rem;
   color: var(--muted);
-  font-size: 1.05rem;
-  line-height: 1.5;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .productDetailPrice {
   margin-top: 1.5rem;
   padding: 1rem 0;
   border-top: 1px solid var(--border);
-  border-bottom: 0;
-  font-size: 1.08rem;
-  font-weight: 500;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  font-family: var(--font-body);
+}
+
+.productDetailPriceStart {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+
+.productDetailPriceFrom {
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 400;
+}
+
+.productDetailPriceAmount {
+  font-size: 1.375rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.productDetailPriceTax {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  font-weight: 400;
+}
+
+@media (min-width: 761px) {
+  .productDetailPriceAmount {
+    font-size: 1.5rem;
+    line-height: 1.875rem;
+  }
 }
 
 .productPurchaseDetails {
@@ -1719,7 +1800,14 @@
 
 .productPurchaseDetails h2 {
   margin-top: 1.25rem;
-  font-size: 0.95rem;
+  font-size: var(--type-card);
+  line-height: var(--leading-card);
+}
+
+.productPurchaseDetails p:not(.productAvailability),
+.productPurchaseDetails li {
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .productPurchaseDetails h2:first-of-type {
@@ -1820,10 +1908,10 @@
 .designDetailCopy h1 {
   margin-top: 0.8rem;
   font-family: var(--font-display);
-  font-size: var(--type-purchase);
+  font-size: var(--type-page);
   font-weight: 650;
   letter-spacing: -0.045em;
-  line-height: 1.02;
+  line-height: var(--leading-page);
 }
 
 .designDetailFacts {
@@ -1911,17 +1999,18 @@
   border-bottom: 1px solid var(--border);
 }
 
-.configurePage[data-product="roll-up-banner"] .configureIntro > p:not(.eyebrow) {
-  line-height: 1.35;
+.configureIntro > p:not(.eyebrow) {
+  font-size: var(--type-support);
+  line-height: var(--leading-support);
 }
 
 .configureIntro h1 {
   margin-top: 0.8rem;
   font-family: var(--font-display);
-  font-size: var(--type-purchase);
+  font-size: var(--type-page);
   font-weight: 650;
   letter-spacing: -0.045em;
-  line-height: 1.02;
+  line-height: var(--leading-page);
 }
 
 .configureRelatedDesigns {
@@ -1941,10 +2030,10 @@
 .configureRelatedHeader h2 {
   margin-top: 0.5rem;
   font-family: var(--font-display);
-  font-size: var(--type-page);
+  font-size: var(--type-section);
   font-weight: 650;
   letter-spacing: -0.04em;
-  line-height: 1.08;
+  line-height: var(--leading-section);
 }
 
 .configureRelatedMore {
@@ -2189,14 +2278,14 @@
   font-size: var(--type-card);
   font-weight: 600;
   letter-spacing: -0.035em;
-  line-height: 1.08;
+  line-height: var(--leading-card);
 }
 
 .artworkPreviewCopy > p:not(.eyebrow) {
   margin-top: 0.7rem;
   color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.5;
+  font-size: var(--type-support);
+  line-height: var(--leading-support);
 }
 
 .previewDetails {
@@ -2260,21 +2349,15 @@
   font-family: var(--font-display);
   font-weight: 500;
   letter-spacing: -0.025em;
-  line-height: 1.05;
-}
-
-.stepHeading h2 {
-  font-size: var(--type-section);
-}
-
-.configuratorForm .stepHeading h2 {
-  font-size: clamp(1.35rem, 1.75vw, 1.75rem);
+  font-size: var(--type-card);
+  line-height: var(--leading-card);
 }
 
 .stepHeading p {
   margin-top: 0.45rem;
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: var(--type-support);
+  line-height: var(--leading-support);
 }
 
 .fieldGrid {
@@ -2965,7 +3048,6 @@
 
 .priceSummary h2 {
   margin-top: 0.75rem;
-  font-size: var(--type-card);
 }
 
 .priceSummary h2 + p {
@@ -3101,7 +3183,12 @@
   font-size: var(--type-page);
   font-weight: 650;
   letter-spacing: -0.035em;
-  line-height: 1;
+  line-height: var(--leading-page);
+}
+
+.cartEmpty h2 {
+  font-size: var(--type-card);
+  line-height: var(--leading-card);
 }
 
 .cartLayout {
@@ -3186,7 +3273,7 @@
   font-family: var(--font-display);
   font-weight: 500;
   letter-spacing: -0.02em;
-  line-height: 1.05;
+  line-height: var(--leading-card);
 }
 
 .cartItemDetails h2 {
@@ -3350,10 +3437,10 @@
 .checkoutEntryHeader h1 {
   margin-top: 1.35rem;
   font-family: var(--font-body);
-  font-size: clamp(2rem, 3vw, 2.75rem);
+  font-size: var(--type-page);
   font-weight: 700;
   letter-spacing: -0.035em;
-  line-height: 1.08;
+  line-height: var(--leading-page);
 }
 
 .checkoutEntryHeader p {
@@ -3387,10 +3474,10 @@
 .checkoutContinuation h2,
 .checkoutGuestPanel h2 {
   font-family: var(--font-body);
-  font-size: clamp(1.35rem, 2vw, 1.65rem);
+  font-size: var(--type-card);
   font-weight: 700;
   letter-spacing: -0.025em;
-  line-height: 1.2;
+  line-height: var(--leading-card);
 }
 
 .checkoutContinuation .socialAuthButton,
@@ -3662,6 +3749,11 @@
   border-radius: var(--radius-card);
 }
 
+.checkoutForm,
+.checkoutSummary {
+  line-height: var(--leading-body);
+}
+
 .checkoutForm {
   display: grid;
   gap: 1.5rem;
@@ -3676,7 +3768,8 @@
 .checkoutSummary h2 {
   margin-bottom: 1rem;
   font-family: var(--font-display);
-  font-size: 1.65rem;
+  font-size: var(--type-card);
+  line-height: var(--leading-card);
   font-weight: 500;
 }
 
@@ -4024,7 +4117,8 @@
 
 .shippingMethodSelector legend {
   margin-bottom: 0.75rem;
-  font-size: 0.9rem;
+  font-size: var(--type-card);
+  line-height: var(--leading-card);
   font-weight: 700;
 }
 
@@ -4581,18 +4675,22 @@
   font-family: var(--font-display);
   font-size: var(--type-page);
   font-weight: 650;
-  line-height: 1;
+  line-height: var(--leading-page);
 }
 
 .legalPage h2 {
   margin-top: 2.75rem;
-  font-size: 1.25rem;
+  font-size: var(--type-card);
+  line-height: var(--leading-card);
 }
 
 .legalPage p,
 .legalPage li {
   margin-top: 0.85rem;
   color: #444a44;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
 }
 
 .legalPage ul {
@@ -4660,10 +4758,10 @@
 .authPage > h1 {
   margin-top: 1rem;
   font-family: var(--font-body);
-  font-size: clamp(2rem, 5vw, 2.75rem);
+  font-size: var(--type-page);
   font-weight: 750;
   letter-spacing: -0.035em;
-  line-height: 1.12;
+  line-height: var(--leading-page);
 }
 
 .authLead {
@@ -5791,7 +5889,7 @@
   font-size: var(--type-page);
   font-weight: 650;
   letter-spacing: -0.045em;
-  line-height: 1.02;
+  line-height: var(--leading-page);
   overflow-wrap: anywhere;
 }
 
@@ -5836,7 +5934,7 @@
   font-size: var(--type-section);
   font-weight: 650;
   letter-spacing: -0.035em;
-  line-height: 1;
+  line-height: var(--leading-section);
 }
 
 .adLandingSection ul,
@@ -5973,11 +6071,7 @@
     border-bottom: 0;
   }
   .configureIntro h1 {
-    font-size: 1.45rem;
     overflow-wrap: anywhere;
-  }
-  .configureIntro > p:not(.eyebrow) {
-    font-size: .8rem;
   }
   .priceAtStart strong {
     font-size: .95rem;

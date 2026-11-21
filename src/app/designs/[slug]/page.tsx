@@ -9,6 +9,8 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { CanvasProductPreview } from "@/components/canvas-product-preview";
 import { RollUpBannerPreview } from "@/components/roll-up-banner-preview";
 import { StructuredData } from "@/components/structured-data";
+import { StartingPrice } from "@/components/starting-price";
+import { keepHeadingPhrasesTogether } from "@/components/public-heading-text";
 import styles from "@/components/storefront.module.css";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import {
@@ -134,7 +136,6 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
     market,
     product.key,
   );
-  const taxLabel = marketBook.tax.registered ? " incl GST" : "";
   const configurePath = market === "AU"
     ? `/au/products/${product.slug}/configure`
     : `/products/${product.slug}/configure`;
@@ -186,7 +187,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
         </div>
         <div className={styles.designDetailCopy}>
           <p className={styles.eyebrow}>{productType} · {occasion}</p>
-          <h1>{title}</h1>
+          <h1>{keepHeadingPhrasesTogether(title)}</h1>
           <p className={styles.productDetailLead}>{design.intro}</p>
           {product.key === "roll-up-banner" ? (
             <p className={styles.productDetailLead}>{ROLL_UP_BANNER_SPECIFICATIONS}</p>
@@ -214,9 +215,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
               </dd>
             </div>
           </dl>
-          <p className={styles.productDetailPrice}>
-            From {formatMarketMoney(priceInclTaxCents, marketBook.currency)}{taxLabel}
-          </p>
+          <StartingPrice amount={formatMarketMoney(priceInclTaxCents, marketBook.currency)} includesGst={marketBook.tax.registered} />
           <div className={styles.designDetailActions}>
             <Link className={styles.primaryButton} href={`${configurePath}?design=${design.id}`}>
               Customise This Design

@@ -97,7 +97,7 @@ describe("public design detail page", () => {
 
     render(await DesignDetailPage(props));
 
-    expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
+    expect(screen.getByText("A$320.00 AUD", { selector: "strong" }).closest("p")).toHaveTextContent("From A$320.00 AUD");
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Customise This Design" }))
       .toHaveAttribute("href", `/au/products/roll-up-banner/configure?design=${designId}`);
@@ -110,7 +110,7 @@ describe("public design detail page", () => {
 
     render(await DesignDetailPage(props));
 
-    expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
+    expect(screen.getByText("A$320.00 AUD", { selector: "strong" }).closest("p")).toHaveTextContent("From A$320.00 AUD");
     expect(screen.getByRole("link", { name: "Customise This Design" }))
       .toHaveAttribute("href", `/au/products/roll-up-banner/configure?design=${designId}`);
   });
@@ -130,7 +130,7 @@ describe("public design detail page", () => {
     );
     expect(screen.getByText("Roll-up banner")).toBeInTheDocument();
     expect(screen.getByText("Birthday")).toBeInTheDocument();
-    expect(screen.getByText("From NZ$264.50 incl GST")).toBeVisible();
+    expect(screen.getByText("NZ$264.50", { selector: "strong" }).closest("p")).toHaveTextContent(`From NZ$264.50 incl GST`);
     expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
     expect(screen.getByText("85 × 200 cm")).toBeVisible();
     expect(screen.queryByText("Design image")).not.toBeInTheDocument();

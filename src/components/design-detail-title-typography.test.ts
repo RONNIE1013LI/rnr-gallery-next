@@ -18,10 +18,10 @@ describe("Design detail title typography", () => {
     const rule = designDetailTitleRule();
 
     expect(rule).toMatch(/font-family:\s*var\(--font-display\)\s*;/);
-    expect(rule).toMatch(/font-size:\s*var\(--type-purchase\)\s*;/);
+    expect(rule).toMatch(/font-size:\s*var\(--type-page\)\s*;/);
     expect(rule).toMatch(/font-weight:\s*650\s*;/);
     expect(rule).toMatch(/letter-spacing:\s*-0\.045em\s*;/);
-    expect(rule).toMatch(/line-height:\s*1\.02\s*;/);
+    expect(rule).toMatch(/line-height:\s*var\(--leading-page\)\s*;/);
   });
 
   it("preserves the existing spacing above the title", () => {

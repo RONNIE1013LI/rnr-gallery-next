@@ -8,6 +8,8 @@ import { StructuredData } from "@/components/structured-data";
 import { CanvasProductPreview } from "@/components/canvas-product-preview";
 import { canvasDemoSizeKeys } from "@/components/canvas-3d/profiles";
 import { notFound } from "next/navigation";
+import { StartingPrice } from "@/components/starting-price";
+import { keepHeadingPhrasesTogether } from "@/components/public-heading-text";
 import styles from "@/components/storefront.module.css";
 import { products } from "@/domain/catalogue/products";
 import {
@@ -161,7 +163,6 @@ export function ProductPageContent({
   const imageUrl = new URL(selection?.imageUrl ?? product.image.src, siteUrl).toString();
   const displayPrice = priceInclTaxCents ?? addNzdGst(product.startingPriceExGstCents);
   const currency = currencyForMarket(market);
-  const taxLabel = market === "NZ" || taxRegistered ? " incl GST" : "";
   const deliverySummary = market === "NZ"
     ? [deliveryCopy.newZealand]
     : [
@@ -213,7 +214,7 @@ export function ProductPageContent({
   const summary = (
     <div className={styles.productDetailSummary} data-product-summary>
       <p className={styles.eyebrow}>{presentation.eyebrow}</p>
-      <h1>{presentation.title}</h1>
+      <h1>{keepHeadingPhrasesTogether(presentation.title)}</h1>
       {selection && (
         <div className={styles.selectedDesignNote}>
           <strong>Selected design inspiration</strong>
@@ -221,9 +222,7 @@ export function ProductPageContent({
         </div>
       )}
       <p className={styles.productDetailLead}>{presentation.summary}</p>
-      <p className={styles.productDetailPrice}>
-        From {formatMarketMoney(displayPrice, currency)}{taxLabel}
-      </p>
+      <StartingPrice amount={formatMarketMoney(displayPrice, currency)} includesGst={market === "NZ" || taxRegistered === true} />
     </div>
   );
   const details = (

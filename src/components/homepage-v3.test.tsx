@@ -296,15 +296,12 @@ describe("HomepageV3", () => {
     );
   });
 
-  it("refines the 320-375px hero without changing the wider mobile baseline", () => {
+  it("keeps the narrow hero layout on the same typography as wider phones", () => {
     const stylesheet = readFileSync("src/components/homepage-v3.module.css", "utf8");
-    const mobile = stylesheet.match(/@media \(max-width: 760px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
     const narrow = stylesheet.match(/@media \(max-width: 375px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
 
-    expect(mobile).toMatch(/\.heroCopy > h1\s*\{[\s\S]*?font-size:\s*clamp\(2\.25rem, 9vw, 2\.5rem\);/);
     expect(narrow).toMatch(/\.heroCopy > h1\s*\{[\s\S]*?max-width:\s*20\.5rem;/);
-    expect(narrow).toMatch(/font-size:\s*clamp\(2\.2rem, 10vw, 2\.35rem\);/);
-    expect(narrow).toMatch(/line-height:\s*1\.04;/);
+    expect(narrow).not.toMatch(/\.heroCopy > h1[^}]*font-size:/);
     expect(narrow).toMatch(/margin-top:\s*0\.75rem;/);
   });
 
@@ -320,7 +317,7 @@ describe("HomepageV3", () => {
     expect(narrow).toMatch(/\.filter\s*\{[^}]*padding-inline:\s*0\.5rem/);
   });
 
-  it("scales the mobile hero headline and spacing without shrinking the wide-phone ceiling", () => {
+  it("uses the shared hero typography and preserves the mobile layout spacing", () => {
     const stylesheet = readFileSync(
       "src/components/homepage-v3.module.css",
       "utf8",
@@ -333,10 +330,10 @@ describe("HomepageV3", () => {
       /\.heroCopy\s*>\s*h1\s*\{[^}]*\}/,
     )?.[0] ?? "";
 
-    expect(headlineRules).toMatch(
-      /font-size:\s*clamp\(2\.25rem,\s*9vw,\s*2\.5rem\)/,
+    expect(stylesheet).toMatch(
+      /\.page h1\s*\{[^}]*font-size:\s*var\(--type-hero\)[^}]*line-height:\s*var\(--leading-hero\)/,
     );
-    expect(headlineRules).toMatch(/line-height:\s*1\.02/);
+    expect(headlineRules).not.toMatch(/font-size:|line-height:/);
     expect(headlineRules).toMatch(/letter-spacing:\s*-0\.035em/);
     expect(headlineRules).toMatch(/max-width:\s*23\.5rem/);
     expect(mobileStyles).toMatch(

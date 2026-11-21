@@ -3,6 +3,7 @@ import {
   type ProductConfiguratorRelatedDesign,
 } from "@/components/product-configurator";
 import { BannerBundleConfigurator } from "@/components/banner-bundle-configurator";
+import { keepHeadingPhrasesTogether } from "@/components/public-heading-text";
 import styles from "@/components/storefront.module.css";
 import type {
   ProductRegistryDocument,
@@ -101,7 +102,7 @@ export function ConfigurePageContent({
       />
       <header className={styles.configureIntro}>
         <p className={styles.eyebrow}>Create your artwork</p>
-        <h1>{product.title}</h1>
+        <h1>{keepHeadingPhrasesTogether(product.title)}</h1>
         <p>{product.summary}</p>
       </header>
       {product.key === "banner-bundle" ? (

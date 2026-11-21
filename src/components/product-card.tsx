@@ -4,6 +4,7 @@ import type { AnalyticsEvent } from "@/domain/analytics/events";
 import type { Market } from "@/domain/markets/types";
 import { currencyForMarket } from "@/domain/markets/market";
 import { addNzdGst, formatMarketMoney } from "@/domain/money";
+import { keepHeadingPhrasesTogether } from "./public-heading-text";
 import styles from "./storefront.module.css";
 import { AnalyticsLink } from "./analytics-link";
 
@@ -42,7 +43,7 @@ export function ProductCard({
         </div>
         <div className={styles.productCardBody}>
           <p className={styles.productCategory}>{product.category}</p>
-          <h2>{product.title}</h2>
+          <h2>{keepHeadingPhrasesTogether(product.title)}</h2>
           <p>{product.summary}</p>
           <div className={styles.productCardFooter}>
             <span className={styles.publicPrice}>
