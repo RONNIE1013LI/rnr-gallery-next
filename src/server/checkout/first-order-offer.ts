@@ -1,3 +1,4 @@
+import { LEGACY_RETURNING_CUSTOMER_VOUCHER_KEY, RETURNING_CUSTOMER_VOUCHER_KEY } from "@/domain/promotions/thank-you-offer";
 import { verifyReturningCustomerVoucher } from "./returning-customer-voucher";
 import { isThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 import { sql } from "drizzle-orm";
@@ -24,7 +25,7 @@ async function hasReturningVoucherOrder(database: OfferDatabase, customerId: str
   const result = await database.execute(sql`
     select id from orders
     where (customer_id = ${customerId} or lower(customer_email) = ${email})
-      and pricing_snapshot->'promotion'->>'key' = 'returning-customer-36-v1'
+      and pricing_snapshot->'promotion'->>'key' in (${LEGACY_RETURNING_CUSTOMER_VOUCHER_KEY}, ${RETURNING_CUSTOMER_VOUCHER_KEY})
     limit 1
   `);
   return result.rows.length > 0;
@@ -40,8 +41,7 @@ export async function isFirstOrderOfferEligible(database: OfferDatabase, _custom
 // Recheck the campaign inside the order transaction, including guest orders.
 // Existing order retries return before this check and retain their stored amounts.
 export async function assertFirstOrderOfferAvailable(transaction: OfferDatabase, customerId: string | null, claimingOffer: boolean, claimingReturningOffer = false): Promise<void> {
-  if (!claimingOffer && !claimingReturningOffer) return;
-  if (!await isThankYouOfferEnabled(transaction)) {
+  if (claimingOffer && !await isThankYouOfferEnabled(transaction)) {
     throw new FirstOrderOfferConflictError("This promotion has ended. Refresh your checkout to see current pricing.");
   }
   if (claimingReturningOffer) {
@@ -51,10 +51,6 @@ export async function assertFirstOrderOfferAvailable(transaction: OfferDatabase,
     const email = await accountEmail(transaction, customerId);
     if (!email) throw new FirstOrderOfferConflictError("The voucher account is unavailable.");
     await transaction.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`returning-voucher-email:${email}`}, 0))`);
-    // The campaign may have been disabled while this transaction waited for a lock.
-    if (!await isThankYouOfferEnabled(transaction)) {
-      throw new FirstOrderOfferConflictError("This promotion has ended. Refresh your checkout to see current pricing.");
-    }
     if (await hasReturningVoucherOrder(transaction, customerId, email)) {
       throw new FirstOrderOfferConflictError("This returning-customer voucher has already been reserved or used. Resume the existing order or remove the voucher.");
     }
@@ -63,20 +59,16 @@ export async function assertFirstOrderOfferAvailable(transaction: OfferDatabase,
 
 
 export class InvalidReturningVoucherError extends Error {
-  constructor(message = "This voucher is invalid for your account, has already been reserved or used, or the promotion is unavailable.") {
+  constructor(message = "This voucher is invalid for your account, has already been reserved or used.") {
     super(message);
     this.name = "InvalidReturningVoucherError";
   }
 }
 
-export async function isReturningVoucherUnused(database: OfferDatabase, customerId: string): Promise<boolean> {
+export async function isReturningOfferEligible(database: OfferDatabase, customerId: string | null): Promise<boolean> {
+  if (!customerId) return false;
   const email = await accountEmail(database, customerId);
   return email !== null && !await hasReturningVoucherOrder(database, customerId, email);
-}
-
-export async function isReturningOfferEligible(database: OfferDatabase, customerId: string | null): Promise<boolean> {
-  if (!customerId || !await isThankYouOfferEnabled(database)) return false;
-  return isReturningVoucherUnused(database, customerId);
 }
 
 export async function resolveCustomerOffer(database: OfferDatabase, customerId: string | null, voucherCode: unknown, secret: string) {

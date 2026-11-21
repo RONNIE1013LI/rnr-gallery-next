@@ -18,7 +18,7 @@ function setup() {
     requirePermission: vi.fn().mockResolvedValue(access),
     detail: vi.fn().mockResolvedValue({ account: { id: "customer-1" } }),
     audit: vi.fn().mockResolvedValue(undefined), canIssue: vi.fn().mockResolvedValue(true),
-    secret: () => secret, enabled: true, trustedOrigin: origin,
+    secret: () => secret, trustedOrigin: origin,
   };
   const deps = {
     requirePermission: vi.fn().mockResolvedValue(access),
@@ -26,7 +26,7 @@ function setup() {
     detail: vi.fn().mockResolvedValue({ job: { source: "manual", jobNumber: "08087", customerName: "Test customer", customerEmail: "customer@example.test", assignedUserId: null, updatedAt: new Date(version) } }),
     accountForEmail: vi.fn().mockResolvedValue("customer-1"),
     canIssue: vi.fn().mockResolvedValue(true),
-    issue: vi.fn(createAdminCustomerVoucherRoute(adminDeps, { fromSavedOrder: true }).POST),
+    issue: vi.fn(createAdminCustomerVoucherRoute(adminDeps).POST),
     trustedOrigin: origin,
   };
   return { deps, adminDeps, route: createFormsJobVoucherRoute(deps) };
@@ -136,17 +136,5 @@ describe("saved Forms order voucher", () => {
     expect(response.status).toBe(500);
     expect(await response.text()).not.toContain("private lookup failure");
     expect(deps.issue).not.toHaveBeenCalled();
-  });
-  it("loads and issues a voucher from a saved order even when the campaign is off", async () => {
-    const { deps, adminDeps } = setup();
-    const issue = createAdminCustomerVoucherRoute({ ...adminDeps, enabled: false }, { fromSavedOrder: true }).POST;
-    const route = createFormsJobVoucherRoute({ ...deps, issue });
-    const details = await route.GET(new Request(origin), context);
-    expect(details.status).toBe(200);
-    expect(await details.json()).toMatchObject({ canIssue: true, orderNumber: "08087" });
-    const response = await route.POST(request(), context);
-    expect(response.status).toBe(200);
-    expect(verifyReturningCustomerVoucher((await response.json()).code, "customer-1", secret)).toBe(true);
-    expect(adminDeps.audit).toHaveBeenCalledOnce();
   });
 });

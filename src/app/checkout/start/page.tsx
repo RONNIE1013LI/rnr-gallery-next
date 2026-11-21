@@ -1,3 +1,4 @@
+import { RETURNING_CUSTOMER_VOUCHER_PERCENTAGE } from "@/domain/promotions/thank-you-offer";
 import { getPublicThankYouOfferEnabled } from "@/server/promotions/thank-you-offer-state";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -41,7 +42,9 @@ export default async function CheckoutStartPage() {
             className={styles.checkoutContinuation}
           >
             <h2 id="checkout-account-title">Check out with your R&amp;R Gallery account</h2>
-            {offerEnabled ? <p>Every order gets 20% off automatically during this promotion, including customisation. Sign in to apply your returning-customer voucher for an extra 20% off. Delivery and urgent service are excluded.</p> : null}
+            {offerEnabled ? <p>Every order gets 20% off automatically during this promotion, including customisation. Delivery and urgent service are excluded.</p> : null}
+
+            <p>Have a returning customer voucher? Sign in to use it for {RETURNING_CUSTOMER_VOUCHER_PERCENTAGE}% off eligible items.</p>
 
             <AuthGateway
               configuredProviders={customerProviders}

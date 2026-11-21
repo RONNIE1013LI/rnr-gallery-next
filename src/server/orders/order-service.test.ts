@@ -463,7 +463,7 @@ describe("first-order offer final repricing",()=>{
   });
 });
 
-it("rechecks a server-verified returning voucher and preserves the stacked net price",async()=>{
+it("rechecks a server-verified returning voucher and preserves the standalone 20% price",async()=>{
   const discounted=repriceCart(canonicalCart(),{now,returningCustomerDiscount:true});
   const repo=repository({getCheckoutState:vi.fn().mockResolvedValue({...state(),customerId:"customer-1",cartSnapshot:discounted,cartDigest:discounted.cartDigest})});
   const eligibility=vi.fn(async()=>true);
@@ -471,4 +471,16 @@ it("rechecks a server-verified returning voucher and preserves the stacked net p
   await service.createOrder(sessionId,key,{...reviewed(),cartDigest:discounted.cartDigest});
   expect(eligibility).toHaveBeenCalledWith("customer-1");
   expect(vi.mocked(repo.createAtomicOrder).mock.calls[0][0].cart).toEqual(discounted);
+});
+
+it("requires review of a legacy voucher checkout before submitting a new order", async () => {
+  const cart = {
+    ...repriceCart(canonicalCart(), { now, returningCustomerDiscount: true }),
+    promotion: { key: "returning-customer-36-v1", percentage: 36, baseDiscountCents: 1495, extraDiscountCents: 1196 } as const,
+  };
+  const repo = repository({ getCheckoutState: vi.fn().mockResolvedValue({ ...state(), customerId: "customer-1", cartSnapshot: cart, cartDigest: cart.cartDigest }) });
+  const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => now });
+  await expect(service.createOrder(sessionId, key, { ...reviewed(), cartDigest: cart.cartDigest }))
+    .rejects.toThrow("Refresh checkout and review the updated total");
+  expect(repo.createAtomicOrder).not.toHaveBeenCalled();
 });

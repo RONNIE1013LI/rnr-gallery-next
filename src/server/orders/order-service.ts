@@ -1,3 +1,4 @@
+import { LEGACY_RETURNING_CUSTOMER_VOUCHER_KEY, RETURNING_CUSTOMER_VOUCHER_KEY } from "@/domain/promotions/thank-you-offer";
 import { FirstOrderOfferConflictError } from "@/server/checkout/first-order-offer";
 import { randomUUID } from "node:crypto";
 import {
@@ -196,10 +197,13 @@ export function createOrderService({
         }
         supplies.set(supplySelectionKey(item.supplyProductId, item.supplyVariantId), supply);
       }
-      const returningCustomerDiscount = state.cartSnapshot.promotion?.key === "returning-customer-36-v1"
-        && Boolean(returningCustomerOfferEligible && await returningCustomerOfferEligible(state.customerId));
-      if (state.cartSnapshot.promotion?.key === "returning-customer-36-v1" && !returningCustomerDiscount) {
-        throw new OrderStateChangedError("This voucher has already been reserved or used, is unavailable for your account, or the promotion has ended. Resume the existing order or remove the voucher and review checkout again.");
+      const promotionKey = state.cartSnapshot.promotion?.key;
+      if (promotionKey === LEGACY_RETURNING_CUSTOMER_VOUCHER_KEY) {
+        throw new OrderStateChangedError("The returning customer voucher has changed. Refresh checkout and review the updated total.");
+      }
+      const returningCustomerDiscount = promotionKey === RETURNING_CUSTOMER_VOUCHER_KEY;
+      if (returningCustomerDiscount && !await returningCustomerOfferEligible?.(state.customerId)) {
+        throw new OrderStateChangedError("This voucher has already been reserved or used, or is unavailable for your account. Resume the existing order or remove the voucher and review checkout again.");
       }
       const firstOrderDiscount = !returningCustomerDiscount && Boolean(firstOrderOfferEligible
         && await firstOrderOfferEligible(state.customerId));

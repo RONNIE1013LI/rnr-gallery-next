@@ -1,3 +1,4 @@
+import { LEGACY_RETURNING_CUSTOMER_VOUCHER_KEY, RETURNING_CUSTOMER_VOUCHER_KEY } from "@/domain/promotions/thank-you-offer";
 import Image from "next/image";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import { formatMarketMoney } from "@/domain/money";
@@ -60,10 +61,10 @@ export function CheckoutOrderSummary({ cart, shipping }: {
       ))}
       <dl className={styles.priceLines}>
         <div><dt>{hasTax ? "Products incl GST" : "Products"}</dt><dd>{formatMarketMoney(cart.totalInclGstCents + cart.discountCents, currency)}</dd></div>
-        {cart.promotion?.key === "returning-customer-36-v1" ? <>
+        {cart.promotion?.key === LEGACY_RETURNING_CUSTOMER_VOUCHER_KEY ? <>
           <div><dt>Thank-you offer (20% off)</dt><dd>−{formatMarketMoney(cart.promotion.baseDiscountCents, currency)}</dd></div>
           <div><dt>Returning customer extra 20% off</dt><dd>−{formatMarketMoney(cart.promotion.extraDiscountCents, currency)}</dd></div>
-        </> : cart.discountCents > 0 ? <div><dt>{cart.promotion?.key === "first-order-20-v1" ? "Promotion discount (20%)" : "Discount"}</dt><dd>−{formatMarketMoney(cart.discountCents, currency)}</dd></div> : null}
+        </> : cart.discountCents > 0 ? <div><dt>{cart.promotion?.key === RETURNING_CUSTOMER_VOUCHER_KEY ? `Returning customer discount (${cart.promotion.percentage}%)` : cart.promotion?.key === "first-order-20-v1" ? "Promotion discount (20%)" : "Discount"}</dt><dd>−{formatMarketMoney(cart.discountCents, currency)}</dd></div> : null}
         <div><dt>{hasTax ? "Shipping incl GST" : "Shipping"}</dt><dd>{formatMarketMoney(shippingTotal, currency)}</dd></div>
         {hasTax ? <div><dt>{`Includes ${taxName}`}</dt><dd>{formatMarketMoney(cart.gstCents + shippingGst, currency)}</dd></div> : null}
         <div className={styles.priceTotal}><dt>{hasTax ? "Total incl GST" : "Total"}</dt><dd>{formatMarketMoney(cart.totalInclGstCents + shippingTotal, currency)}</dd></div>

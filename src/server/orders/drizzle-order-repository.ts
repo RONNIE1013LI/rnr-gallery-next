@@ -1,3 +1,4 @@
+import { RETURNING_CUSTOMER_VOUCHER_KEY } from "@/domain/promotions/thank-you-offer";
 import { assertFirstOrderOfferAvailable } from "@/server/checkout/first-order-offer";
 import { invalidateSuppliesInventory } from "@/server/supplies/inventory-cache";
 import { suppliesOrderItems } from "@/server/db/schema/supplies-inventory";
@@ -462,7 +463,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
 
           await assertFirstOrderOfferAvailable(transaction, locked.customerId,
             input.cart.promotion?.key === "first-order-20-v1",
-            input.cart.promotion?.key === "returning-customer-36-v1");
+            input.cart.promotion?.key === RETURNING_CUSTOMER_VOUCHER_KEY);
 
           let shippingQuoteId: string | null = null;
           const shippingSnapshot = input.shipping.kind === "pickup"

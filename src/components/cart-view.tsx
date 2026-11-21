@@ -1,5 +1,7 @@
 "use client";
 
+import { RETURNING_CUSTOMER_VOUCHER_KEY, RETURNING_CUSTOMER_VOUCHER_PERCENTAGE } from "@/domain/promotions/thank-you-offer";
+
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -102,7 +104,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
   const currentResult = quoteResult?.key === quoteKey ? quoteResult : null;
   const quote = currentResult?.cart;
   const quotePending = !currentResult;
-  const voucherApplied = quote?.promotion?.key === "returning-customer-36-v1";
+  const voucherApplied = quote?.promotion?.key === RETURNING_CUSTOMER_VOUCHER_KEY;
 
   useEffect(() => {
     if (needsMarketReconciliation || !parseStoredCart(snapshot).items.length) return;
@@ -125,7 +127,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
         if (!response.ok || !payload.cart) {
           throw new Error(payload.error?.message || "Your cart total could not be confirmed. Please try again.");
         }
-        if (voucherCode && payload.cart.promotion?.key !== "returning-customer-36-v1") {
+        if (voucherCode && payload.cart.promotion?.key !== RETURNING_CUSTOMER_VOUCHER_KEY) {
           throw new Error("This voucher could not be applied to your account.");
         }
         if (voucherCode && voucherRequest.customerId === initiatingCustomerId && voucherRequest.persist) {
@@ -390,15 +392,12 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
         {quotePending ? <p role="status">Confirming your cart total and account offers…</p> : null}
         {currentResult?.error ? <div><p role="alert">{currentResult.error}</p><button className={styles.secondaryButton} type="button"
           onClick={() => setVoucherRequest({ customerId, code: voucherCode, persist: voucherRequest.persist, revision: voucherRequest.revision + 1 })}>Retry quote</button></div> : null}
-        {(customerId === null || currentResult?.signedIn === false) ? <p className={styles.cartAssurance}><Link href="/account/sign-in?next=%2Fcart">Sign in for account offers</Link> to use your account-bound returning customer voucher for an extra 20% off.</p> : null}
+        {(customerId === null || currentResult?.signedIn === false) ? <p className={styles.cartAssurance}><Link href="/account/sign-in?next=%2Fcart">Sign in for account offers</Link> to use your account-bound returning customer voucher for {RETURNING_CUSTOMER_VOUCHER_PERCENTAGE}% off eligible items.</p> : null}
         {quote ? <>
           <dl className={styles.priceLines}>
             <div><dt>{quote.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt><dd>{formatMarketMoney(quote.totalInclGstCents + quote.discountCents, quote.currency)}</dd></div>
             {quote.promotion?.key === "first-order-20-v1" ? <div><dt>Promotion discount (20%)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.discountCents, quote.currency)}</dd></div> : null}
-            {quote.promotion?.key === "returning-customer-36-v1" ? <>
-              <div><dt>Returning customer discount (20%)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.promotion.baseDiscountCents, quote.currency)}</dd></div>
-              <div><dt>Extra discount (20% after base discount)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.promotion.extraDiscountCents, quote.currency)}</dd></div>
-            </> : null}
+            {quote.promotion?.key === RETURNING_CUSTOMER_VOUCHER_KEY ? <div><dt>Returning customer discount ({quote.promotion.percentage}%)</dt><dd className={styles.cartOfferAmount}>−{formatMarketMoney(quote.discountCents, quote.currency)}</dd></div> : null}
             {quote.taxJurisdiction !== "NONE" ? <div><dt>{quote.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : "Includes Australian GST"}</dt><dd>{formatMarketMoney(quote.gstCents, quote.currency)}</dd></div> : null}
             <div className={styles.priceTotal}><dt>{quote.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt><dd className={quote.discountCents > 0 ? styles.cartOfferAmount : undefined}>{formatMarketMoney(quote.totalInclGstCents, quote.currency)}</dd></div>
           </dl>

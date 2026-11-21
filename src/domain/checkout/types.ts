@@ -170,7 +170,7 @@ export type RepricedCheckoutCart = Readonly<{
   totalInclGstCents: number;
   discountCents: number;
   // The base-offer key is retained for historical checkout compatibility; current use is unlimited during the campaign.
-  promotion?: Readonly<{ key: "first-order-20-v1"; percentage: 20 }> | Readonly<{ key: "returning-customer-36-v1"; percentage: 36; baseDiscountCents: number; extraDiscountCents: number }>;
+  promotion?: Readonly<{ key: "first-order-20-v1"; percentage: 20 }> | Readonly<{ key: "returning-customer-20-v1"; percentage: 20 }> | Readonly<{ key: "returning-customer-36-v1"; percentage: 36; baseDiscountCents: number; extraDiscountCents: number }>;
   designSurchargeCents: number;
   itemCount: number;
   cartDigest: string;

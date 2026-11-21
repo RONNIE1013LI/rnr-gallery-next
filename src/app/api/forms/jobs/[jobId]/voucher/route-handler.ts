@@ -6,7 +6,7 @@ import { getAdminProductionRuntime } from "@/server/admin/admin-production-runti
 import type { AdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { HttpError } from "@/server/auth/require-session";
-import { isReturningVoucherUnused } from "@/server/checkout/first-order-offer";
+import { isReturningOfferEligible } from "@/server/checkout/first-order-offer";
 import { getDatabase } from "@/server/db/client";
 import { user } from "@/server/db/schema";
 import { requireFormPermission, type FormAccess } from "@/server/forms/require-forms";
@@ -55,8 +55,8 @@ export function createFormsJobVoucherRoute(dependencies?: Dependencies) {
         .where(sql`lower(${user.email}) = ${email.trim().toLowerCase()}`).limit(2);
       return accounts.length === 1 ? accounts[0].id : null;
     },
-    canIssue: (customerId) => isReturningVoucherUnused(getDatabase(), customerId),
-    issue: createAdminCustomerVoucherRoute(undefined, { fromSavedOrder: true }).POST,
+    canIssue: (customerId) => isReturningOfferEligible(getDatabase(), customerId),
+    issue: createAdminCustomerVoucherRoute().POST,
   });
 
   async function savedContext(deps: Dependencies, context: Context) {

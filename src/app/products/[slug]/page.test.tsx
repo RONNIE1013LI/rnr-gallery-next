@@ -489,7 +489,7 @@ describe("canvas advertising page promotion", () => {
       await act(async () => vi.advanceTimersByTimeAsync(3999));
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       await act(async () => vi.advanceTimersByTimeAsync(1));
-      expect(screen.getByRole("dialog", {name:"Limited-time offer: save 36% in total"})).toBeInTheDocument();
+      expect(screen.getByRole("dialog", {name:"Anniversary offer: 20% off No code needed"})).toBeInTheDocument();
       expect(screen.getByRole("link",{name:"Sign up"})).toHaveAttribute("href", market === "AU" ? "/account/register?next=%2Fau%2Fshop" : "/account/register?next=%2Fshop");
       fireEvent.click(screen.getByRole("button",{name:"Close promotion"}));
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

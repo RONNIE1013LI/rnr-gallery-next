@@ -455,12 +455,12 @@ it("prices the signed-in first order from server eligibility rather than billing
   expect(eligible).toHaveBeenCalledWith("customer-1");
 });
 
-it("validates a supplied returning voucher using the session owner and applies two sequential discounts",async()=>{
+it("validates a supplied returning voucher using the session owner and applies a standalone 20% discount",async()=>{
   const repo=repository({getCheckoutState:vi.fn().mockResolvedValue({customerId:"customer-1"})});
   const offer=vi.fn(async()=>({firstOrderDiscount:false,returningCustomerDiscount:true}));
   const service=createCheckoutService({repository:repo,shippingService:shippingService(),now:()=>now,customerOffer:offer});
   const result=await service.updateSession(sessionId,{cart:cart(),billingAddress,deliveryMethod:"pickup",voucherCode:"BOUND-CODE"});
   expect(offer).toHaveBeenCalledWith("customer-1","BOUND-CODE");
-  expect(result.cartSnapshot?.totalInclGstCents).toBe(4784);
-  expect(result.cartSnapshot?.promotion).toEqual({key:"returning-customer-36-v1",percentage:36,baseDiscountCents:1495,extraDiscountCents:1196});
+  expect(result.cartSnapshot?.totalInclGstCents).toBe(5980);
+  expect(result.cartSnapshot?.promotion).toEqual({key:"returning-customer-20-v1",percentage:20});
 });

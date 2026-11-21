@@ -87,7 +87,8 @@ describe("CheckoutStartPage", () => {
     offerState.enabled = false;
     try {
       render(await CheckoutStartPage());
-      expect(screen.queryByText(/First custom artwork order/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Every order gets 20% off automatically/)).not.toBeInTheDocument();
+      expect(screen.getByText(/returning customer voucher.*20% off eligible items/)).toBeVisible();
       expect(screen.getByRole("link", { name: "Continue as Guest" })).toBeInTheDocument();
     } finally { offerState.enabled = true; }
   });

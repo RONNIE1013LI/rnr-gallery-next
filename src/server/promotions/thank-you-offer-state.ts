@@ -14,7 +14,7 @@ export async function getThankYouOfferState(database: OfferDatabase = getDatabas
   return row ? row.publishedValue === "enabled" : THANK_YOU_OFFER_ENABLED;
 }
 
-// Quotes, voucher issuance and new-order claims always read authoritative state.
+// Anniversary pricing and new-order claims read authoritative campaign state.
 export async function isThankYouOfferEnabled(database?: OfferDatabase): Promise<boolean> {
   try {
     return await getThankYouOfferState(database ?? getDatabase());

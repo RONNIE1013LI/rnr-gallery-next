@@ -73,12 +73,10 @@ export function PromotionSettingsForm({ initialEnabled }: Readonly<{ initialEnab
         Enable anniversary promotion
       </label>
       <p className={styles.mutedText}>
-        When disabled, the homepage and product promotion popups are hidden, automatic 20% discounts on new orders stop,
-        new promotional voucher issuance and redemption stop, and the order system’s Generate voucher button is hidden.
+        When disabled, the homepage and product promotion popups are hidden and automatic 20% discounts on new orders stop.
       </p>
       <p className={styles.mutedText}>
-        Submitted orders and their payment amounts are retained. The cart voucher field stays available.
-        While enabled, the base 20% discount applies on every order; each account-bound returning voucher can be used once. Re-enabling does not reset voucher usage.
+        Submitted orders retain their payment amounts. The returning customer voucher is a separate, single-use account offer.
       </p>
       <p className={styles.mutedText}>After saving, refresh any already-open storefront or order-system pages to see the updated display.</p>
       <div>

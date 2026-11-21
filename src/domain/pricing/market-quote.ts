@@ -1,3 +1,4 @@
+import { RETURNING_CUSTOMER_VOUCHER_PERCENTAGE } from "@/domain/promotions/thank-you-offer";
 import {
   assertMarketCheckoutReady,
   type MarketPriceCell,
@@ -226,15 +227,14 @@ export function quoteMarketConfiguration(
   const policy = marketTaxPolicy(market, book.tax);
   let eligibleGrossCents = 0;
   let discountCents = 0;
-  let baseDiscountCents = 0;
-  let extraDiscountCents = 0;
+  const discountPercentage = options.returningCustomerDiscount
+    ? RETURNING_CUSTOMER_VOUCHER_PERCENTAGE
+    : options.firstOrderDiscount ? 20 : 0;
   const converted = grossLines.map((line) => {
     let lineDiscountCents = 0;
-    if ((options.firstOrderDiscount || options.returningCustomerDiscount) && line.key !== "urgent-service") {
+    if (discountPercentage > 0 && line.key !== "urgent-service") {
       eligibleGrossCents += line.amountInclTaxCents;
-      baseDiscountCents = Math.round(eligibleGrossCents / 5);
-      extraDiscountCents = options.returningCustomerDiscount ? Math.round((eligibleGrossCents - baseDiscountCents) / 5) : 0;
-      const cumulativeDiscountCents = baseDiscountCents + extraDiscountCents;
+      const cumulativeDiscountCents = Math.round(eligibleGrossCents / (100 / discountPercentage));
       lineDiscountCents = cumulativeDiscountCents - discountCents;
       discountCents = cumulativeDiscountCents;
     }
@@ -267,7 +267,6 @@ export function quoteMarketConfiguration(
     gstCents,
     totalInclGstCents,
     discountCents,
-    ...(options.returningCustomerDiscount ? { baseDiscountCents, extraDiscountCents } : {}),
     designSurchargeCents: 0,
   });
 }

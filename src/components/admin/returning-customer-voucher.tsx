@@ -1,6 +1,6 @@
 "use client";
 
-import { VOUCHER_ORDER_REFERENCE_PATTERN } from "@/domain/promotions/thank-you-offer";
+import { RETURNING_CUSTOMER_VOUCHER_PERCENTAGE, VOUCHER_ORDER_REFERENCE_PATTERN } from "@/domain/promotions/thank-you-offer";
 import { useState } from "react";
 import styles from "./admin.module.css";
 
@@ -38,6 +38,8 @@ export function ReturningCustomerVoucher({ customerKey, savedOrder }: Readonly<{
     catch { setError("Copy was unavailable. Select and copy the voucher code below."); }
   }
 
+  const discountTerms = <><strong>{RETURNING_CUSTOMER_VOUCHER_PERCENTAGE}% off merchandise and customisation.</strong> One use per account. Shipping and urgent fees are excluded.</>;
+
   const controls = <>
     <label>{savedOrder ? "Previous order number" : "Previous order number (5 digits)"}<input inputMode={savedOrder ? undefined : "numeric"} pattern={savedOrder ? undefined : "[0-9]{5}"} maxLength={savedOrder ? undefined : 5} required={!savedOrder} readOnly={Boolean(savedOrder)} value={previousOrderNumber} onChange={(event) => { setPreviousOrderNumber(event.target.value); setVerified(false); }} /></label>
     <label className={`${styles.fullField} ${styles.checkboxField}`}><input type="checkbox" checked={verified} onChange={(event) => setVerified(event.target.checked)} /><span>I have verified that this previous order belongs to this customer.</span></label>
@@ -46,13 +48,13 @@ export function ReturningCustomerVoucher({ customerKey, savedOrder }: Readonly<{
 
   return <section className={styles.panel} data-voucher-controls onKeyDown={savedOrder ? (event) => { if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault(); } : undefined}>
     <h2>Returning customer voucher</h2>
-    <p>Manually verify this customer’s previous order, including online and offline orders. This voucher is bound to this registered account and can be redeemed once during the thank-you offer.</p>
-    {!code ? <p>20% off plus an extra 20% off the reduced merchandise and customisation price (36% total). Shipping and urgent fees are excluded.</p> : null}
-    <p>Generating again returns the same code and keeps the original redemption status.</p>
+    <p>Manually verify this customer’s previous order, including online and offline orders. This voucher is bound to this registered account.</p>
+    {!code ? <p>{discountTerms}</p> : null}
+    <p>The voucher keeps the same code when regenerated.</p>
     {savedOrder ? <div className={styles.formGrid}>{controls}</div> : <form className={styles.formGrid} onSubmit={(event) => { event.preventDefault(); void generate(); }}>{controls}</form>}
     {code ? <div className={styles.formGrid}>
       <label className={styles.fullField}>Voucher code<input readOnly value={code} onFocus={(event) => event.target.select()} /></label>
-      <p className={styles.fullField} role="status"><strong>36% off merchandise and customisation</strong> during the thank-you offer. Shipping and urgent fees are excluded.</p>
+      <p className={styles.fullField} role="status">{discountTerms}</p>
       <button type="button" onClick={copy}>{copied ? "Copied" : "Copy voucher"}</button>
       <p className={styles.mutedText}>No customer message has been sent.</p>
     </div> : null}

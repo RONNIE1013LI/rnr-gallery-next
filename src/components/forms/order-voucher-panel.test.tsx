@@ -24,8 +24,8 @@ describe("order voucher panel", () => {
     fireEvent.click(generate);
     expect(await screen.findByLabelText("Voucher code")).toHaveValue("THANKYOU-EXAMPLE");
     const discount = screen.getByRole("status");
-    expect(discount).toHaveTextContent("36% off merchandise and customisation");
-    expect(discount).toHaveTextContent("during the thank-you offer");
+    expect(discount).toHaveTextContent("20% off merchandise and customisation");
+    expect(discount).toHaveTextContent("One use per account.");
     expect(discount).toHaveTextContent("Shipping and urgent fees are excluded.");
     expect(submit).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenLastCalledWith("/api/forms/jobs/job-1/voucher", expect.objectContaining({ method: "POST", body: JSON.stringify({ previousOrderNumber: "08087", verified: true, expectedUpdatedAt: context.expectedUpdatedAt }) }));

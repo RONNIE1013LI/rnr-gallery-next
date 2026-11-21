@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { assertFirstOrderOfferAvailable, isFirstOrderOfferEligible, isReturningOfferEligible, isReturningVoucherUnused, resolveCustomerOffer, InvalidReturningVoucherError } from "./first-order-offer";
+import { assertFirstOrderOfferAvailable, isFirstOrderOfferEligible, resolveCustomerOffer, InvalidReturningVoucherError } from "./first-order-offer";
 import { createReturningCustomerVoucher } from "./returning-customer-voucher";
 
 function failingDatabase() {
@@ -12,25 +12,17 @@ function failingDatabase() {
 }
 
 describe("promotion state failures at checkout", () => {
-  it("fails closed before account/history reads for both offer types", async () => {
+  it("fails closed before account/history reads for the anniversary offer", async () => {
     const { database, execute } = failingDatabase();
     expect(await isFirstOrderOfferEligible(database, "customer")).toBe(false);
-    expect(await isReturningOfferEligible(database, "customer")).toBe(false);
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it.each([[true, false], [false, true]])("rejects atomic promotional claims on state read failure (%s, %s)", async (first, returning) => {
+  it("rejects atomic anniversary claims on state read failure", async () => {
     const { database, execute } = failingDatabase();
-    await expect(assertFirstOrderOfferAvailable(database, "customer", first, returning))
+    await expect(assertFirstOrderOfferAvailable(database, "customer", true))
       .rejects.toThrow("This promotion has ended");
     expect(execute).not.toHaveBeenCalled();
-  });
-
-  it("rejects a valid returning voucher when authoritative state cannot be read", async () => {
-    const { database } = failingDatabase();
-    const secret = "test-only-voucher-secret-0123456789abcdef";
-    const code = createReturningCustomerVoucher("customer", secret);
-    await expect(resolveCustomerOffer(database, "customer", code, secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
   });
 });
 
@@ -43,15 +35,15 @@ function offerDatabase(publishedValue = "enabled") {
   return { database, execute };
 }
 
-it("allows pre-issuing an unused code without opening redemption on checkout", async () => {
+it("redeems an unused account voucher with the anniversary promotion off", async () => {
   const { database, execute } = offerDatabase("disabled");
   execute.mockResolvedValueOnce({ rows: [{ email: "returning@example.test" }] }).mockResolvedValueOnce({ rows: [] });
-  expect(await isReturningVoucherUnused(database, "customer")).toBe(true);
-  expect(database.select).not.toHaveBeenCalled();
-
   const secret = "test-only-voucher-secret-0123456789abcdef";
   const code = createReturningCustomerVoucher("customer", secret);
-  await expect(resolveCustomerOffer(database, "customer", code, secret)).rejects.toBeInstanceOf(InvalidReturningVoucherError);
+  await expect(resolveCustomerOffer(database, "customer", code, secret)).resolves.toEqual({
+    firstOrderDiscount: false, returningCustomerDiscount: true,
+  });
+  expect(database.select).not.toHaveBeenCalled();
 });
 
 describe("unlimited promotional orders", () => {

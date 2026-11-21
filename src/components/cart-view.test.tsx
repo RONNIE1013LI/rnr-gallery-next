@@ -182,9 +182,8 @@ describe("CartView", () => {
       const payload = await marketResponse("NZ").json();
       const code = JSON.parse(String(options.body)).voucherCode;
       return Response.json({ signedIn: true, cart: code ? { ...payload.cart,
-        totalInclGstCents: 4784, gstCents: 624, discountCents: 2691,
-        promotion: { key: "returning-customer-36-v1", percentage: 36,
-          baseDiscountCents: 1495, extraDiscountCents: 1196 },
+        totalInclGstCents: 5980, gstCents: 780, discountCents: 1495,
+        promotion: { key: "returning-customer-20-v1", percentage: 20 },
       } : payload.cart });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -192,8 +191,8 @@ describe("CartView", () => {
     fireEvent.change(screen.getByLabelText("Returning customer voucher"), { target: { value: "oldcustomercode" } });
     fireEvent.click(screen.getByRole("button", { name: "Apply voucher" }));
     expect(await screen.findByText("Returning customer discount (20%)")).toBeVisible();
-    expect(screen.getByText("Extra discount (20% after base discount)")).toBeVisible();
-    expect(screen.getByText("NZ$47.84")).toBeVisible();
+    expect(screen.queryByText(/Extra discount/)).not.toBeInTheDocument();
+    expect(screen.getByText("NZ$59.80")).toBeVisible();
     expect(readActiveVoucherCode()).toBe("oldcustomercode");
     expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("/api/cart/quote");
     fireEvent.click(screen.getByRole("button", { name: "Remove voucher" }));
@@ -265,8 +264,8 @@ describe("CartView", () => {
     const fetchMock = vi.fn().mockImplementation(async () => {
       const payload = await marketResponse("NZ").json();
       return Response.json({ signedIn: true, cart: { ...payload.cart,
-        totalInclGstCents: 4784, discountCents: 2691,
-        promotion: { key: "returning-customer-36-v1", percentage: 36, baseDiscountCents: 1495, extraDiscountCents: 1196 },
+        totalInclGstCents: 5980, discountCents: 1495,
+        promotion: { key: "returning-customer-20-v1", percentage: 20 },
       } });
     });
     vi.stubGlobal("fetch", fetchMock);

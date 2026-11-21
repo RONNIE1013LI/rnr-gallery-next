@@ -1,3 +1,4 @@
+import { RETURNING_CUSTOMER_VOUCHER_KEY, RETURNING_CUSTOMER_VOUCHER_PERCENTAGE } from "@/domain/promotions/thank-you-offer";
 import { createHash } from "node:crypto";
 import {
   defaultProductRegistry,
@@ -509,9 +510,7 @@ export function repriceCart(
       ...totals,
       discountCents,
       ...(discountCents > 0 ? { promotion: options.returningCustomerDiscount
-        ? { key: "returning-customer-36-v1" as const, percentage: 36 as const,
-            baseDiscountCents: items.reduce((sum, item) => sum + (item.unitPrice.baseDiscountCents ?? 0) * item.quantity, 0),
-            extraDiscountCents: items.reduce((sum, item) => sum + (item.unitPrice.extraDiscountCents ?? 0) * item.quantity, 0) }
+        ? { key: RETURNING_CUSTOMER_VOUCHER_KEY, percentage: RETURNING_CUSTOMER_VOUCHER_PERCENTAGE } as const
         : { key: "first-order-20-v1" as const, percentage: 20 as const } } : {}),
       designSurchargeCents: 0,
       cartDigest: createCartDigest(

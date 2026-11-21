@@ -9,7 +9,7 @@ function request(body: unknown = { previousOrderNumber: "01234", verified: true 
   return new Request(`${origin}/api/admin/customers/customer-1/voucher`, { method: "POST", headers: { "Content-Type": "application/json", Origin: requestOrigin }, body: JSON.stringify(body) });
 }
 function setup() {
-  const deps = { requirePermission: vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "admin@example.test" } }), detail: vi.fn().mockResolvedValue({ account: { id: "customer-1" }, orders: [] }), audit: vi.fn().mockResolvedValue(undefined), canIssue: vi.fn().mockResolvedValue(true), secret: () => secret, enabled: true, trustedOrigin: origin };
+  const deps = { requirePermission: vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "admin@example.test" } }), detail: vi.fn().mockResolvedValue({ account: { id: "customer-1" }, orders: [] }), audit: vi.fn().mockResolvedValue(undefined), canIssue: vi.fn().mockResolvedValue(true), secret: () => secret, trustedOrigin: origin };
   return { deps, route: createAdminCustomerVoucherRoute(deps) };
 }
 describe("admin returning voucher issuance", () => {
@@ -34,13 +34,11 @@ describe("admin returning voucher issuance", () => {
     }
     expect(deps.audit).not.toHaveBeenCalled();
   });
-  it("does not issue to guests or missing customers or during campaign closure", async () => {
+  it("does not issue to guests or missing customers", async () => {
     const { deps, route } = setup();
     deps.detail.mockResolvedValueOnce(null).mockResolvedValueOnce({ account: null });
     expect((await route.POST(request(), context)).status).toBe(404);
     expect((await route.POST(request(), context)).status).toBe(422);
-    const disabled = createAdminCustomerVoucherRoute({ ...deps, enabled: false });
-    expect((await disabled.POST(request(), context)).status).toBe(409);
     expect(deps.audit).not.toHaveBeenCalled();
   });
   it("issues for verified offline history and audits without exposing code or secret", async () => {
@@ -55,33 +53,6 @@ describe("admin returning voucher issuance", () => {
     expect(JSON.stringify(deps.audit.mock.calls)).not.toContain(code);
     expect(JSON.stringify(deps.audit.mock.calls)).not.toContain(secret);
   });
-  it("reads current campaign state on every request and blocks lookup and signing when disabled", async () => {
-    const { deps } = setup();
-    const enabled = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    const secret = vi.fn(() => "test-only-returning-voucher-secret-123456789");
-    const route = createAdminCustomerVoucherRoute({ ...deps, enabled, secret });
-    expect((await route.POST(request(), context)).status).toBe(200);
-    deps.detail.mockClear();
-    deps.audit.mockClear();
-    secret.mockClear();
-    const disabled = await route.POST(request(), context);
-    expect(disabled.status).toBe(409);
-    expect(await disabled.json()).not.toHaveProperty("code");
-    expect(deps.detail).not.toHaveBeenCalled();
-    expect(deps.audit).not.toHaveBeenCalled();
-    expect(secret).not.toHaveBeenCalled();
-    expect((await route.POST(request(), context)).status).toBe(200);
-    expect(enabled).toHaveBeenCalledTimes(3);
-  });
-  it("fails closed without exposing campaign read errors", async () => {
-    const { deps } = setup();
-    const route = createAdminCustomerVoucherRoute({ ...deps, enabled: vi.fn().mockRejectedValue(new Error("private state failure")) });
-    const response = await route.POST(request(), context);
-    expect(response.status).toBe(500);
-    expect(await response.text()).not.toContain("private state failure");
-    expect(deps.detail).not.toHaveBeenCalled();
-    expect(deps.audit).not.toHaveBeenCalled();
-  });
   it("withholds the code if the audit cannot be recorded", async () => {
     const { deps, route } = setup();
     deps.audit.mockRejectedValue(new Error("private database error"));
@@ -95,7 +66,7 @@ describe("admin returning voucher issuance", () => {
     const secret = vi.fn(() => "unused-signing-secret");
     const response = await createAdminCustomerVoucherRoute({ ...deps, secret }).POST(request(), context);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: "The promotion is unavailable, or this account-bound voucher has already been reserved or used. Review the promotion setting and customer account." });
+    expect(await response.json()).toEqual({ error: "This account-bound voucher is unavailable or has already been reserved or used." });
     expect(deps.canIssue).toHaveBeenCalledWith("customer-1");
     expect(secret).not.toHaveBeenCalled();
     expect(deps.audit).not.toHaveBeenCalled();

@@ -63,30 +63,14 @@ export function HomepagePromotion({ market = "NZ" }: Readonly<{ market?: Market 
         <button ref={closeRef} className={styles.close} type="button" aria-label="Close promotion" onClick={close}>
           <span aria-hidden="true">×</span>
         </button>
-        <h2 id="homepage-promotion-title" className={styles.srOnly}>Limited-time offer: save 36% in total</h2>
-        <p id="homepage-promotion-description" className={styles.srOnly}>
-          Get 20% off every order during this promotion, automatically applied in your cart. No code or sign-in needed for the base discount. Returning customers: send your previous order number to our team
-          to claim an extra 20% off the discounted price. For example, $100 becomes $80, then $64.
-          Limited time only. Offer ends when this banner is removed.
-        </p>
         <header className={styles.firstOrderNotice}>
-          <p className={styles.firstOrderHeading}>EVERY ORDER: 20% OFF <strong className={styles.noCodeBadge}>NO CODE NEEDED</strong></p>
-          <p>Your 20% discount is automatically applied in your cart on every order during the promotion.</p>
+          <h2 id="homepage-promotion-title" className={styles.firstOrderHeading}>Anniversary offer: 20% off <strong className={styles.noCodeBadge}>No code needed</strong></h2>
+          <p id="homepage-promotion-description">The anniversary discount is applied automatically to eligible merchandise and customisation during the promotion. Shipping and urgent fees are excluded.</p>
         </header>
-        <div className={styles.artwork}>
-          <picture>
-            <source media="(max-width: 640px)" srcSet="/media/promotions/thank-you-36-mobile.webp" width={1086} height={1448} />
-            {/* Precompressed, art-directed assets; the browser downloads only the matching version. */}
-            <img src="/media/promotions/thank-you-36-desktop.webp" alt="R&R Gallery limited-time canvas and banner offer" width={1670} height={941} />
-          </picture>
-          <div className={styles.actions} data-artwork-actions>
-            <Link href={`/account/register?next=${encodeURIComponent(market === "AU" ? "/au/shop" : "/shop")}`} prefetch={false} onClick={close}><span className={styles.srOnly}>Sign up</span></Link>
-            <a href="https://m.me/RandRgallery" rel="noopener noreferrer" onClick={close}><span className={styles.srOnly}>Message our team</span></a>
-          </div>
+        <div className={styles.actions}>
+          <Link href={`/account/register?next=${encodeURIComponent(market === "AU" ? "/au/shop" : "/shop")}`} prefetch={false} onClick={close}>Sign up</Link>
+          <a href="https://m.me/RandRgallery" rel="noopener noreferrer" onClick={close}>Message our team</a>
         </div>
-        <footer className={styles.footer}>
-          <p>Returning customers: message our team with your previous order number to claim your account-bound voucher. Sign in and apply it to one order for an extra 20% off (36% total). Each voucher can be used once.</p>
-        </footer>
       </section>
     </div>,
     document.body,
