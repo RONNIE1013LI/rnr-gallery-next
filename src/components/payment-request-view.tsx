@@ -80,7 +80,7 @@ export function PaymentRequestView({ request: initialRequest, methods }: Readonl
         <dl className={styles.summary}>
           <div><dt>Reference</dt><dd>{request.requestNumber}</dd></div>
           {request.orderNumber ? <div><dt>Order</dt><dd>{request.orderNumber}</dd></div> : null}
-          <div><dt>Description</dt><dd>{request.description}</dd></div>
+          <div className={styles.summaryDescription}><dt>Description</dt><dd>{request.description}</dd></div>
           <div className={styles.total}><dt>{paid ? "Amount paid" : "Amount to pay"}</dt><dd>{amount}</dd></div>
         </dl>
       </div>
