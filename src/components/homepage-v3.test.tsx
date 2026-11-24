@@ -46,11 +46,13 @@ function galleryItem(
 describe("HomepageV3", () => {
   it("offers product details alongside the existing ordering actions in each market", () => {
     const { rerender } = render(<HomepageV3 registry={defaultProductRegistry} />);
+    expect(screen.getByRole("link", { name: "Explore Digital Oil Painting Canvas" })).toHaveAttribute("href", "/products/digital-oil-painting-canvas");
     expect(screen.getByRole("link", { name: "Canvas details" })).toHaveAttribute("href", "/canvas#canvas-buying-guide");
     expect(screen.getByRole("link", { name: "Shop Custom Canvas" })).toHaveAttribute("href", "/canvas");
     expect(screen.getByRole("link", { name: "Grave cover details" })).toHaveAttribute("href", "/products/grave-cover");
     expect(screen.getByRole("link", { name: "Shop Grave Covers" })).toHaveAttribute("href", "/products/grave-cover/configure");
     rerender(<HomepageV3 registry={defaultProductRegistry} market="AU" />);
+    expect(screen.getByRole("link", { name: "Explore Digital Oil Painting Canvas" })).toHaveAttribute("href", "/au/products/digital-oil-painting-canvas");
     expect(screen.getByRole("link", { name: "Canvas details" })).toHaveAttribute("href", "/au/canvas#canvas-buying-guide");
     expect(screen.getByRole("link", { name: "Grave cover details" })).toHaveAttribute("href", "/au/products/grave-cover");
   });
