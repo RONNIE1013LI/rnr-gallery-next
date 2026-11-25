@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { CataloguePage } from "@/components/catalogue-page";
 import { CatalogueBuyingGuide } from "@/components/catalogue-buying-guide";
+import guideStyles from "@/components/catalogue-seo.module.css";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import { getRegistryProducts } from "@/domain/catalogue/product-registry";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
@@ -34,6 +36,20 @@ export default async function CanvasPage() {
       )}
     >
       <CatalogueBuyingGuide category="canvas" market="NZ" />
+      <section className={guideStyles.section} aria-labelledby="memorial-canvas-options">
+        <h2 id="memorial-canvas-options">Choose a personalised memorial canvas</h2>
+        <p>
+          Choose a photo print to keep an existing portrait, a{" "}
+          <Link href="/products/digital-oil-painting-canvas">digital oil painting portrait</Link>{" "}
+          for a painterly composition, or a{" "}
+          <Link href="/products/custom-themed-canvas">themed canvas</Link>{" "}
+          for a tribute with photos, names, dates or remembrance wording.
+        </p>
+        <p>
+          For a display at a service or unveiling, compare our{" "}
+          <Link href="/memorial-banners">memorial banner and graveside options</Link>.
+        </p>
+      </section>
     </CataloguePage>
   );
 }

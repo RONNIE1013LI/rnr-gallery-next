@@ -211,6 +211,8 @@ describe("ProductPageContent", () => {
     });
     expect(screen.getByText("NZ$120.75", { selector: "strong" }).closest("p")).toHaveTextContent(`From NZ$120.75 incl GST`);
     expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Combine separate photos in one family portrait" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "portrait transformations" })).toHaveAttribute("href", "/#transformation");
     expect(JSON.parse(breadcrumbs?.textContent ?? "{}")).toMatchObject({
       "@type": "BreadcrumbList",
       itemListElement: [
