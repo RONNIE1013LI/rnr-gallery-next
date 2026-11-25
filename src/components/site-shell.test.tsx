@@ -494,7 +494,16 @@ describe("site shell", () => {
 
   it("keeps footer titles at 36px and links at 30px without extra spacing or mobile overrides", () => {
     const stylesheet = readFileSync("src/app/globals.css", "utf8");
-    const responsiveRules = stylesheet.match(/@media[\s\S]*/)?.[0] ?? "";
+    const style = document.createElement("style");
+    style.textContent = stylesheet;
+    document.head.append(style);
+    const sheet = style.sheet;
+    style.remove();
+    if (!sheet) throw new Error("Unable to parse footer stylesheet");
+    const responsiveRules = Array.from(sheet.cssRules)
+      .filter((rule) => rule.type === CSSRule.MEDIA_RULE)
+      .map((rule) => rule.cssText)
+      .join("\n");
     const mobileRules = stylesheet.match(/@media \(max-width: 560px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
     const narrowEmailRules = stylesheet.match(/@media \(max-width: 519px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
 
@@ -515,7 +524,7 @@ describe("site shell", () => {
     );
     expect(stylesheet).toMatch(/\.site-footer__contact\s*\{[^}]*margin-top:\s*0;/);
     expect(stylesheet).toMatch(/\.site-footer__contact a \+ a\s*\{[^}]*margin-top:\s*0;/);
-    expect(responsiveRules).not.toMatch(/\.site-footer(?: a| li \+ li|__title|__cookie-trigger|__contact(?: a \+ a)?)\s*[,\{]/);
+    expect(responsiveRules).not.toMatch(/\.site-footer(?: a| li\s*\+\s*li|__title|__cookie-trigger|__contact(?: a\s*\+\s*a)?)\s*[,\{]/);
     expect(mobileRules).not.toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
     expect(narrowEmailRules).toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
     expect(narrowEmailRules).toMatch(/\.site-footer__email-mobile\s*\{[^}]*display:\s*inline/);
