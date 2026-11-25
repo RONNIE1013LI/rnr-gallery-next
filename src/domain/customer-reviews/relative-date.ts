@@ -4,6 +4,13 @@ export type RelativeReviewDate = Readonly<{
   title: string;
 }>;
 
+const aucklandCalendarDate = new Intl.DateTimeFormat("en-NZ", {
+  timeZone: "Pacific/Auckland",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 function parseCalendarDate(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) throw new Error("Invalid review date");
@@ -26,11 +33,10 @@ export function formatRelativeReviewDate(
   now = new Date(),
 ): RelativeReviewDate {
   const date = parseCalendarDate(value);
-  const today = new Date(Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-  ));
+  const { year, month, day } = Object.fromEntries(
+    aucklandCalendarDate.formatToParts(now).map(({ type, value }) => [type, value]),
+  );
+  const today = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
   const dayDifference = Math.round((date.getTime() - today.getTime()) / 86_400_000);
   const formatter = new Intl.RelativeTimeFormat("en-NZ", { numeric: "auto" });
 
