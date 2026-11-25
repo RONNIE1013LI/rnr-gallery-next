@@ -83,6 +83,10 @@ function itemXml(product: MerchantProductData, market: Market): string {
     `      <description>${escapeXml(product.description)}</description>`,
     `      <link>${escapeXml(product.link)}</link>`,
     `      <g:image_link>${escapeXml(product.imageLink)}</g:image_link>`,
+    ...product.additionalImageLinks.map(
+      (link) => `      <g:additional_image_link>${escapeXml(link)}</g:additional_image_link>`,
+    ),
+    `      <g:product_type>${escapeXml(product.productType)}</g:product_type>`,
     `      <g:price>${formatPrice(product.priceInclTaxCents, product.currency)}</g:price>`,
     `      <g:availability>${product.availability}</g:availability>`,
     `      <g:condition>${product.condition}</g:condition>`,
