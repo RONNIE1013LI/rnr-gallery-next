@@ -30,8 +30,8 @@ jobs:
       - run: npm run lint
       - name: Verify security and storefront boundaries
         run: |
-          npm run test:run -- scripts/framework-security-baseline.test.ts scripts/production-deployment-guard.test.ts scripts/automation/production-access-guard.test.ts src/server/auth/config.test.ts src/server/auth/social-provider-config.test.ts src/server/auth/website-chat-storage.test.ts src/app/seo-routes.test.ts src/app/sitemap.test.ts src/app/au/categories.test.tsx 'src/app/products/[slug]/page.test.tsx' src/app/feeds/google-merchant-routes.test.ts src/server/merchant/google-merchant-feed.test.ts src/components/cart-view.test.tsx src/components/checkout-view.test.tsx src/components/stripe-payment-form.test.tsx src/components/payment-methods.test.tsx src/app/api/checkout/shipping/route.test.ts src/app/api/checkout/payment-methods/route.test.ts
-      - name: Build with isolated local configuration
+          npm run test:run -- scripts/framework-security-baseline.test.ts scripts/production-governance-config.test.ts scripts/production-deployment-guard.test.ts scripts/automation/production-access-guard.test.ts src/server/auth/config.test.ts src/server/auth/social-provider-config.test.ts src/server/auth/website-chat-storage.test.ts src/app/seo-routes.test.ts src/app/sitemap.test.ts src/app/au/categories.test.tsx 'src/app/products/[slug]/page.test.tsx' src/app/feeds/google-merchant-routes.test.ts src/server/merchant/google-merchant-feed.test.ts src/components/cart-view.test.tsx src/components/checkout-view.test.tsx src/components/stripe-payment-form.test.tsx src/components/payment-methods.test.tsx src/app/api/checkout/shipping/route.test.ts src/app/api/checkout/payment-methods/route.test.ts
+      - name: Build and verify image optimization locally
         env:
           BETTER_AUTH_URL: https://staging.rnrgallery.com
           DATABASE_URL: postgresql://fixture:fixture@127.0.0.1:1/rnr_framework_ci
@@ -39,3 +39,16 @@ jobs:
           export BETTER_AUTH_SECRET="$(openssl rand -hex 32)"
           echo "::add-mask::$BETTER_AUTH_SECRET"
           npm run build
+          node node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3193 > "$RUNNER_TEMP/framework-next.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 8 --retry-connrefused --retry-delay 1 --max-time 10 \
+            -H 'Accept: image/webp' -o "$RUNNER_TEMP/framework-optimized.webp" \
+            'http://127.0.0.1:3193/_next/image?url=%2Fmedia%2Fproducts%2Froll-up-banner-shop.webp&w=640&q=75'
+          node -e '
+            const assert = require("node:assert/strict");
+            require("sharp")(process.argv[1]).metadata().then(({ format, width, height }) => {
+              assert.deepEqual({ format, width, height }, { format: "webp", width: 640, height: 480 });
+              console.log("Image optimization passed (WebP, 640 × 480)");
+            }).catch((error) => { console.error(error); process.exitCode = 1; });
+          ' "$RUNNER_TEMP/framework-optimized.webp"
