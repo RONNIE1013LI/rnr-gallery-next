@@ -104,6 +104,7 @@ describe("legal pages", () => {
     expect(contact).toHaveTextContent("Fairview Heights");
     expect(contact).toHaveTextContent("Auckland 0632");
     expect(contact).toHaveTextContent("New Zealand");
+    expect(contact).toHaveTextContent("Studio visits are by appointment only.");
     expect(screen.getByRole("link", { name: "+64 21 023 48948" }))
       .toHaveAttribute("href", "tel:+642102348948");
     expect(screen.getByRole("link", { name: "customerservice@rnrgallery.com" }))

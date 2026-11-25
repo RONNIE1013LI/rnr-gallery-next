@@ -3,7 +3,7 @@ import { buildPublicMetadata } from "@/server/seo/metadata";
 
 export const metadata = buildPublicMetadata({
   title: "Contact R&R Gallery",
-  description: "Contact R&R Gallery in Auckland by phone, email, Messenger or WhatsApp for help with custom artwork and orders.",
+  description: "Contact R&R Gallery in Fairview Heights, Auckland, for help with custom artwork and orders. Studio visits are by appointment only.",
   path: "/contact",
   image: "/media/home/homepage-begin-photo-help.webp",
   imageAlt: "R&R Gallery customer photo and artwork support",
@@ -25,6 +25,7 @@ export default function ContactPage() {
           <a href="tel:+642102348948">+64 21 023 48948</a><br />
           <a href="mailto:customerservice@rnrgallery.com">customerservice@rnrgallery.com</a>
         </address>
+        <p>Studio visits are by appointment only. Please contact us before visiting.</p>
         <p>Need help choosing? Send your photos, occasion, preferred size and the date you need it. We can help you choose the next step.</p>
         <div className={styles.legalActions}>
           <a className={styles.primaryButton} href="https://m.me/RandRgallery" rel="noopener noreferrer">Messenger</a>

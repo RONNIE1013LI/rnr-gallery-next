@@ -106,6 +106,7 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
       { question: "Can I include dates, scripture and remembrance wording?", answer: "Send the exact names, dates and text to include. Please review every detail in the proof before giving approval to print." },
       { question: "How do I choose between a banner and a grave cover?", answer: "Roll-up and wall banners are display options for a gathering. A grave cover is a separate format with its own product options. Review the product details for the setting you have in mind." },
       { question: "What if the service is soon?", answer: "Contact the team with the service date before relying on an urgent order. Availability and delivery need to be confirmed for your circumstances." },
+      { question: "Can I visit your Auckland studio to discuss a memorial banner?", answer: "Our studio is in Fairview Heights, Auckland. Visits are by appointment only. Contact our team to arrange a time." },
       { question: "Will we receive a proof before printing?", answer: proofAnswer },
     ], related: [],
   },
