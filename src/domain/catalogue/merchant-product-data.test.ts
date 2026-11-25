@@ -104,6 +104,15 @@ describe("merchant product data", () => {
       "digital-oil-painting-banner",
     ];
     expect(new Set(items.map((item) => item.productKey))).toEqual(new Set(approvedProductKeys));
+    expect(items).toHaveLength(21);
+    const canvasItems = items.filter((item) => item.productType === "Canvas Prints");
+    expect(canvasItems).toHaveLength(14);
+    for (const item of canvasItems) {
+      expect(item.additionalImageLinks).toEqual(["https://rnrgallery.com/media/products/canvas-stretcher-detail.webp"]);
+      expect(item.additionalImageLinks).not.toContain(item.imageLink);
+    }
+    expect(items.filter((item) => item.productType === "Custom Banners")
+      .every((item) => item.additionalImageLinks.length === 0)).toBe(true);
     expect(new Set(items.map((item) => item.imageLink)).size).toBe(approvedProductKeys.length);
     expect(items.some((item) => item.productKey === "grave-cover")).toBe(false);
     expect(items.some((item) => item.productKey === "banner-bundle")).toBe(false);

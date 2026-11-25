@@ -12,6 +12,9 @@ const MERCHANT_INCLUDED_PRODUCT_KEYS = new Set([
   "digital-oil-painting-banner",
 ]);
 
+// The supplied photograph shows the same canvas and stretcher construction across these products.
+const MERCHANT_CANVAS_DETAIL = "/media/products/canvas-stretcher-detail.webp";
+
 export type MerchantProductData = Readonly<{
   id: string;
   productKey: string;
@@ -22,6 +25,8 @@ export type MerchantProductData = Readonly<{
   description: string;
   link: string;
   imageLink: string;
+  additionalImageLinks: readonly string[];
+  productType: "Canvas Prints" | "Custom Banners";
   currency: MarketCurrency;
   priceInclTaxCents: number;
   availability: "in_stock";
@@ -46,6 +51,9 @@ export function buildMerchantProductData(
     }
     const schema = schemaFromRegistry(registry, product.key);
     if (!schema) return [];
+    const imageLink = new URL(product.image.src, siteUrl).toString();
+    const canvasDetail = new URL(MERCHANT_CANVAS_DETAIL, siteUrl).toString();
+    const isCanvas = product.category === "canvas";
     return product.configuration.sizes.map((size) => {
       const price = quoteMarketConfiguration(registry, market, product.key, {
         sizeKey: size.key,
@@ -63,7 +71,9 @@ export function buildMerchantProductData(
           `${prefix}/products/${product.slug}?size=${encodeURIComponent(size.key)}`,
           siteUrl,
         ).toString(),
-        imageLink: new URL(product.image.src, siteUrl).toString(),
+        imageLink,
+        additionalImageLinks: isCanvas && canvasDetail !== imageLink ? [canvasDetail] : [],
+        productType: isCanvas ? "Canvas Prints" as const : "Custom Banners" as const,
         currency: book.currency,
         priceInclTaxCents: price,
         availability: "in_stock" as const,

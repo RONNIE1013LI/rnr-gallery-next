@@ -16,6 +16,8 @@ const item: MerchantProductData = {
   description: "Made to order & approved before print.",
   link: "https://rnrgallery.com/products/canvas?size=40x30&source=feed",
   imageLink: "https://rnrgallery.com/media/canvas.webp?size=large&format=webp",
+  additionalImageLinks: ["https://rnrgallery.com/media/detail.webp?size=large&format=webp"],
+  productType: "Canvas Prints",
   currency: "NZD",
   priceInclTaxCents: 12_345,
   availability: "in_stock",
@@ -47,6 +49,8 @@ describe("serializeGoogleMerchantFeed", () => {
     expect(xml).toContain("Canvas &amp; frame &lt; custom &gt;");
     expect(xml).toContain("https://rnrgallery.com/products/canvas?size=40x30&amp;source=feed");
     expect(xml).toContain("https://rnrgallery.com/media/canvas.webp?size=large&amp;format=webp");
+    expect(xml).toContain("<g:additional_image_link>https://rnrgallery.com/media/detail.webp?size=large&amp;format=webp</g:additional_image_link>");
+    expect(xml).toContain("<g:product_type>Canvas Prints</g:product_type>");
     expect(xml).not.toMatch(/return|refund/i);
   });
 
