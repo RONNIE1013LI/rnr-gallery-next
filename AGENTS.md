@@ -35,8 +35,14 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Production browser automation
 
-* Local and Preview are the default automation targets. Ordinary UX audits use Preview.
+* Local or isolated test environments are the default automation targets. Ordinary UX audits are local.
 * A Production block is final until a human explicitly grants a named capability, temporary bypass, or extended TTL. Production UX audits use only `npm run production:browser:check -- <official-production-url>` with `RNR_PRODUCTION_SMOKE=1`; do not substitute a direct browser tool or another script.
 * Production visual work requires `VISUAL`; attribution work requires `ATTRIBUTION`; real Reply Assistant polling requires `REPLY_ASSISTANT_TEST`; longer work requires `EXTENDED`, remains capped at 600 seconds, and otherwise all Production work is capped at 120 seconds.
 * Never weaken the guard, edit authorization environment values, add an allowlist entry, or retry through a bypass without fresh administrator authorization. There is no permanent disable.
 * The approved runner uses a unique named Playwright session, bounded lifetime, and `finally` cleanup; it verifies only processes it owns and must not disturb unrelated sessions.
+
+## NO PREVIEW
+
+* Never create a Vercel Preview for this project, including through the dashboard, CLI, API, branch pushes, pull requests, hooks, or CI. Verify that non-`main` deployments are disabled before pushing or changing a pull request. Do not create a deployment to test this policy.
+* Keep the Vercel Git production branch on `main` and the catch-all in `vercel.json` set to `false`, with only `main` enabled. Inspect account-level deployment settings read-only. External settings changes require explicit approval.
+* Validate locally and in isolated test infrastructure, then use GitHub review. Production is allowed only with explicit release authorization and the existing read-only verification and rollback gates. Remote Preview is never a validation prerequisite.
