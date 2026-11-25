@@ -8,7 +8,7 @@ describe("Design Gallery card typography", () => {
       path.join(process.cwd(), "src/components/storefront.module.css"),
       "utf8",
     );
-    const rule = css.match(/\.galleryCardBody h2\s*\{([\s\S]*?)\}/);
+    const rule = css.match(/\.galleryCardBody\s+:is\(h2,\s*h3\)\s*\{([\s\S]*?)\}/);
 
     expect(rule?.[1]).toBeDefined();
     expect(rule?.[1]).toMatch(/font-family:\s*var\(--font-body\)\s*;/);
