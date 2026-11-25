@@ -12,7 +12,11 @@ on:
       - src/app/feeds/**
       - src/domain/catalogue/**
       - src/domain/seo/**
+      - src/app/sitemap.ts
+      - src/app/robots.ts
+      - src/server/seo/**
       - src/server/merchant/**
+      - public/media/products/canvas-stretcher-detail.webp
 
 permissions:
   contents: read
