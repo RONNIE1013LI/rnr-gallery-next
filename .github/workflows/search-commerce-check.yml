@@ -1,0 +1,45 @@
+name: Search and Merchant verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/search-commerce-check.yml
+      - src/app/canvas/**
+      - src/app/contact/**
+      - src/app/products/**
+      - src/app/au/**
+      - src/app/feeds/**
+      - src/domain/catalogue/**
+      - src/domain/seo/**
+      - src/server/merchant/**
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Verify storefront, feeds and release boundaries
+        run: |
+          npm run test:run -- scripts/framework-security-baseline.test.ts scripts/production-governance-config.test.ts 'src/app/au/products/[slug]/page.test.tsx' 'src/app/products/[slug]/page.test.tsx' src/app/legal-pages.test.tsx src/app/canvas/page.test.tsx src/components/design-gallery-typography.test.ts src/components/occasion-landing-page.test.tsx src/components/site-shell.test.tsx src/domain/catalogue/merchant-product-data.test.ts src/server/auth/protected-return-path-reconciliation.test.ts src/server/merchant/google-merchant-feed.test.ts src/app/feeds/google-merchant-routes.test.ts src/app/seo-routes.test.ts src/app/sitemap.test.ts
+      - name: Build with isolated local configuration
+        env:
+          BETTER_AUTH_URL: https://staging.rnrgallery.com
+          DATABASE_URL: postgresql://fixture:fixture@127.0.0.1:1/rnr_search_commerce_ci
+        run: |
+          export BETTER_AUTH_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::$BETTER_AUTH_SECRET"
+          npm run build

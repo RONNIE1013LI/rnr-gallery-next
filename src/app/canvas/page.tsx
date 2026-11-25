@@ -23,6 +23,11 @@ export async function generateMetadata() {
 
 export default async function CanvasPage() {
   const { registry } = await getSafePublicProductRegistry();
+  const products = getRegistryProducts(registry).filter(
+    (product) => product.active && product.category === "canvas",
+  );
+  const portrait = products.find((product) => product.key === "digital-oil-painting-canvas");
+  const themed = products.find((product) => product.key === "custom-themed-canvas");
   return (
     <CataloguePage
       eyebrow="CANVAS"
@@ -31,18 +36,20 @@ export default async function CanvasPage() {
       path="/canvas"
       breadcrumbLabel="Canvas"
       showProductDetailLinks
-      products={getRegistryProducts(registry).filter(
-        (product) => product.active && product.category === "canvas",
-      )}
+      products={products}
     >
       <CatalogueBuyingGuide category="canvas" market="NZ" />
       <section className={guideStyles.section} aria-labelledby="memorial-canvas-options">
         <h2 id="memorial-canvas-options">Choose a personalised memorial canvas</h2>
         <p>
           Choose a photo print to keep an existing portrait, a{" "}
-          <Link href="/products/digital-oil-painting-canvas">digital oil painting portrait</Link>{" "}
+          {portrait ? (
+            <Link href={`/products/${portrait.slug}`}>digital oil painting portrait</Link>
+          ) : "digital oil painting portrait"}{" "}
           for a painterly composition, or a{" "}
-          <Link href="/products/custom-themed-canvas">themed canvas</Link>{" "}
+          {themed ? (
+            <Link href={`/products/${themed.slug}`}>themed canvas</Link>
+          ) : "themed canvas"}{" "}
           for a tribute with photos, names, dates or remembrance wording.
         </p>
         <p>
