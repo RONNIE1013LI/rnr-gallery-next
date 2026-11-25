@@ -99,11 +99,11 @@ export const occasionLandingPages: Readonly<Record<OccasionLandingSlug, Occasion
     guidanceHeading: "Prepare the portrait and wording for review",
     guidance: [
       { heading: "Portrait, names and dates", text: "Choose one main portrait, or send additional family photos with instructions about their placement. Include names and dates in the exact form you want printed." },
-      { heading: "Remembrance wording, format and timing", text: "You may supply scripture, a remembrance message and your own background or cultural references. A roll-up or wall banner is a display format; a grave cover is a separate remembrance option. Confirm any close event deadline with the team." },
+      { heading: "Choose a format for the service or unveiling", text: "Choose an 85 × 200 cm roll-up banner for a freestanding display or a wall banner for a hanging backdrop. For a graveside tribute, compare the separate 100 × 200 cm grave cover. Share the event date before ordering if the timing is tight." },
     ],
     faq: [
       { question: "Can the design use one portrait with family photos?", answer: "Yes. Identify the main portrait and supply the additional photos separately. Include any placement preferences in your instructions." },
-      { question: "Can I include dates, scripture and remembrance wording?", answer: "Send the exact names, dates and text to include. Please review every detail in the proof before giving approval to print." },
+      { question: "Can I include dates, scripture and remembrance wording?", answer: "Send the exact names, dates and text to include, along with any background or cultural references. Please review every detail in the proof before giving approval to print." },
       { question: "How do I choose between a banner and a grave cover?", answer: "Roll-up and wall banners are display options for a gathering. A grave cover is a separate format with its own product options. Review the product details for the setting you have in mind." },
       { question: "What if the service is soon?", answer: "Contact the team with the service date before relying on an urgent order. Availability and delivery need to be confirmed for your circumstances." },
       { question: "Can I visit your Auckland studio to discuss a memorial banner?", answer: "Our studio is in Fairview Heights, Auckland. Visits are by appointment only. Contact our team to arrange a time." },

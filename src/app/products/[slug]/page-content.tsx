@@ -11,6 +11,7 @@ import { notFound } from "next/navigation";
 import { StartingPrice } from "@/components/starting-price";
 import { keepHeadingPhrasesTogether } from "@/components/public-heading-text";
 import styles from "@/components/storefront.module.css";
+import guideStyles from "@/components/catalogue-seo.module.css";
 import { products } from "@/domain/catalogue/products";
 import {
   getRegistryProductBySlug,
@@ -294,7 +295,7 @@ export function ProductPageContent({
       }} />
       <StructuredData id="rnr-product-breadcrumbs" data={buildBreadcrumbData([
         { name: "Home", path: marketPrefix || "/" },
-        { name: "Shop", path: market === "AU" ? "/au" : "/shop" },
+        { name: "Shop", path: `${marketPrefix}/shop` },
         { name: presentation.title, path: productPath },
       ])} />
       <div className={`${styles.productDetailInner}${
@@ -304,6 +305,28 @@ export function ProductPageContent({
         {presentation.prioritizeMobileAction ? media : copy}
       </div>
       <ProductBuyingGuide product={product} artwork={artwork} market={market} />
+      {hasCanvasPreview ? (
+        <section className={guideStyles.section} aria-labelledby="combine-family-photos">
+          <h2 id="combine-family-photos">Combine separate photos in one family portrait</h2>
+          <p>
+            You can ask us to include a loved one who has passed away in a new family portrait,
+            using separate photographs. Send each original photo and tell us who to include.
+            We assess the files before confirming what is possible, then send a proof for you to
+            review before printing.
+          </p>
+          <p>
+            {market === "AU" ? <>
+              See the size and artwork options above for AUD pricing. If you are ordering for a
+              specific date, check{" "}
+              <Link href="/shipping-delivery">delivery estimates for Australia</Link>.
+            </> : <>
+              See how source photos become finished artwork in our{" "}
+              <Link href="/#transformation">portrait transformations</Link>.
+            </>}{" "}
+            <Link href="/contact">Ask us about your source photos</Link> if you would like help before ordering.
+          </p>
+        </section>
+      ) : null}
     </main>
   );
 }

@@ -79,7 +79,8 @@ describe("AustraliaProductPage analytics", () => {
       searchParams: Promise.resolve({ design: "c".repeat(64) }),
     }));
 
-    expect(screen.getByText("From A$480.23 AUD")).toBeVisible();
+    expect(screen.getByText("A$480.23 AUD", { selector: "strong" }).closest("p"))
+      .toHaveTextContent("From A$480.23 AUD");
     expect(state.track).toHaveBeenCalledWith({
       event: {
         event: "view_item",
@@ -117,6 +118,9 @@ describe("AustraliaProductPage analytics", () => {
     expect(screen.getByText(deliveryCopy.australiaDhl)).toBeVisible();
     expect(screen.getByText(deliveryCopy.australiaStandard)).toBeVisible();
     expect(screen.getByText(deliveryCopy.australiaRemote)).toBeVisible();
+    expect(screen.getByRole("link", { name: "delivery estimates for Australia" })).toHaveAttribute("href", "/shipping-delivery");
+    expect(JSON.parse(container.querySelector("#rnr-product-breadcrumbs")?.textContent ?? "{}").itemListElement[1])
+      .toMatchObject({ name: "Shop", item: "https://rnrgallery.com/au/shop" });
     expect(screen.getByText("Proof before printing")).toBeVisible();
     expect(screen.getByText("Two revisions included")).toBeVisible();
     expect(screen.getByRole("link", { name: "Returns & refunds" }))

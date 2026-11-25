@@ -28,7 +28,10 @@ describe("occasion landing output", () => {
     for (const item of content.faq) expect(serverDocument.body.textContent).toContain(item.answer);
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(content.heading);
-    expect(container.querySelectorAll("details")).toHaveLength(5);
+    expect(container.querySelectorAll("details")).toHaveLength(content.faq.length);
+    for (const item of content.faq) {
+      expect(screen.getByText(item.question, { selector: "summary" })).toBeVisible();
+    }
     expect(screen.getByRole("img", { name: artwork.altText })).toHaveAttribute("loading", "lazy");
     const design = screen.getByRole("link", { name: /View Design/ });
     expect(design.getAttribute("href")).toMatch(/^\/designs\/[^?]+$/);
