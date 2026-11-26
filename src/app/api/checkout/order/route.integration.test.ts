@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { normalizeAddress } from "@/domain/address/schema";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-checkout-repository";
 import {
   CHECKOUT_SESSION_COOKIE_NAME,
   createCheckoutSessionToken,
+  checkoutWalletBinding,
   hashCheckoutSessionToken,
 } from "@/server/checkout/session-cookie";
 import {
@@ -192,7 +193,7 @@ describe("POST /api/checkout/order recovery", () => {
     ]);
   });
 
-  it("returns the one existing order when the first successful response was lost", async () => {
+  it.each(["card", "wallet"] as const)("recovers one %s order after a lost response and concurrent submissions", async (method) => {
     const token = createCheckoutSessionToken();
     const session = await checkoutRepository.createSession({
       tokenDigest: hashCheckoutSessionToken(token),
@@ -241,7 +242,7 @@ describe("POST /api/checkout/order recovery", () => {
         repository: orderRepository,
         shippingService: createShippingService({ provider: null }),
         now: () => now,
-        createOrderNumber: () => "RNR-2026-RECOVERY01",
+        createOrderNumber: () => `RNR-2026-RECOVERY-${method.toUpperCase()}`,
       }),
       getOptionalSession: async () => null,
       trustedOrigin: origin,
@@ -262,6 +263,9 @@ describe("POST /api/checkout/order recovery", () => {
       }),
     });
     const body = {
+      ...(method === "wallet" ? { wallet: {
+        checkoutBinding: checkoutWalletBinding(session.id), amountCents: cart.totalInclGstCents, currency: "NZD",
+      } } : {}),
       idempotencyKey: randomUUID(),
       checkoutVersion: state!.version,
       cartDigest: cart.cartDigest,
@@ -275,12 +279,22 @@ describe("POST /api/checkout/order recovery", () => {
       },
     } as const;
 
-    const [lostResponse, concurrentResponse] = await Promise.all([
-      handler(request(token, body)),
-      handler(request(token, body)),
-    ]);
+    if (method === "wallet") vi.stubEnv("EXPRESS_CHECKOUT_NZ", "true");
+    let lostResponse: Response;
+    let concurrentResponse: Response;
+    try {
+      [lostResponse, concurrentResponse] = await Promise.all([
+        handler(request(token, body)),
+        handler(request(token, body)),
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
     expect(lostResponse.status).toBe(200);
     expect(concurrentResponse.status).toBe(200);
+    const conflict = await handler(request(token, { ...body, idempotencyKey: randomUUID() }));
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toMatchObject({ error: { code: "ORDER_CONFLICT" } });
     const recoveredResponse = await handler(request(token, body));
     expect(recoveredResponse.status).toBe(200);
     expect(await recoveredResponse.json()).toEqual(await lostResponse.json());

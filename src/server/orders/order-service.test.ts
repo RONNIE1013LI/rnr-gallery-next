@@ -6,6 +6,7 @@ import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { CheckoutStateRecord } from "@/server/checkout/checkout-repository";
 import {
   createOrderService,
+  ExpressCheckoutDisabledError,
   createOrderNumber,
   OrderConflictError,
   OrderStateChangedError,
@@ -107,6 +108,47 @@ function shippingService() {
 }
 
 describe("atomic order service", () => {
+  it.each([
+    { amountCents: 7474, currency: "NZD" as const },
+    { amountCents: 7475, currency: "AUD" as const },
+  ])("rejects a mismatched wallet amount or currency before inserting an order", async (wallet) => {
+    const repo = repository();
+    const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => now });
+    vi.stubEnv("EXPRESS_CHECKOUT_NZ", "true");
+    try {
+      await expect(service.createOrder(sessionId, key, { ...reviewed(), wallet }))
+        .rejects.toBeInstanceOf(OrderStateChangedError);
+      expect(repo.createAtomicOrder).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("rejects a fresh wallet order when its market flag is off", async () => {
+    vi.stubEnv("EXPRESS_CHECKOUT_NZ", "false");
+    const repo = repository();
+    const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => now });
+    try {
+      await expect(service.createOrder(sessionId, key, {
+        ...reviewed(), wallet: { amountCents: 7475, currency: "NZD" },
+      })).rejects.toBeInstanceOf(ExpressCheckoutDisabledError);
+      expect(repo.createAtomicOrder).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("recovers a committed wallet order on the same key after disabling the flag", async () => {
+    const repo = repository({ findBySession: vi.fn().mockResolvedValue(existingOrder) });
+    const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => now });
+    const wallet = { amountCents: 7475, currency: "NZD" as const };
+    await expect(service.createOrder(sessionId, key, { ...reviewed(), wallet }))
+      .resolves.toMatchObject({ orderNumber: existingOrder.orderNumber });
+    await expect(service.createOrder(sessionId, "30000000-0000-4000-8000-000000000002", { ...reviewed(), wallet }))
+      .rejects.toBeInstanceOf(OrderConflictError);
+    expect(repo.createAtomicOrder).not.toHaveBeenCalled();
+  });
+
   it("preserves both Bundle groups while repricing and claims their union once", async () => {
     const uploadIds = [
       "70000000-0000-4000-8000-000000000001",

@@ -4099,6 +4099,32 @@
   border-top: 3px solid var(--gallery-green);
 }
 
+.expressCheckout {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.expressCheckout h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.expressCheckoutDivider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-block: 0.9rem;
+  font-size: 0.75rem;
+}
+
+.expressCheckoutDivider::before,
+.expressCheckoutDivider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid currentColor;
+  opacity: 0.2;
+}
+
 .checkoutSummary .primaryButton {
   width: 100%;
   margin-top: 1.25rem;

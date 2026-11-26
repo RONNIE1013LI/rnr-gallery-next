@@ -11,6 +11,11 @@ export function hashCheckoutSessionToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
+// Non-credential reference for rejecting a stale wallet authorization after the cookie rotates.
+export function checkoutWalletBinding(sessionId: string): string {
+  return createHash("sha256").update("rnr:checkout-wallet:v1:").update(sessionId).digest("hex");
+}
+
 export function getCheckoutSessionCookieName(customerId: string | null): string {
   if (customerId === null) return CHECKOUT_SESSION_COOKIE_NAME;
   const digest = createHash("sha256").update(customerId, "utf8").digest("hex").slice(0, 32);

@@ -15,7 +15,7 @@ const { confirmPayment, elementsValue, loadStripe, paymentElement, useElements, 
   useStripe: vi.fn(),
 }));
 
-vi.mock("@stripe/stripe-js", () => ({ loadStripe }));
+vi.mock("@stripe/stripe-js/pure", () => ({ loadStripe }));
 vi.mock("@stripe/react-stripe-js", async () => {
   const React = await import("react");
   return {
