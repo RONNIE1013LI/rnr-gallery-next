@@ -28,4 +28,18 @@ describe("Express Checkout market flags", () => {
     expect(String(fetch.mock.calls[0][0])).toBe("https://global-config.vercel.com/test_instance/item/express_checkout");
     expect(fetch.mock.calls[0][1]).toMatchObject({ cache: "no-store", redirect: "error" });
   });
+  it.each([
+    ["non-OK response", () => new Response(null, { status: 503 })],
+    ["malformed JSON", () => new Response("{")],
+    ["non-boolean value", () => Response.json({ NZ: "true" })],
+    ["missing market", () => Response.json({ AU: true })],
+  ] as const)("disables NZ on %s", async (_case, makeResponse) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeResponse()));
+    await expect(expressCheckoutAvailable("NZ", {
+      VERCEL: "1",
+      EXPRESS_CHECKOUT_NZ: "true",
+      EXPRESS_CHECKOUT_GLOBAL_CONFIG: "https://global-config.vercel.com/test_instance?token=synthetic-token",
+    })).resolves.toBe(false);
+  });
+
 });

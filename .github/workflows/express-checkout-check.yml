@@ -36,6 +36,19 @@ jobs:
           check-latest: true
           cache: npm
       - run: npm ci
+      - name: TypeScript check
+        run: npm run typecheck
+      - name: Lint Express Checkout changes
+        run: |
+          npm run lint -- \
+            src/app/api/checkout/express-checkout/route.ts \
+            src/app/api/checkout/order/route.integration.test.ts \
+            src/app/api/checkout/{order,session}/route{.test,-handler}.ts \
+            src/app/checkout/page.tsx \
+            src/components/{checkout-view,express-checkout,stripe-payment-form}{,.test}.tsx \
+            src/components/payment-recovery-intent.ts \
+            src/server/checkout/{express-checkout-config{,.test},session-cookie}.ts \
+            src/server/orders/order-service{,.test}.ts
       - name: Test checkout, payment recovery and purchase boundaries
         run: |
           npm run test:run -- \
