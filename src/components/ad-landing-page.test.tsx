@@ -33,6 +33,8 @@ describe("AdLandingPage", () => {
     for (const link of screen.getAllByRole("link", { name: "Start Customising" })) {
       expect(link).toHaveAttribute("href", `/products/${content.productSlug}/configure`);
     }
+    expect(screen.getByRole("link", { name: "View product details and delivery options" }))
+      .toHaveAttribute("href", `/products/${content.productSlug}`);
     expect(screen.getByRole("link", { name: "Message on Messenger" }))
       .toHaveAttribute("href", "https://m.me/RandRgallery");
     expect(screen.getByRole("link", { name: "Message on Messenger" }))

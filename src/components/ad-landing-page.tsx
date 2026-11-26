@@ -68,7 +68,13 @@ export function AdLandingPage({ content, product, priceInclGstCents }: Readonly<
 
       <section className={styles.adLandingSection}>
         <div><p className={styles.eyebrow}>Product details</p><h2>What is included</h2></div>
-        <div><strong>{content.sizeSummary}</strong><ul>{content.included.map((item) => <li key={item}>{item}</li>)}</ul></div>
+        <div>
+          <strong>{content.sizeSummary}</strong>
+          <ul>{content.included.map((item) => <li key={item}>{item}</li>)}</ul>
+          <Link className={styles.productPolicyLink} href={`/products/${product.slug}`} prefetch={false}>
+            View product details and delivery options
+          </Link>
+        </div>
       </section>
       <section className={styles.adLandingSection}>
         <div><p className={styles.eyebrow}>Simple process</p><h2>How it works</h2></div>

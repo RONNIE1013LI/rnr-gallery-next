@@ -57,6 +57,22 @@ type ProductPagePresentation = Readonly<{
 }>;
 
 export function getProductPagePresentation(product: Product, market: Market = "NZ"): ProductPagePresentation {
+  if (product.key === "photo-print-canvas") {
+    return {
+      title: market === "AU" ? "Photo Canvas Prints" : "Photo Canvas Prints NZ",
+      summary: `Order a gallery-wrapped canvas print from your own photo. Choose the size and orientation, review your proof and get delivery in ${market === "AU" ? "Australia" : "New Zealand"}.`,
+      eyebrow: "Photo printing on canvas",
+      prioritizeMobileAction: false,
+    };
+  }
+  if (product.key === "custom-themed-canvas") {
+    return {
+      title: "Personalised Photo Collage Canvas",
+      summary: "Bring family photos, names and meaningful wording together in a custom canvas collage. Review the layout and message in your proof before printing.",
+      eyebrow: "Custom themed canvas",
+      prioritizeMobileAction: false,
+    };
+  }
   if (product.key === "custom-themed-wall-banner") {
     return {
       title: "Custom Birthday & Event Wall Banner",
@@ -346,8 +362,10 @@ export async function resolveProductPageSearchSelection(productSlug: string, sea
 
 export async function loadProductArtwork(product: Product): Promise<readonly PublicGalleryItem[]> {
   if (!hasProductBuyingGuide(product)) return [];
+  const query = parseGalleryQuery({ product: product.slug });
+  if (!query.productSlug) return [];
   try {
-    const result = await getGalleryRuntime().publicService.list(parseGalleryQuery({ product: product.slug }), 6);
+    const result = await getGalleryRuntime().publicService.list(query, 6);
     return result.items.filter((item) => item.productSlug === product.slug && item.seoIndex
       && !item.hiddenFromListings && !item.canonicalPublicSlug).slice(0, 3);
   } catch {

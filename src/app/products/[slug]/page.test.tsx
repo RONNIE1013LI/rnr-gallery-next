@@ -13,6 +13,7 @@ import AustraliaProductPage, {
 import styles from "@/components/storefront.module.css";
 import ProductPage, {
   generateMetadata as generateNewZealandProductMetadata,
+  loadProductArtwork,
   ProductPageContent,
 } from "./page-content";
 
@@ -75,6 +76,58 @@ describe("ProductPageContent", () => {
     state.track.mockClear();
     state.artwork = [];
     state.artworkUnavailable = false;
+  });
+
+  it("makes the AU photo print page answer the observed purchase intent", async () => {
+    state.registry = enabledAustraliaRegistry();
+    const props = {
+      params: Promise.resolve({ slug: "photo-print-canvas" }),
+      searchParams: Promise.resolve({ size: "a2" }),
+    };
+
+    await expect(generateAustraliaProductMetadata(props)).resolves.toMatchObject({
+      title: "Photo Canvas Prints Australia",
+      alternates: {
+        canonical: "https://rnrgallery.com/au/products/photo-print-canvas",
+        languages: { "en-NZ": "https://rnrgallery.com/products/photo-print-canvas" },
+      },
+    });
+
+    render(await AustraliaProductPage(props));
+    expect(screen.getByRole("heading", { level: 1, name: "Photo Canvas Prints" })).toBeVisible();
+    expect(screen.getByText("How do I choose a canvas size for my photo?")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Delivery estimates for Australia" }))
+      .toHaveAttribute("href", "/shipping-delivery");
+    expect(screen.getByRole("link", { name: "Start Your Design" }))
+      .toHaveAttribute("href", "/au/products/photo-print-canvas/configure?size=a2");
+  });
+
+  it.each([
+    ["custom-themed-canvas", "Can I make a canvas collage from several photos?"],
+    ["roll-up-banner", "Is a pull-up banner the same as a roll-up banner?"],
+    ["digital-oil-painting-banner", "What should I send for a funeral photo banner?"],
+    ["banner-bundle", "Can the two banners have different photos or wording?"],
+  ])("renders a product-specific buying answer for %s", (slug, question) => {
+    const product = getProductBySlug(slug)!;
+    render(<ProductPageContent product={product} selection={null} />);
+    expect(screen.getByText(question)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Delivery estimates for New Zealand" }))
+      .toHaveAttribute("href", "/shipping-delivery");
+  });
+
+  it("links the banner bundle to its two formats without fetching an unfiltered gallery", async () => {
+    const product = getProductBySlug("banner-bundle")!;
+    state.artwork = [{
+      productSlug: "banner-bundle",
+      seoIndex: true,
+      hiddenFromListings: false,
+      canonicalPublicSlug: null,
+    }];
+    await expect(loadProductArtwork(product)).resolves.toEqual([]);
+    render(<ProductPageContent product={product} selection={null} />);
+    expect(screen.getByRole("link", { name: "Browse designs for your event" })).toHaveAttribute(
+      "href", "/design-gallery?design_type=roll-up-banner&design_type=wall-hanging-banners",
+    );
   });
 
   it("links only matching, indexable public artwork from the product page", async () => {
