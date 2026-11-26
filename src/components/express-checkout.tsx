@@ -3,7 +3,7 @@
 import { Elements, ExpressCheckoutElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import type { StripeExpressCheckoutElementConfirmEvent } from "@stripe/stripe-js";
 import { loadStripe } from "@stripe/stripe-js/pure";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { MarketCurrency } from "@/domain/markets/types";
 import type { PaymentActionDTO } from "@/server/payments/public-dto";
 import styles from "./storefront.module.css";
@@ -25,14 +25,22 @@ export type WalletConfirmation = Readonly<{
 
 type WalletProps = Readonly<{
   disabled: boolean;
+  visibilityKey?: string;
+  onVisibilityChange?: (key: string, visible: boolean) => void;
   onAuthorize: (wallet: WalletConfirmation) => Promise<void>;
 }>;
 
-function WalletButtons({ disabled, onAuthorize }: WalletProps) {
+function WalletButtons({ disabled, onAuthorize, visibilityKey, onVisibilityChange }: WalletProps) {
   const stripe = useStripe();
   const elements = useElements();
   const narrow = useSyncExternalStore(subscribeToWidth, isNarrow, () => false);
   const [walletCount, setWalletCount] = useState(0);
+  const walletsVisible = walletCount > 0;
+  useLayoutEffect(() => {
+    if (!walletsVisible || !visibilityKey || !onVisibilityChange) return;
+    onVisibilityChange(visibilityKey, true);
+    return () => onVisibilityChange(visibilityKey, false);
+  }, [onVisibilityChange, visibilityKey, walletsVisible]);
 
   async function authorize(event: StripeExpressCheckoutElementConfirmEvent) {
     if (!stripe || !elements || disabled ||
@@ -58,7 +66,7 @@ function WalletButtons({ disabled, onAuthorize }: WalletProps) {
     }
   }
 
-  return <div hidden={walletCount === 0}>
+  return <div hidden={!walletsVisible}>
     <section aria-labelledby="express-checkout-heading" className={styles.expressCheckout}>
       <h3 id="express-checkout-heading">Express Checkout</h3>
       <ExpressCheckoutElement

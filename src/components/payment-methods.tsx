@@ -45,11 +45,13 @@ export function PaymentMethods({
   value,
   onChange,
   disabled = false,
+  walletGuidance,
 }: {
   methods: readonly PaymentMethodOption[];
   value: PaymentMethodKey | null;
   onChange: (method: PaymentMethodKey) => void;
   disabled?: boolean;
+  walletGuidance?: "next-step" | "visible";
 }) {
   if (methods.length === 0) {
     return <p className={styles.checkoutMessage}>Payment methods are not configured yet</p>;
@@ -117,8 +119,12 @@ export function PaymentMethods({
         <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M6.5 8V6.5a3.5 3.5 0 0 1 7 0V8m-8 0h9a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" /></svg>
         Secure payment powered by Stripe
       </p>
-      <p className={styles.checkoutMessage}>
-        Card, Apple Pay and Google Pay are supported. Wallets appear only on eligible devices.
+      <p className={walletGuidance ? `${styles.checkoutMessage} ${styles.walletPaymentGuidance}` : styles.checkoutMessage}>
+        {walletGuidance === "visible"
+          ? "Pay directly with the available wallet above, or continue to secure card payment."
+          : walletGuidance === "next-step"
+            ? "Card, Apple Pay and Google Pay are supported. On eligible devices, Apple Pay and Google Pay will appear on the next step after you continue to secure payment."
+            : "Card, Apple Pay and Google Pay are supported. Wallets appear only on eligible devices."}
       </p>
     </> : null}
     {value === "flik" ? <p className={styles.checkoutMessage}>Pay securely using your New Zealand bank account.</p> : null}

@@ -46,18 +46,24 @@ describe("Express Checkout", () => {
     userAgent.mockRestore();
   });
 
-  it("hides Express Checkout and the divider on Element load failure", () => {
-    render(<><ExpressCheckout {...settings} /><button>Continue to secure card payment</button></>);
-    act(() => stripe.callbacks.onReady({ availablePaymentMethods: { applePay: true } } as never));
-    expect(screen.getByRole("heading", { name: "Express Checkout" })).toBeVisible();
-    act(() => {
-      stripe.callbacks.onLoadError({ elementType: "expressCheckout" } as never);
-    });
-    expect(screen.queryByRole("heading", { name: "Express Checkout" })).toBeNull();
-    expect(screen.getByText("OR")).not.toBeVisible();
-    expect(screen.getByRole("button", { name: "Continue to secure card payment" })).toBeEnabled();
-    expect(settings.onAuthorize).not.toHaveBeenCalled();
-  });
+  it.each([{ applePay: true }, { applePay: true, googlePay: true }])(
+    "reports actual visible wallets and clears the signal on element failure",
+    (availablePaymentMethods) => {
+      const onVisibilityChange = vi.fn();
+      render(<><ExpressCheckout {...settings} visibilityKey="review-1" onVisibilityChange={onVisibilityChange} /><button>Continue to secure card payment</button></>);
+      act(() => stripe.callbacks.onReady({ availablePaymentMethods } as never));
+      expect(screen.getByRole("heading", { name: "Express Checkout" })).toBeVisible();
+      expect(onVisibilityChange).toHaveBeenLastCalledWith("review-1", true);
+      act(() => {
+        stripe.callbacks.onLoadError({ elementType: "expressCheckout" } as never);
+      });
+      expect(screen.queryByRole("heading", { name: "Express Checkout" })).toBeNull();
+      expect(screen.getByText("OR")).not.toBeVisible();
+      expect(onVisibilityChange).toHaveBeenLastCalledWith("review-1", false);
+      expect(screen.getByRole("button", { name: "Continue to secure card payment" })).toBeEnabled();
+      expect(settings.onAuthorize).not.toHaveBeenCalled();
+    },
+  );
 
   it("opens the wallet without submitting Elements or authorizing an order", () => {
     render(<ExpressCheckout {...settings} />);
