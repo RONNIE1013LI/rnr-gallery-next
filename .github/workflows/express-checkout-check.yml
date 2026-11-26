@@ -9,6 +9,7 @@ on:
       - src/app/checkout/**
       - src/components/checkout-view*
       - src/components/express-checkout*
+      - src/components/payment-methods*
       - src/components/payment-recovery-intent*
       - src/components/stripe-payment-form*
       - src/components/storefront.module.css
@@ -45,7 +46,7 @@ jobs:
             src/app/api/checkout/order/route.integration.test.ts \
             src/app/api/checkout/{order,session}/route{.test,-handler}.ts \
             src/app/checkout/page.tsx \
-            src/components/{checkout-view,express-checkout,stripe-payment-form}{,.test}.tsx \
+            src/components/{checkout-view,express-checkout,payment-methods,stripe-payment-form}{,.test}.tsx \
             src/components/payment-recovery-intent.ts \
             src/server/checkout/{express-checkout-config{,.test},session-cookie}.ts \
             src/server/orders/order-service{,.test}.ts

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { parsePaymentMethodsResponse, PaymentMethods } from "./payment-methods";
+import styles from "./storefront.module.css";
 
 const methods = [
   { method: "afterpay" as const, label: "Test Afterpay — no real payment", isTest: true },
@@ -41,6 +42,17 @@ describe("PaymentMethods", () => {
     expect(screen.getByText(
       "Card, Apple Pay and Google Pay are supported. Wallets appear only on eligible devices.",
     )).toBeInTheDocument();
+  });
+
+  it.each([
+    ["next-step", "Card, Apple Pay and Google Pay are supported. On eligible devices, Apple Pay and Google Pay will appear on the next step after you continue to secure payment."],
+    ["visible", "Pay directly with the available wallet above, or continue to secure card payment."],
+  ] as const)("shows checkout wallet guidance for %s", (walletGuidance, copy) => {
+    render(<PaymentMethods methods={methods} value="card" onChange={vi.fn()} walletGuidance={walletGuidance} />);
+    expect(screen.getByText(copy)).toBeVisible();
+    expect(screen.getByText(copy)).toHaveClass(styles.walletPaymentGuidance);
+    expect(screen.getAllByText(copy)).toHaveLength(1);
+    expect(screen.queryByText(/Wallets appear only on eligible devices/)).not.toBeInTheDocument();
   });
 
   it("only shows Stripe card trust information when Card is selected", () => {

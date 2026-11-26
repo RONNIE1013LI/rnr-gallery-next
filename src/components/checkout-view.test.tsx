@@ -12,15 +12,19 @@ const analytics = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/domain/analytics/client", () => analytics);
 vi.mock("./express-checkout", () => ({
-  ExpressCheckout: ({ amountCents, disabled, onAuthorize }: {
+  ExpressCheckout: ({ amountCents, disabled, onAuthorize, visibilityKey, onVisibilityChange }: {
     amountCents: number;
     disabled: boolean;
+    visibilityKey: string;
+    onVisibilityChange?: (key: string, visible: boolean) => void;
     onAuthorize: (wallet: { validate: () => Promise<void>; confirm: () => Promise<void> }) => Promise<void>;
-  }) => (
+  }) => (<>
+    <button onClick={() => onVisibilityChange?.(visibilityKey, true)}>Report wallets visible</button>
+    <button onClick={() => onVisibilityChange?.(visibilityKey, false)}>Report wallets hidden</button>
     <button disabled={disabled} onClick={() => void onAuthorize(walletFixture).catch(() => {})}>
       Test wallet {amountCents}
     </button>
-  ),
+  </>),
 }));
 const walletFixture = vi.hoisted(() => ({
   validate: vi.fn().mockResolvedValue(undefined),
@@ -105,10 +109,26 @@ describe("CheckoutView", () => {
     render(<CheckoutView expressCheckoutEnabled savedAddresses={[address]} />);
     expect(screen.queryByRole("button", { name: /Test wallet/ })).toBeNull();
     fireEvent.click(await checkoutReady());
-    const button = await screen.findByRole("button", { name: "Test wallet 7475" });
+    await screen.findByRole("button", { name: "Test wallet 7475" });
+    const nextStep = /Apple Pay and Google Pay will appear on the next step after you continue to secure payment/;
+    const visibleCopy = "Pay directly with the available wallet above, or continue to secure card payment.";
+    expect(screen.getByText(nextStep)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Report wallets visible" }));
+    expect(screen.getByText(visibleCopy)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Report wallets hidden" }));
+    expect(screen.getByText(nextStep)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Continue to secure card payment" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Report wallets visible" }));
+    expect(screen.getByText(visibleCopy)).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Updated name" } });
+    expect(screen.queryByText(visibleCopy)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Test wallet 7475" })).not.toBeInTheDocument();
+    fireEvent.click(await checkoutReady());
+    await screen.findByRole("button", { name: "Test wallet 7475" });
+    expect(screen.getAllByText(nextStep)).toHaveLength(1);
     expect(calls).not.toContain("/api/checkout/order");
-    expect(button.compareDocumentPosition(screen.getByRole("radio", { name: "Card" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    fireEvent.click(button);
+    expect(screen.getByRole("button", { name: "Test wallet 7475" }).compareDocumentPosition(screen.getByRole("radio", { name: "Card" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Test wallet 7475" }));
     await waitFor(() => expect(push).toHaveBeenCalledWith(`/orders/${orderNumber}`, { scroll: true }));
     expect(calls.slice(-5)).toEqual(["validate", "/api/checkout/order", `/api/orders/${orderNumber}/payment`, "stripe-confirm", `/api/orders/${orderNumber}/payment`]);
     const orderRequest = fetchMock.mock.calls.find(([url]) => url === "/api/checkout/order");
@@ -158,6 +178,7 @@ describe("CheckoutView", () => {
     expect(screen.getByRole("radio", { name: "Afterpay" })).toBeInTheDocument();
     expect(Boolean(screen.queryByRole("radio", { name: "Pay by Bank" }))).toBe(visible);
     expect(screen.getByRole("button", { name: "Continue to secure card payment" })).toBeEnabled();
+    expect(screen.getByText(/Apple Pay and Google Pay will appear on the next step after you continue to secure payment/)).toBeVisible();
     expect(screen.queryByRole("button", { name: /Test wallet/ })).not.toBeInTheDocument();
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "/api/checkout/session", "/api/checkout/shipping", "/api/checkout/payment-methods",

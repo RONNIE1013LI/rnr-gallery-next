@@ -250,6 +250,7 @@ export function CheckoutView({
   const [reviewedCart, setReviewedCart] = useState<RepricedCheckoutCart | null>(null);
   const [checkoutBinding, setCheckoutBinding] = useState<string | null>(null);
   const [walletActive, setWalletActive] = useState(false);
+  const [visibleWalletReviewKey, setVisibleWalletReviewKey] = useState<string | null>(null);
   const [walletAllowedForReview, setWalletAllowedForReview] = useState<string | null>(null);
   const [walletDisabled, setWalletDisabled] = useState(false);
   const [reviewedVersion, setReviewedVersion] = useState<number | null>(null);
@@ -294,6 +295,11 @@ export function CheckoutView({
     shipping?.currency === reviewedCart.currency && visiblePaymentMethods.some(({ method, isTest }) => method === "card" && !isTest)
     ? { checkoutBinding, amountCents: walletTotal, currency: reviewedCart.currency } : null;
   const walletReviewKey = walletReview ? JSON.stringify([walletReview, currentKey, reviewedVersion, shipping]) : null;
+  const expressCheckoutReview = walletAllowedForReview === walletReviewKey && recoveryChecked && draftChecked &&
+    (!paymentIntent || walletActive) ? walletReview : null;
+  const reportWalletVisibility = useCallback((reviewKey: string, visible: boolean) => {
+    setVisibleWalletReviewKey((current) => visible ? reviewKey : current === reviewKey ? null : current);
+  }, []);
   const latestWalletReviewKey = useRef(walletReviewKey);
   useLayoutEffect(() => { latestWalletReviewKey.current = walletReviewKey; }, [walletReviewKey]);
 
@@ -797,17 +803,19 @@ export function CheckoutView({
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>
     <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2 ref={reviewedSummaryHeadingRef} tabIndex={-1}>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}{isReviewed && shippingOptions.length > 1 ? <fieldset className={styles.shippingMethodSelector}><legend>Shipping method</legend><div>{shippingOptions.map((option) => <label key={option.serviceCode}><input type="radio" name="shippingService" value={option.serviceCode} checked={shipping?.serviceCode === option.serviceCode} disabled={checkoutLocked} onChange={() => void selectShippingService(option.serviceCode)} /><span>{option.serviceName}</span><strong>{formatMarketMoney(option.amountInclGstCents, option.currency)}</strong></label>)}</div></fieldset> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} />
-      {walletReview && walletAllowedForReview === walletReviewKey && recoveryChecked && draftChecked && (!paymentIntent || walletActive) ? (
+      {expressCheckoutReview ? (
         <ExpressCheckout
           key={walletReviewKey}
           publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
-          amountCents={walletReview.amountCents}
-          currency={walletReview.currency}
+          amountCents={expressCheckoutReview.amountCents}
+          currency={expressCheckoutReview.currency}
           disabled={checkoutLocked}
+          visibilityKey={walletReviewKey ?? undefined}
+          onVisibilityChange={reportWalletVisibility}
           onAuthorize={placeOrder}
         />
       ) : null}
-      {hasPaymentAuthority ? <PaymentMethods methods={visiblePaymentMethods} value={selectedPaymentMethod} onChange={setSelectedPaymentMethod} disabled={checkoutLocked} /> : null}<button className={styles.primaryButton} type="button" disabled={paymentIntent ? Boolean(pending) : !hasPaymentAuthority || !selectedPaymentMethod || (selectedPaymentMethod === "payid" && !payidAvailable) || (selectedPaymentMethod === "flik" && !flikAvailable) || visiblePaymentMethods.length === 0 || Boolean(pending)} onClick={() => void placeOrder()}>{pending === "order" ? "Preparing payment…" : pending === "shipping" ? "Updating shipping…" : paymentIntent?.phase === "starting_payment" ? "Retry payment recovery" : paymentIntent ? "Retry order recovery" : selectedPaymentMethod === "card" ? "Continue to secure card payment" : selectedPaymentMethod === "afterpay" ? "Continue to Afterpay" : selectedPaymentMethod === "flik" ? "Continue to Pay by Bank" : selectedPaymentMethod === "payid" ? "Show AUD PayID instructions" : "Continue to payment"}</button></aside>
+      {hasPaymentAuthority ? <PaymentMethods walletGuidance={expressCheckoutReview && visibleWalletReviewKey === walletReviewKey ? "visible" : "next-step"} methods={visiblePaymentMethods} value={selectedPaymentMethod} onChange={setSelectedPaymentMethod} disabled={checkoutLocked} /> : null}<button className={styles.primaryButton} type="button" disabled={paymentIntent ? Boolean(pending) : !hasPaymentAuthority || !selectedPaymentMethod || (selectedPaymentMethod === "payid" && !payidAvailable) || (selectedPaymentMethod === "flik" && !flikAvailable) || visiblePaymentMethods.length === 0 || Boolean(pending)} onClick={() => void placeOrder()}>{pending === "order" ? "Preparing payment…" : pending === "shipping" ? "Updating shipping…" : paymentIntent?.phase === "starting_payment" ? "Retry payment recovery" : paymentIntent ? "Retry order recovery" : selectedPaymentMethod === "card" ? "Continue to secure card payment" : selectedPaymentMethod === "afterpay" ? "Continue to Afterpay" : selectedPaymentMethod === "flik" ? "Continue to Pay by Bank" : selectedPaymentMethod === "payid" ? "Show AUD PayID instructions" : "Continue to payment"}</button></aside>
     </div>
   </>;
 }
