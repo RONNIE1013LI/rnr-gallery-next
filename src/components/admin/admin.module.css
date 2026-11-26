@@ -6135,3 +6135,25 @@ button.paymentProofPreviewMedia {
 .shell .formUtilityBar :is(button, a) {
   text-transform: none;
 }
+
+/* Keep the manual order voucher action compact on mobile without changing desktop. */
+@media (max-width: 700px) {
+  .manualEntryForm .formUtilityBar:has(.formUtilityVoucherSlot) {
+    gap: 8px;
+  }
+
+  .manualEntryForm .formUtilityBar .formUtilityVoucherSlot {
+    flex: 0 1 auto;
+  }
+
+  .manualEntryForm .formUtilityBar .formUtilityVoucherSlot button {
+    box-sizing: border-box;
+    width: 84px;
+    min-height: var(--forms-button-height-mobile, 40px);
+    padding: 4px 8px;
+    font-size: 11px;
+    line-height: 1.15;
+    text-align: center;
+    overflow-wrap: normal;
+  }
+}
