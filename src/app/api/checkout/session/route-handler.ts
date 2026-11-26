@@ -17,6 +17,7 @@ import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-check
 import { toPublicCheckoutDTO } from "@/server/checkout/public-dto";
 import {
   createCheckoutSessionToken,
+  checkoutWalletBinding,
   readCheckoutSessionToken,
   sessionCookie,
 } from "@/server/checkout/session-cookie";
@@ -121,7 +122,7 @@ export function createCheckoutSessionRoute(dependencies?: Dependencies) {
         throw error;
       }
 
-      const response = json({ checkout: toPublicCheckoutDTO(state) });
+      const response = json({ checkout: toPublicCheckoutDTO(state), checkoutBinding: checkoutWalletBinding(checkout.session.id) });
       if (checkout.cookieToken) {
         response.headers.append(
           "Set-Cookie",

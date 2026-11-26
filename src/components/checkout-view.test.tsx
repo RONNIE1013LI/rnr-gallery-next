@@ -11,6 +11,21 @@ const analytics = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/domain/analytics/client", () => analytics);
+vi.mock("./express-checkout", () => ({
+  ExpressCheckout: ({ amountCents, disabled, onAuthorize }: {
+    amountCents: number;
+    disabled: boolean;
+    onAuthorize: (wallet: { validate: () => Promise<void>; confirm: () => Promise<void> }) => Promise<void>;
+  }) => (
+    <button disabled={disabled} onClick={() => void onAuthorize(walletFixture).catch(() => {})}>
+      Test wallet {amountCents}
+    </button>
+  ),
+}));
+const walletFixture = vi.hoisted(() => ({
+  validate: vi.fn().mockResolvedValue(undefined),
+  confirm: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("./stripe-payment-form", () => ({
   StripePaymentForm: ({ clientSecret, returnUrl, onPaymentSubmitted, onPaymentUpdated }: {
     clientSecret: string;
@@ -62,6 +77,62 @@ describe("CheckoutView", () => {
     vi.restoreAllMocks();
     analytics.emitAnalyticsEvent.mockReset();
     analytics.emitAnalyticsEvent.mockReturnValue(true);
+  });
+
+  it("creates an order and confirms Stripe only after wallet validation", async () => {
+    const checkoutBinding = "b".repeat(64);
+    const orderNumber = "RNR-2026-WALLET";
+    const calls: string[] = [];
+    walletFixture.validate.mockImplementationOnce(async () => { calls.push("validate"); });
+    walletFixture.confirm.mockImplementationOnce(async () => { calls.push("stripe-confirm"); });
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push(url);
+      if (url === "/api/checkout/session") return Response.json({ checkoutBinding, checkout: { version: 2, cart: repriced } });
+      if (url === "/api/checkout/shipping") return Response.json({ shipping: { option: {
+        method: "pickup", serviceCode: "pickup", serviceName: "Pickup",
+        amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", isTest: false,
+      } } });
+      if (url === "/api/checkout/payment-methods") return Response.json({ methods: [{ method: "card", label: "Card", isTest: false }] });
+      if (url === "/api/checkout/express-checkout?market=NZ") return Response.json({ enabled: true });
+      if (url === "/api/checkout/order") return Response.json({ order: { orderNumber, currency: "NZD", totalInclGstCents: 7475 } });
+      if (JSON.parse(String(init?.body)).action === "confirm") return Response.json({ payment: { status: "processing" } });
+      return Response.json({
+        payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+        action: { kind: "elements", method: "card", clientSecret: "pi_test_secret_mock", returnUrl: `${window.location.origin}/api/payments/return/stripe?orderNumber=${orderNumber}&method=card&state=${"c".repeat(64)}` },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView expressCheckoutEnabled savedAddresses={[address]} />);
+    expect(screen.queryByRole("button", { name: /Test wallet/ })).toBeNull();
+    fireEvent.click(await checkoutReady());
+    const button = await screen.findByRole("button", { name: "Test wallet 7475" });
+    expect(calls).not.toContain("/api/checkout/order");
+    expect(button.compareDocumentPosition(screen.getByRole("radio", { name: "Card" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(button);
+    await waitFor(() => expect(push).toHaveBeenCalledWith(`/orders/${orderNumber}`, { scroll: true }));
+    expect(calls.slice(-5)).toEqual(["validate", "/api/checkout/order", `/api/orders/${orderNumber}/payment`, "stripe-confirm", `/api/orders/${orderNumber}/payment`]);
+    const orderRequest = fetchMock.mock.calls.find(([url]) => url === "/api/checkout/order");
+    expect(JSON.parse(String(orderRequest?.[1]?.body))).toMatchObject({
+      wallet: { checkoutBinding, currency: "NZD", amountCents: 7475 },
+    });
+    expect(sessionStorage.getItem(paymentIntentStorageKey)).toContain(orderNumber);
+    expect(analytics.emitAnalyticsEvent.mock.calls.flat()).not.toContainEqual(expect.objectContaining({ name: "purchase" }));
+  });
+
+  it("keeps recovery locked on a rotated cookie even when the stored cart has changed", async () => {
+    const wallet = { checkoutBinding: "b".repeat(64), amountCents: 7475, currency: "NZD" };
+    const saved = { ...placementIntent(), wallet };
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(postCart));
+    sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(saved));
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({
+      error: { code: "CHECKOUT_SESSION_CHANGED", message: "Session changed" },
+    }, { status: 409 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView expressCheckoutEnabled savedAddresses={[address]} />);
+    expect(await screen.findByText(/We couldn’t verify your previous wallet payment/)).toBeVisible();
+    expect(sessionStorage.getItem(paymentIntentStorageKey)).toContain(saved.orderIdempotencyKey);
+    expect(screen.getByRole("button", { name: "Review delivery & totals" })).toBeDisabled();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(["/api/checkout/order"]);
   });
 
   it.each([

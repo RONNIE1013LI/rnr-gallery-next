@@ -79,6 +79,7 @@ describe("POST /api/checkout/session", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     const body = await response.json();
     expect(body).toEqual({
+      checkoutBinding: expect.stringMatching(/^[a-f0-9]{64}$/),
       checkout: {
         version: 2,
         cart: state.cartSnapshot,

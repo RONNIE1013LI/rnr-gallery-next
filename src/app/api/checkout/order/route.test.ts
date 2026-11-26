@@ -49,6 +49,34 @@ function repository(customerId: string | null = null): OrderRepository {
 }
 
 describe("POST /api/checkout/order", () => {
+  it("rejects a wallet confirmation bound to a different checkout after cookie rotation", async () => {
+    const createOrder = vi.fn();
+    const handler = createCheckoutOrderRoute({
+      repository: repository(), orderService: { createOrder },
+      getOptionalSession: async () => null, trustedOrigin: origin,
+    });
+    const response = await handler(request({
+      ...validBody,
+      wallet: { checkoutBinding: "b".repeat(64), amountCents: 7475, currency: "NZD" },
+    }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "CHECKOUT_SESSION_CHANGED" } });
+    expect(createOrder).not.toHaveBeenCalled();
+  });
+
+  it("never treats a wallet checkout reference as a credential", async () => {
+    const createOrder = vi.fn();
+    const handler = createCheckoutOrderRoute({
+      repository: repository(), orderService: { createOrder },
+      getOptionalSession: async () => null, trustedOrigin: origin,
+    });
+    const response = await handler(request({
+      ...validBody, wallet: { checkoutBinding: "c".repeat(64), amountCents: 7475, currency: "NZD" },
+    }, ""));
+    expect(response.status).toBe(401);
+    expect(createOrder).not.toHaveBeenCalled();
+  });
+
   it("records the committed order with signed V1 identity and keeps checkout successful when analytics fails", async () => {
     const analyticsSecret = "checkout-analytics-cookie-secret-value-123";
     const at = new Date("2026-08-02T12:00:00.000Z");

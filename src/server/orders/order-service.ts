@@ -1,3 +1,4 @@
+import { expressCheckoutAvailable } from "@/server/checkout/express-checkout-config";
 import { LEGACY_RETURNING_CUSTOMER_VOUCHER_KEY, RETURNING_CUSTOMER_VOUCHER_KEY } from "@/domain/promotions/thank-you-offer";
 import { FirstOrderOfferConflictError } from "@/server/checkout/first-order-offer";
 import { randomUUID } from "node:crypto";
@@ -35,6 +36,7 @@ export type ReviewedOrderExpectation = Readonly<{
   checkoutVersion: number;
   cartDigest: string;
   shipping: Readonly<{ method: "post" | "pickup"; serviceCode: string; amountExGstCents: number; gstCents: number; amountInclGstCents: number; isTest: boolean }>;
+  wallet?: Readonly<{ amountCents: number; currency: MarketCurrency }>;
   attribution?: StoredOrderAttribution;
 }>;
 
@@ -44,6 +46,8 @@ export class OrderConflictError extends Error {
     this.name = "OrderConflictError";
   }
 }
+
+export class ExpressCheckoutDisabledError extends Error {}
 
 export class OrderStateChangedError extends Error {
   constructor(message = "The checkout has changed; review it before ordering") {
@@ -150,9 +154,16 @@ export function createOrderService({
 }) {
   return {
     async createOrder(sessionId: string, idempotencyKey: string, reviewed: ReviewedOrderExpectation): Promise<PaymentOrderCreationResult> {
+      function assertWalletTotal(amountCents: number, currency: MarketCurrency) {
+        if (reviewed.wallet && (reviewed.wallet.amountCents !== amountCents || reviewed.wallet.currency !== currency)) {
+          throw new OrderStateChangedError("Wallet total changed; review delivery and totals again");
+        }
+      }
+
       const existing = await repository.findBySession(sessionId);
       if (existing) {
         if (existing.idempotencyKey !== idempotencyKey) throw new OrderConflictError();
+        assertWalletTotal(existing.totalInclGstCents, existing.currency);
         return toPaymentStartDTO(existing);
       }
 
@@ -162,6 +173,7 @@ export function createOrderService({
         const completedOrder = await repository.findBySession(sessionId);
         if (completedOrder) {
           if (completedOrder.idempotencyKey !== idempotencyKey) throw new OrderConflictError();
+          assertWalletTotal(completedOrder.totalInclGstCents, completedOrder.currency);
           return toPaymentStartDTO(completedOrder);
         }
       }
@@ -245,6 +257,16 @@ export function createOrderService({
         ? { method: "pickup" as const, serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false }
         : { method: "post" as const, serviceCode: shipping.quote.serviceCode, amountExGstCents: shipping.quote.amountExGstCents, gstCents: shipping.quote.gstCents, amountInclGstCents: shipping.quote.amountInclGstCents, isTest: shipping.quote.isTest };
       if (!shippingMatchesReviewed(actualShipping, reviewed.shipping)) throw new OrderStateChangedError("Shipping changed; review delivery and totals again");
+      if (reviewed.wallet && !await expressCheckoutAvailable(cart.market)) {
+        // Recheck after the config read so an in-flight same-key replay can still recover.
+        const committed = await repository.findBySession(sessionId);
+        if (committed?.idempotencyKey === idempotencyKey) {
+          assertWalletTotal(committed.totalInclGstCents, committed.currency);
+          return toPaymentStartDTO(committed);
+        }
+        throw new ExpressCheckoutDisabledError();
+      }
+      assertWalletTotal(cart.totalInclGstCents + actualShipping.amountInclGstCents, cart.currency);
       for (let attempt = 0; attempt < 5; attempt += 1) {
         try {
           const transactionTime = now();
@@ -263,6 +285,7 @@ export function createOrderService({
             orderNumber: await makeOrderNumber(),
             now: transactionTime,
           });
+          assertWalletTotal(order.totalInclGstCents, order.currency);
           return toPaymentStartDTO(order);
         } catch (error) {
           if (error instanceof FirstOrderOfferConflictError) throw new OrderStateChangedError(error.message);

@@ -23,6 +23,7 @@ import {
 } from "@/server/analytics/website-analytics-config";
 import {
   hashCheckoutSessionToken,
+  checkoutWalletBinding,
   readCheckoutSessionToken,
 } from "@/server/checkout/session-cookie";
 import { getDatabase } from "@/server/db/client";
@@ -36,6 +37,7 @@ import { createDrizzleOrderRepository } from "@/server/orders/drizzle-order-repo
 import type { OrderRepository } from "@/server/orders/order-repository";
 import {
   createOrderService,
+  ExpressCheckoutDisabledError,
   OrderConflictError,
   OrderStateChangedError,
   type PaymentStartDTO,
@@ -61,6 +63,7 @@ const inputSchema = z.object({
   checkoutVersion: z.number().int().positive(),
   cartDigest: z.string().regex(/^[a-f0-9]{64}$/),
   shipping: z.object({ method: z.enum(["post", "pickup"]), serviceCode: z.string().min(1), amountExGstCents: z.number().int().nonnegative(), gstCents: z.number().int().nonnegative(), amountInclGstCents: z.number().int().nonnegative(), isTest: z.boolean() }).strict(),
+  wallet: z.object({ checkoutBinding: z.string().regex(/^[a-f0-9]{64}$/), amountCents: z.number().int().positive(), currency: z.enum(["NZD", "AUD"]) }).strict().optional(),
   attribution: attributionSchema,
   attributionHistory: attributionHistorySchema.optional(),
 }).strict();
@@ -143,6 +146,9 @@ function errorResponse(error: unknown) {
       },
     }, error.status);
   }
+  if (error instanceof ExpressCheckoutDisabledError) {
+    return json({ error: { code: "EXPRESS_CHECKOUT_DISABLED", message: "Express Checkout is unavailable. Choose another payment method." } }, 409);
+  }
   if (error instanceof OrderConflictError) {
     return json({ error: { code: "ORDER_CONFLICT", message: error.message } }, 409);
   }
@@ -176,6 +182,10 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
         throw new CheckoutAccessError(authenticated ? 403 : 401);
       }
 
+      if (input.wallet && input.wallet.checkoutBinding !== checkoutWalletBinding(session.id)) {
+        return json({ error: { code: "CHECKOUT_SESSION_CHANGED", message: "This payment belongs to a previous checkout. Check that checkout before trying again." } }, 409);
+      }
+
       const order = await deps.orderService.createOrder(
         session.id,
         input.idempotencyKey,
@@ -183,6 +193,7 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
           checkoutVersion: input.checkoutVersion,
           cartDigest: input.cartDigest,
           shipping: input.shipping,
+          ...(input.wallet ? { wallet: input.wallet } : {}),
           ...(() => {
             const consent = parseAdvertisingConsent(requestCookie(request, ADVERTISING_CONSENT_COOKIE));
             const submittedHistory = consent?.analytics && input.attributionHistory

@@ -13,6 +13,12 @@ type ShippingAuthority = Pick<
   "method" | "serviceCode" | "amountExGstCents" | "gstCents" | "amountInclGstCents" | "isTest"
 >;
 
+export type WalletCheckoutAuthority = Readonly<{
+  checkoutBinding: string;
+  amountCents: number;
+  currency: "NZD" | "AUD";
+}>;
+
 type CheckoutAuthority = Readonly<{
   orderIdempotencyKey: string;
   paymentIdempotencyKey: string;
@@ -20,6 +26,7 @@ type CheckoutAuthority = Readonly<{
   checkoutVersion: number;
   cartDigest: string;
   shipping: ShippingAuthority;
+  wallet?: WalletCheckoutAuthority;
 }>;
 
 export type PlacingOrderIntent = CheckoutAuthority & Readonly<{
@@ -94,6 +101,16 @@ function validShipping(value: unknown): value is ShippingAuthority {
   return Number(shipping.amountExGstCents) + Number(shipping.gstCents) === Number(shipping.amountInclGstCents);
 }
 
+function validCheckoutKeys(intent: Record<string, unknown>, keys: readonly string[]) {
+  if (!Object.hasOwn(intent, "wallet")) return hasExactKeys(intent, keys);
+  const wallet = record(intent.wallet);
+  return intent.method === "card" && hasExactKeys(intent, [...keys, "wallet"]) &&
+    wallet !== null && hasExactKeys(wallet, ["checkoutBinding", "amountCents", "currency"]) &&
+    typeof wallet.checkoutBinding === "string" && DIGEST_PATTERN.test(wallet.checkoutBinding) &&
+    Number.isSafeInteger(wallet.amountCents) && Number(wallet.amountCents) > 0 &&
+    (wallet.currency === "NZD" || wallet.currency === "AUD");
+}
+
 function validCheckoutAuthority(intent: Record<string, unknown>) {
   return typeof intent.orderIdempotencyKey === "string" &&
     UUID_PATTERN.test(intent.orderIdempotencyKey) &&
@@ -112,12 +129,12 @@ export function parsePaymentRecoveryIntent(raw: string | null): PaymentRecoveryI
     const intent = record(JSON.parse(raw));
     if (!intent || intent.schemaVersion !== 1) return null;
     if (intent.phase === "placing_order") {
-      if (!hasExactKeys(intent, CHECKOUT_KEYS) || !validCheckoutAuthority(intent)) return null;
+      if (!validCheckoutKeys(intent, CHECKOUT_KEYS) || !validCheckoutAuthority(intent)) return null;
       return intent as PlacingOrderIntent;
     }
     if (intent.phase !== "starting_payment" || !validStartingBase(intent)) return null;
     if (hasExactKeys(intent, DIRECT_STARTING_KEYS)) return intent as DirectStartingPaymentIntent;
-    if (!hasExactKeys(intent, CHECKOUT_STARTING_KEYS) || !validCheckoutAuthority(intent)) return null;
+    if (!validCheckoutKeys(intent, CHECKOUT_STARTING_KEYS) || !validCheckoutAuthority(intent)) return null;
     return intent as CheckoutStartingPaymentIntent;
   } catch {
     return null;

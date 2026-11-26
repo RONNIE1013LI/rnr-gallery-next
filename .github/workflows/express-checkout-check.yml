@@ -1,0 +1,60 @@
+name: Express Checkout verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/express-checkout-check.yml
+      - src/app/api/checkout/**
+      - src/app/checkout/**
+      - src/components/checkout-view*
+      - src/components/express-checkout*
+      - src/components/payment-recovery-intent*
+      - src/components/stripe-payment-form*
+      - src/components/storefront.module.css
+      - src/server/checkout/**
+      - src/server/orders/order-service*
+      - src/server/payments/**
+      - package.json
+      - package-lock.json
+      - vercel.json
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          check-latest: true
+          cache: npm
+      - run: npm ci
+      - name: Test checkout, payment recovery and purchase boundaries
+        run: |
+          npm run test:run -- \
+            scripts/production-governance-config.test.ts \
+            src/app/api/checkout/{order,session,shipping,payment-methods}/route.test.ts \
+            'src/app/api/orders/[orderNumber]/payment/route.test.ts' \
+            src/components/{checkout-view,express-checkout,stripe-payment-form,order-payment-panel,payment-methods,purchase-tracker}.test.tsx \
+            src/components/pending-checkout.test.ts \
+            src/server/checkout/express-checkout-config.test.ts \
+            src/server/orders/order-service.test.ts \
+            src/server/payments/{payment-service,stripe-provider}.test.ts \
+            src/server/analytics/meta-purchase.test.ts
+      - name: Build with both markets off and an isolated fixture configuration
+        env:
+          BETTER_AUTH_URL: https://staging.rnrgallery.com
+          DATABASE_URL: postgresql://fixture:fixture@127.0.0.1:1/rnr_express_checkout_ci
+          EXPRESS_CHECKOUT_NZ: 'false'
+          EXPRESS_CHECKOUT_AU: 'false'
+        run: |
+          export BETTER_AUTH_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::$BETTER_AUTH_SECRET"
+          npm run build
