@@ -143,7 +143,7 @@ describe("CheckoutView", () => {
     { market: undefined, currency: "NZD", visible: false },
   ])("filters Pay by Bank using reviewed $market / $currency", async ({ market, currency, visible }) => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: { ...repriced, market, currency } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkoutBinding: "b".repeat(64), checkout: { version: 2, cart: { ...repriced, market, currency } } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency, isTest: false } } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ methods: [
         { method: "card", label: "Card", isTest: false },
@@ -157,6 +157,11 @@ describe("CheckoutView", () => {
     await screen.findByRole("radio", { name: "Card" });
     expect(screen.getByRole("radio", { name: "Afterpay" })).toBeInTheDocument();
     expect(Boolean(screen.queryByRole("radio", { name: "Pay by Bank" }))).toBe(visible);
+    expect(screen.getByRole("button", { name: "Continue to secure card payment" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /Test wallet/ })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/checkout/session", "/api/checkout/shipping", "/api/checkout/payment-methods",
+    ]);
   });
 
   it.each([
